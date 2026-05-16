@@ -1,0 +1,22 @@
+{
+  "name": "batavia-ladder-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "codegen": "playwright codegen https://bsiwebapp.com",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/papaparse": "^5.3.14",
+    "cli-table3": "^0.6.5",
+    "papaparse": "^5.4.1",
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}
