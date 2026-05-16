@@ -94,15 +94,28 @@ async function getLatestBoxSelector(page: Page): Promise<string> {
   return `#box-${Math.max(...nums)}`;
 }
 
+// ── Duplicate detection ───────────────────────────────────────────────────────
+
+// Check if a box for this serial number is already on the work order page.
+async function isDuplicate(page: Page, serialNum: string): Promise<boolean> {
+  const boxes = await page.locator('[id^="box-"]').all();
+  for (const box of boxes) {
+    const text = await box.innerText().catch(() => '');
+    if (text.includes(serialNum)) return true;
+  }
+  return false;
+}
+
 // ── Serial number confirmation ─────────────────────────────────────────────────
 
 type SerialKind = 'existing' | 'new';
+type SerialOutcome = { kind: SerialKind } | { kind: 'not_found' };
 
 async function confirmSerial(
   page: Page,
   serialNum: string,
   opts: AutomationOptions,
-): Promise<SerialKind> {
+): Promise<SerialOutcome> {
   const serialField = page.getByRole('textbox', { name: 'Serial Number' });
 
   await serialField.click();
@@ -114,9 +127,7 @@ async function confirmSerial(
   await serialField.press('Enter');
   await pause(opts.actionDelay);
 
-  // Wait for autocomplete button or "no result" button — poll every 300ms
   const deadline = Date.now() + opts.dropdownTimeout;
-  let kind: SerialKind | null = null;
 
   while (Date.now() < deadline) {
     const autocompleteBtn = page.getByRole('button', { name: serialNum });
@@ -126,31 +137,21 @@ async function confirmSerial(
       await serialField.press('ArrowDown');
       await pause(opts.actionDelay);
       await autocompleteBtn.press('Enter');
-      kind = 'existing';
-      break;
+      console.log(`  Waiting for BSI to load ladder data from server...`);
+      await pause(opts.serialApiDelay);
+      await waitForNetworkIdle(page, opts.serialApiDelay * 2);
+      return { kind: 'existing' };
     }
     if (await noResultBtn.isVisible().catch(() => false)) {
       await noResultBtn.click();
-      kind = 'new';
-      break;
+      await pause(opts.serialApiDelay);
+      return { kind: 'new' };
     }
     await pause(300);
   }
 
-  if (!kind) {
-    throw new Error(
-      `Serial ${serialNum}: no response after ${opts.dropdownTimeout}ms. ` +
-      'Make sure the work order popup is the focused tab.',
-    );
-  }
-
-  // Wait for BSI to call its API and populate form fields.
-  // Use networkidle as the primary signal; fall back to a fixed delay.
-  console.log(`  Waiting for BSI to load ladder data from server...`);
-  await pause(opts.serialApiDelay);                        // minimum floor
-  await waitForNetworkIdle(page, opts.serialApiDelay * 2); // best-effort additional wait
-
-  return kind;
+  // Timed out — serial lookup produced no usable result
+  return { kind: 'not_found' };
 }
 
 // ── Best-match selection from #ResPno options ────────────────────────────────
@@ -286,14 +287,41 @@ async function fillLadder(
   const { serialNum } = record;
 
   try {
-    // 1. Serial number — existing ladders auto-populate fields via BSI API
-    const kind = await confirmSerial(page, serialNum, opts);
+    // 0. Duplicate check — skip if this serial is already on the work order
+    if (await isDuplicate(page, serialNum)) {
+      console.log(`  Skipping SN ${serialNum} — already on this work order.`);
+      return {
+        serialNum,
+        status: 'duplicate',
+        partsTotal: record.parts.length,
+        partsOk: 0,
+        partResults: [],
+        errorMsg: 'Duplicate: serial number already exists on this work order',
+      };
+    }
+
+    // 1. Serial number lookup
+    const outcome = await confirmSerial(page, serialNum, opts);
+
+    if (outcome.kind === 'not_found') {
+      console.log(`  Serial ${serialNum} not found — skipping.`);
+      return {
+        serialNum,
+        status: 'skipped',
+        partsTotal: record.parts.length,
+        partsOk: 0,
+        partResults: [],
+        errorMsg: 'Serial number lookup timed out — not found in BSI or no response',
+      };
+    }
+
     console.log(
-      `  Serial ${kind === 'new' ? '(new — will fill all fields)' : '(found — auto-filled fields kept)'}`,
+      `  Serial ${outcome.kind === 'new' ? '(new — will fill all fields)' : '(found — auto-filled fields kept)'}`,
     );
 
     // 2. Fill only fields that BSI left empty (green checkmark = already valid)
     await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
+
     await selectIfEmpty(page, '#LadderBrand', record.brand, opts.actionDelay);
     await selectIfEmpty(page, '#WoLadType', record.type, opts.actionDelay);
     await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);

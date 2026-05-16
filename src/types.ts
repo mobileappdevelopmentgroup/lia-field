@@ -22,7 +22,7 @@ export interface PartResult {
   message?: string;
 }
 
-export type LadderStatus = 'success' | 'partial' | 'skipped' | 'error';
+export type LadderStatus = 'success' | 'partial' | 'skipped' | 'duplicate' | 'error';
 
 export interface LadderResult {
   serialNum: string;

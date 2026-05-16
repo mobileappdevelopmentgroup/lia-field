@@ -8,12 +8,12 @@ function statusIcon(s: string): string {
 }
 
 export function buildSummary(ladderResults: LadderResult[], durationMs: number): RunSummary {
-  const counts = { success: 0, partial: 0, skipped: 0, error: 0 };
+  const counts = { success: 0, partial: 0, skipped: 0, duplicate: 0, error: 0 };
   let totalParts = 0;
   let successParts = 0;
 
   for (const r of ladderResults) {
-    counts[r.status] = (counts[r.status] ?? 0) + 1;
+    counts[r.status as keyof typeof counts] = (counts[r.status as keyof typeof counts] ?? 0) + 1;
     totalParts += r.partsTotal;
     successParts += r.partsOk;
   }
@@ -22,7 +22,7 @@ export function buildSummary(ladderResults: LadderResult[], durationMs: number):
     totalLadders: ladderResults.length,
     successLadders: counts.success,
     partialLadders: counts.partial,
-    skippedLadders: counts.skipped,
+    skippedLadders: counts.skipped + counts.duplicate,
     errorLadders: counts.error,
     totalParts,
     successParts,
@@ -80,6 +80,38 @@ export function printSummary(summary: RunSummary): void {
   );
 
   console.log(totalsTable.toString());
+
+  // Prominent exceptions block — anything the user needs to fix manually
+  const needsAttention = summary.ladderResults.filter(
+    (r) => r.status !== 'success',
+  );
+
+  if (needsAttention.length === 0) {
+    console.log('\n✓  No exceptions — all ladders processed successfully.\n');
+    return;
+  }
+
+  console.log('\n╔══════════════════════════════════════════════════════════╗');
+  console.log('║  ACTION REQUIRED — Fix these manually in bsiwebapp.com  ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\n');
+
+  for (const r of needsAttention) {
+    const label =
+      r.status === 'duplicate' ? '  DUPLICATE (already on work order)'
+      : r.status === 'skipped'  ? '  SKIPPED   (serial not found in BSI)'
+      : r.status === 'error'    ? '  ERROR     (script crashed on this ladder)'
+      :                           '  PARTIAL   (some parts failed)';
+
+    console.log(`  Serial: ${r.serialNum}`);
+    console.log(`  Reason: ${label}`);
+    if (r.errorMsg) console.log(`  Detail: ${r.errorMsg}`);
+
+    const failedParts = r.partResults.filter((p) => p.status !== 'success');
+    for (const p of failedParts) {
+      console.log(`    Part "${p.searchTerm}" → ${p.status}: ${p.message ?? ''}`);
+    }
+    console.log('');
+  }
 }
 
 export function writeJsonLog(summary: RunSummary): string {
