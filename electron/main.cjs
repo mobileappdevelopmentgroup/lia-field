@@ -149,7 +149,7 @@ ipcMain.on('automation:start', (_event, csvPath) => {
       PLAYWRIGHT_BROWSERS_PATH: getPlaywrightBrowsersPath(),
       BATAVIA_LOGS_DIR: getLogsDir(),
     },
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
 
   let buffer = '';
