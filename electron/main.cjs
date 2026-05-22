@@ -63,6 +63,8 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.setTitle('Lia');
+  mainWindow.on('page-title-updated', (e) => { e.preventDefault(); mainWindow.setTitle('Lia'); });
 }
 
 app.whenReady().then(() => {
