@@ -1,7 +1,14 @@
 import { parseCsv } from './csv-parser.js';
-import { launchBrowser, findWorkOrderPage, runAutomation } from './automation.js';
+import {
+  launchBrowser,
+  findWorkOrderPage,
+  runAutomation,
+  scrapeWorkOrderBoxes,
+  diffCsvVsWorkOrder,
+  runAutomationWithDiff,
+} from './automation.js';
 import { buildSummary, printSummary, writeJsonLog } from './reporter.js';
-import type { LadderRecord, LadderResult, RunSummary, AutomationOptions } from './types.js';
+import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice } from './types.js';
 
 const AUTOMATION_OPTS: AutomationOptions = {
   dropdownTimeout: 15_000,
@@ -17,13 +24,20 @@ export interface RunResult {
   error?: string;
 }
 
+export interface RunCallbacks {
+  /** Called after popup detected — user should navigate to correct work order, then resolve. */
+  waitForAnalyzeReady: () => Promise<void>;
+  /** Called after scraping — shows diff to user and waits for their mode choice. */
+  waitForDiffChoice: (diff: DiffResult) => Promise<DiffChoice>;
+}
+
 export async function run(
   csvPath: string,
-  waitForReady: () => Promise<void>,
+  callbacks: RunCallbacks,
   logsDir?: string,
 ): Promise<RunResult> {
   console.log('\n╔══════════════════════════════════════════════════╗');
-  console.log('║       BATAVIA LADDER AUTOMATION                  ║');
+  console.log('║       LIA — Ladder Import Assistant              ║');
   console.log('╚══════════════════════════════════════════════════╝\n');
 
   console.log(`Loading CSV: ${csvPath}\n`);
@@ -85,19 +99,40 @@ export async function run(
   }
 
   console.log('\n──────────────────────────────────────────────────');
-  console.log('Work order popup detected!');
-  console.log('Navigate to the correct work order, then click "Begin Automation".');
+  console.log('Navigate to the correct work order, then click "Analyze Work Order".');
   console.log('──────────────────────────────────────────────────\n');
 
-  await waitForReady();
+  await callbacks.waitForAnalyzeReady();
 
-  await new Promise((r) => setTimeout(r, 2000));
-  console.log('\nStarting automation...\n');
+  // Scrape existing boxes and compute diff
+  console.log('\nAnalyzing work order...');
+  await new Promise((r) => setTimeout(r, 1500)); // let page settle
+  const existingBoxes = await scrapeWorkOrderBoxes(workPage);
+  console.log(`  Found ${existingBoxes.length} existing box(es) on work order.`);
+
+  const diff = diffCsvVsWorkOrder(records, existingBoxes);
+  console.log(`  CSV: ${records.length} ladders | Missing: ${diff.missingBoxes.length} | Existing with gaps: ${diff.existingWithGaps.length} | Complete: ${diff.alreadyComplete.length}`);
+
+  const choice = await callbacks.waitForDiffChoice(diff);
+
+  if (choice === 'cancel') {
+    console.log('\nCancelled by user.');
+    await browser.close();
+    return { success: false, error: 'Cancelled by user.' };
+  }
+
+  await new Promise((r) => setTimeout(r, 1000));
+  console.log(`\nStarting import (mode: ${choice})...\n`);
 
   const startTime = Date.now();
   let ladderResults: LadderResult[];
   try {
-    ladderResults = await runAutomation(records, workPage, AUTOMATION_OPTS);
+    if (existingBoxes.length === 0) {
+      // Fresh work order — use standard flow (slightly faster, no diff overhead)
+      ladderResults = await runAutomation(records, workPage, AUTOMATION_OPTS);
+    } else {
+      ladderResults = await runAutomationWithDiff(diff, choice, workPage, AUTOMATION_OPTS);
+    }
   } catch (err: unknown) {
     await browser.close();
     return { success: false, error: `FATAL ERROR: ${err instanceof Error ? err.message : String(err)}` };

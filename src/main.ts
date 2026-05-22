@@ -2,6 +2,7 @@ import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
 import { run } from './runner.js';
+import type { DiffResult, DiffChoice } from './types.js';
 
 const CSV_DIR = path.join(process.cwd(), 'Ladders - Add your csv file here');
 
@@ -22,19 +23,52 @@ function getCsvPath(): string {
   return path.join(CSV_DIR, 'ladders.csv');
 }
 
+async function cliDiffChoice(diff: DiffResult): Promise<DiffChoice> {
+  console.log('\n══════════════════════════════════════════');
+  console.log('  WORK ORDER ANALYSIS');
+  console.log('══════════════════════════════════════════');
+  console.log(`  Missing boxes (will add):   ${diff.missingBoxes.length}`);
+  console.log(`  Existing with gaps:         ${diff.existingWithGaps.length}`);
+  console.log(`  Already complete (skip):    ${diff.alreadyComplete.length}`);
+
+  if (diff.existingWithGaps.length > 0) {
+    console.log('\n  Existing boxes with missing parts:');
+    for (const g of diff.existingWithGaps) {
+      console.log(`    SN ${g.record.serialNum}: missing ${g.missingParts.map((p) => p.searchTerm).join(', ')}`);
+    }
+  }
+
+  console.log('\n  Options:');
+  console.log('    a — Add All Missing (missing boxes + missing parts on existing boxes)');
+  console.log('    b — Add Missing Boxes Only (skip existing boxes even if incomplete)');
+  console.log('    c — Cancel');
+
+  while (true) {
+    const answer = await ask('\nYour choice (a/b/c): ');
+    if (answer === 'a') return 'all';
+    if (answer === 'b') return 'boxes-only';
+    if (answer === 'c') return 'cancel';
+    console.log('  Please enter a, b, or c.');
+  }
+}
+
 async function main(): Promise<void> {
   const csvPath = getCsvPath();
-  const waitForReady = async () => { await ask('Press ENTER when ready...'); };
 
-  const result = await run(csvPath, waitForReady);
+  const result = await run(csvPath, {
+    waitForAnalyzeReady: async () => {
+      await ask('Navigate to the work order, then press ENTER to analyze...');
+    },
+    waitForDiffChoice: cliDiffChoice,
+  });
 
   if (!result.success) {
     console.error(`\nERROR: ${result.error}`);
     process.exit(1);
   }
 
-  const hasIssues =
-    result.summary && (result.summary.errorLadders > 0 || result.summary.partialLadders > 0 || result.summary.failedParts > 0);
+  const hasIssues = result.summary &&
+    (result.summary.errorLadders > 0 || result.summary.partialLadders > 0 || result.summary.failedParts > 0);
 
   if (hasIssues) {
     console.log('⚠  Some items had issues — review the exceptions above before submitting.');
@@ -44,7 +78,7 @@ async function main(): Promise<void> {
 
   console.log('\nReview the work order in the browser, then submit manually.');
   console.log('This window will stay open. Close it manually when done, or press Ctrl+C.\n');
-  await new Promise(() => { /* intentional: keep open */ });
+  await new Promise(() => { /* keep open */ });
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
