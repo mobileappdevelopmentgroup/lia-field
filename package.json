@@ -1,12 +1,17 @@
 {
-  "name": "batavia-ladder-automation",
-  "version": "1.0.0",
+  "name": "lia-ladder-import-assistant",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "start": "tsx src/main.ts",
     "codegen": "playwright codegen https://bsiwebapp.com",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
+    "electron:dev": "npm run build:runner && electron .",
+    "electron:build": "npm run build:runner && electron-builder --mac dmg",
+    "electron:build:dir": "npm run build:runner && electron-builder --mac dir"
   },
   "dependencies": {
     "@types/papaparse": "^5.3.14",
@@ -16,7 +21,53 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3"
+  },
+  "build": {
+    "appId": "com.batavia.lia",
+    "productName": "Lia",
+    "copyright": "Copyright © 2026 Batavia",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns"
+    },
+    "dmg": {
+      "title": "Lia",
+      "background": null,
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "files": [
+      "electron/**",
+      "dist/electron-runner.cjs",
+      "node_modules/**",
+      "!node_modules/.cache/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/electron-runner.cjs",
+        "to": "electron-runner.cjs"
+      }
+    ],
+    "afterPack": "./scripts/after-pack.cjs",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright/**"
+    ]
   }
 }
