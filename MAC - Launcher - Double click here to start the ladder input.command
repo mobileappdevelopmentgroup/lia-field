@@ -23,22 +23,14 @@ echo "╔═══════════════════════�
 echo "║       BATAVIA LADDER AUTOMATION — MAC            ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
-echo "Opening Chrome with remote debugging enabled..."
+echo "BEFORE STARTING — make sure:"
+echo "  1. Your CSV file is inside the folder:"
+echo "     'Ladders - Add your csv file here'"
+echo "     (any filename ending in .csv works)"
 echo ""
-
-# Open Chrome with remote debugging so the script can attach to it
-open -a "Google Chrome" --args --remote-debugging-port=9222
-
-echo "NEXT STEPS:"
-echo "  1. In the Chrome window that just opened:"
-echo "     - Log in to bsiwebapp.com"
-echo "     - Navigate to your work order"
-echo "     - Click 'View' to open the work order popup"
-echo ""
-echo "  2. Make sure your CSV is in:"
-echo "     'Ladders - Add your csv file here/ladders.csv'"
-echo ""
-read -r -p "Press ENTER when the work order popup is open and you are ready..."
+echo "The script will open its own browser window."
+echo "Log in, navigate to the correct work order popup,"
+echo "then press ENTER in this window to begin."
 echo ""
 
 npx tsx src/main.ts "$@"

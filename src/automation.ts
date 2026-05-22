@@ -11,6 +11,27 @@ import type {
 
 const LOGS_DIR = path.join(process.cwd(), 'logs');
 
+// CSV abbreviation → BSI dropdown search term.
+// The value just needs to be a substring of the actual option text (case-insensitive).
+// Update these if BSI's dropdown text ever changes.
+const BRAND_ABBREV: Record<string, string> = {
+  lg:  'Little Giant',
+  lou: 'Louisville',
+  wer: 'Werner',
+  fea: 'Featherlite',
+  oth: 'Other',
+};
+
+const TYPE_ABBREV: Record<string, string> = {
+  ext: 'Extension',
+  com: 'Combination',
+  ste: 'Step',
+};
+
+function expandAbbrev(map: Record<string, string>, value: string): string {
+  return map[value.trim().toLowerCase()] ?? value;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -154,6 +175,44 @@ async function confirmSerial(
   return { kind: 'not_found' };
 }
 
+// Dismiss a BSI HTML error modal (the kind with a single OK button).
+// Silent no-op if no such modal is visible.
+async function dismissBsiErrorModal(page: Page, delay: number): Promise<void> {
+  try {
+    const okBtn = page.locator('.modal.show').getByRole('button', { name: /^ok$/i });
+    await okBtn.waitFor({ state: 'visible', timeout: 1_500 });
+    const msg = await page.locator('.modal.show .modal-body').innerText().catch(() => '');
+    if (msg) console.warn(`  [BSI error] ${msg.trim()}`);
+    await okBtn.click();
+    await pause(delay);
+  } catch { /* no error modal present */ }
+}
+
+// Close the Product Selector modal and block until it disappears.
+// Tries the "Close" button by visible text, then the header × button, then Escape.
+async function ensureProdModalClosed(page: Page, delay: number): Promise<void> {
+  console.log('  Closing product modal...');
+  try {
+    // Scope to the specific modal so we don't match other "Close" buttons on the page
+    await page.locator('#AddPartNoModal').getByRole('button', { name: 'Close' }).click({ timeout: 3_000 });
+    console.log('  Clicked Close.');
+  } catch {
+    try {
+      await page.locator('#AddPartNoModal .btn-close').click({ timeout: 2_000 });
+      console.log('  Clicked modal × button.');
+    } catch {
+      console.log('  Pressing Escape.');
+      await page.keyboard.press('Escape');
+    }
+  }
+  // Wait until the search field is gone before moving to the next ladder
+  await page
+    .getByRole('textbox', { name: 'Search for ID / Type / Part' })
+    .waitFor({ state: 'hidden', timeout: 5_000 })
+    .catch(() => console.log('  Warning: modal may still be visible after close attempt.'));
+  await pause(delay);
+}
+
 // ── Best-match selection from #ResPno options ────────────────────────────────
 
 interface PartOption { value: string; text: string }
@@ -183,14 +242,19 @@ async function addPart(
 ): Promise<PartResult> {
   const { searchTerm, quantity } = part;
   try {
+    const searchField = page.getByRole('textbox', { name: 'Search for ID / Type / Part' });
+
+    // Ensure the modal is fully open before interacting
+    await searchField.waitFor({ state: 'visible', timeout: opts.dropdownTimeout });
+
     // Click to focus, then type character-by-character so BSI's keydown
     // handlers fire and trigger the search — .fill() pastes silently and
     // the app never sees the keystrokes.
-    const searchField = page.getByRole('textbox', { name: 'Search for ID / Type / Part' });
-    await searchField.click();
+    await searchField.click({ clickCount: 3 }); // select-all clears any leftover text
     await pause(300);
     await searchField.pressSequentially(searchTerm, { delay: 80 });
     await pause(opts.actionDelay);
+
 
     // Wait for #ResPno to populate with at least one valid option
     await page.waitForFunction(
@@ -199,7 +263,14 @@ async function addPart(
         return sel != null && Array.from(sel.options).some((o) => o.value !== '' && o.value !== '0');
       },
       { timeout: opts.dropdownTimeout },
-    );
+    ).catch(async () => {
+      // Log what BSI actually put in #ResPno so we can debug
+      const opts2 = await page.locator('#ResPno option').evaluateAll(
+        (els) => (els as HTMLOptionElement[]).map((o) => `"${o.text}" (${o.value})`),
+      ).catch(() => []);
+      console.log(`  #ResPno options after search: [${opts2.join(', ') || 'none'}]`);
+      throw new Error(`Timeout waiting for #ResPno after searching "${searchTerm}"`);
+    });
     await pause(800); // let all options finish loading
 
     const options = await page.locator('#ResPno option').evaluateAll((opts) =>
@@ -250,10 +321,12 @@ async function addPart(
 
     if (isLast) {
       await page.getByRole('button', { name: 'Add & Close' }).click();
+      await dismissBsiErrorModal(page, opts.actionDelay);
       await pause(opts.serialApiDelay);
       await waitForNetworkIdle(page, opts.serialApiDelay * 2);
     } else {
       await page.getByRole('button', { name: 'Add Another' }).click();
+      await dismissBsiErrorModal(page, opts.actionDelay);
       await pause(opts.actionDelay);
     }
 
@@ -264,11 +337,7 @@ async function addPart(
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    const closeBtn = page.getByRole('button', { name: 'Add & Close' });
-    if (await closeBtn.isVisible().catch(() => false)) {
-      await closeBtn.click().catch(() => undefined);
-      await pause(opts.actionDelay);
-    }
+    await ensureProdModalClosed(page, opts.actionDelay);
     if (msg.includes('Timeout') || msg.includes('waiting for')) {
       return { searchTerm, status: 'not_found', message: 'Part search returned no options' };
     }
@@ -276,101 +345,97 @@ async function addPart(
   }
 }
 
-// ── Ladder entry ──────────────────────────────────────────────────────────────
+// ── Pass 1: add the ladder box ────────────────────────────────────────────────
 
-async function fillLadder(
+// Returns the box selector string on success, null on skip/duplicate/error.
+async function addLadderBox(
   page: Page,
   record: LadderRecord,
   opts: AutomationOptions,
-): Promise<LadderResult> {
-  const partResults: PartResult[] = [];
+): Promise<{ boxSel: string | null; status: LadderResult['status']; errorMsg?: string }> {
   const { serialNum } = record;
-
   try {
-    // 0. Duplicate check — skip if this serial is already on the work order
     if (await isDuplicate(page, serialNum)) {
       console.log(`  Skipping SN ${serialNum} — already on this work order.`);
-      return {
-        serialNum,
-        status: 'duplicate',
-        partsTotal: record.parts.length,
-        partsOk: 0,
-        partResults: [],
-        errorMsg: 'Duplicate: serial number already exists on this work order',
-      };
+      return { boxSel: null, status: 'duplicate', errorMsg: 'Already on this work order' };
     }
 
-    // 1. Serial number lookup
     const outcome = await confirmSerial(page, serialNum, opts);
 
     if (outcome.kind === 'not_found') {
-      console.log(`  Serial ${serialNum} not found — skipping.`);
-      return {
-        serialNum,
-        status: 'skipped',
-        partsTotal: record.parts.length,
-        partsOk: 0,
-        partResults: [],
-        errorMsg: 'Serial number lookup timed out — not found in BSI or no response',
-      };
+      // BSI didn't return this serial — add it as new and fill all fields from CSV.
+      console.log(`  SN ${serialNum} not in BSI — adding as new.`);
+    } else {
+      console.log(`  Serial ${outcome.kind === 'new' ? '(new)' : '(found)'}`);
     }
 
-    console.log(
-      `  Serial ${outcome.kind === 'new' ? '(new — will fill all fields)' : '(found — auto-filled fields kept)'}`,
-    );
-
-    // 2. Fill only fields that BSI left empty (green checkmark = already valid)
+    // For existing serials BSI auto-populates the fields, so selectIfEmpty is a no-op.
+    // For new/not-found serials the fields are blank and we fill from CSV.
     await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
-
-    await selectIfEmpty(page, '#LadderBrand', record.brand, opts.actionDelay);
-    await selectIfEmpty(page, '#WoLadType', record.type, opts.actionDelay);
+    await selectIfEmpty(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
+    await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
     await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
     await selectIfEmpty(page, '#WoLadDesc', record.desc, opts.actionDelay);
 
-    // 3. Commit the box
     await page.getByRole('button', { name: 'Add Box' }).click();
-    await pause(opts.actionDelay * 2); // box creation takes a moment
+    await pause(opts.actionDelay * 2);
 
-    // 4. Find the new box
     const boxSel = await getLatestBoxSelector(page);
+    return { boxSel, status: 'success' };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await screenshot(page, serialNum).catch(() => undefined);
+    return { boxSel: null, status: 'error', errorMsg: msg };
+  }
+}
 
-    // 5. Add parts
-    if (record.parts.length > 0) {
-      await page.locator(boxSel).getByRole('button', { name: 'Add Product' }).click();
-      await pause(opts.actionDelay);
+// ── Pass 2: add parts to an existing box ─────────────────────────────────────
 
-      for (let i = 0; i < record.parts.length; i++) {
-        const result = await addPart(page, record.parts[i], i === record.parts.length - 1, opts);
-        partResults.push(result);
-        if (result.status !== 'success') {
-          console.warn(
-            `  [WARN] Part "${result.searchTerm}" → ${result.status}: ${result.message ?? ''}`,
-          );
+async function addPartsToBox(
+  page: Page,
+  record: LadderRecord,
+  boxSel: string,
+  opts: AutomationOptions,
+): Promise<PartResult[]> {
+  const partResults: PartResult[] = [];
+  try {
+    await page.locator(boxSel).getByRole('button', { name: 'Add Product' }).click();
+    await pause(opts.actionDelay);
+
+    for (let i = 0; i < record.parts.length; i++) {
+      const isLast = i === record.parts.length - 1;
+      const result = await addPart(page, record.parts[i], isLast, opts);
+      partResults.push(result);
+      if (result.status !== 'success') {
+        console.warn(`  [WARN] Part "${result.searchTerm}" → ${result.status}: ${result.message ?? ''}`);
+        if (!isLast) {
+          // Modal may have closed due to the error — re-open it for remaining parts
+          const searchVisible = await page
+            .getByRole('textbox', { name: 'Search for ID / Type / Part' })
+            .isVisible()
+            .catch(() => false);
+          if (!searchVisible) {
+            await page.locator(boxSel).getByRole('button', { name: 'Add Product' }).click().catch(() => {});
+            await pause(opts.actionDelay);
+          }
         }
       }
     }
 
-    const partsOk = partResults.filter((p) => p.status === 'success').length;
-    const allOk = record.parts.length === 0 || partsOk === record.parts.length;
-    return {
-      serialNum,
-      status: allOk ? 'success' : partsOk > 0 ? 'partial' : 'error',
-      partsTotal: record.parts.length,
-      partsOk,
-      partResults,
-    };
+    // Safety net — close modal if still open after a failed part
+    const searchStillOpen = await page
+      .getByRole('textbox', { name: 'Search for ID / Type / Part' })
+      .isVisible()
+      .catch(() => false);
+    if (searchStillOpen) {
+      await ensureProdModalClosed(page, opts.actionDelay);
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    await screenshot(page, serialNum).catch(() => undefined);
-    return {
-      serialNum,
-      status: 'error',
-      partsTotal: record.parts.length,
-      partsOk: partResults.filter((p) => p.status === 'success').length,
-      partResults,
-      errorMsg: msg,
-    };
+    await ensureProdModalClosed(page, opts.actionDelay);
+    partResults.push({ searchTerm: '(unknown)', status: 'error', message: msg });
   }
+  return partResults;
 }
 
 // ── Browser launch + page detection ───────────────────────────────────────────
@@ -408,22 +473,64 @@ export async function runAutomation(
 ): Promise<LadderResult[]> {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 
+  // Auto-accept any native browser alert/confirm BSI shows (e.g. duplicate part warnings).
+  workPage.on('dialog', async (dialog) => {
+    console.warn(`  [BSI alert] ${dialog.message()}`);
+    await dialog.accept();
+  });
+
   const results: LadderResult[] = [];
 
   for (const record of records) {
     console.log(`\nProcessing SN ${record.serialNum}...`);
-    const result = await fillLadder(workPage, record, opts);
-    results.push(result);
 
-    const icon = result.status === 'success' ? '✓' : result.status === 'partial' ? '~' : '✗';
-    console.log(
-      `  ${icon} SN ${record.serialNum}: ${result.status} ` +
-      `(${result.partsOk}/${result.partsTotal} parts)`,
-    );
+    // Step 1: add the ladder box
+    const { boxSel, status, errorMsg } = await addLadderBox(workPage, record, opts);
 
-    if (result.status !== 'error') {
+    if (!boxSel) {
+      // Skipped, duplicate, or error — no box to add parts to
+      const icon = status === 'duplicate' ? '=' : '✗';
+      console.log(`  ${icon} SN ${record.serialNum}: ${status}`);
+      results.push({
+        serialNum: record.serialNum,
+        status,
+        partsTotal: record.parts.length,
+        partsOk: 0,
+        partResults: [],
+        ...(errorMsg ? { errorMsg } : {}),
+      });
       await pause(opts.pauseBetweenLadders);
+      continue;
     }
+
+    // Step 2: add parts to the box we just created
+    let partResults: PartResult[] = [];
+    if (record.parts.length > 0) {
+      partResults = await addPartsToBox(workPage, record, boxSel, opts);
+    }
+
+    const partsOk = partResults.filter((p) => p.status === 'success').length;
+    const allOk = record.parts.length === 0 || partsOk === record.parts.length;
+    const finalStatus: LadderResult['status'] = allOk
+      ? 'success'
+      : partsOk > 0
+      ? 'partial'
+      : record.parts.length > 0
+      ? 'error'
+      : 'success';
+
+    const icon = finalStatus === 'success' ? '✓' : finalStatus === 'partial' ? '~' : '✗';
+    console.log(`  ${icon} SN ${record.serialNum}: ${finalStatus} (${partsOk}/${record.parts.length} parts)`);
+
+    results.push({
+      serialNum: record.serialNum,
+      status: finalStatus,
+      partsTotal: record.parts.length,
+      partsOk,
+      partResults,
+    });
+
+    await pause(opts.pauseBetweenLadders);
   }
 
   return results;

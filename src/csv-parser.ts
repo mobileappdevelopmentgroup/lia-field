@@ -2,19 +2,38 @@ import fs from 'fs';
 import Papa from 'papaparse';
 import type { LadderRecord, PartEntry } from './types.js';
 
-interface CsvRow {
-  SerialNum: string;
-  TruckID?: string;
-  Brand?: string;
-  Type?: string;
-  Length?: string;
-  Desc?: string;
-  [key: string]: string | undefined;
-}
+// Everything that isn't metadata is treated as a part column (C&S, Rope, SLS-1, lbs, A, B, C, D, …)
+const METADATA_COLS = new Set(['Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description']);
+
+interface CsvRow { [key: string]: string | undefined; }
 
 export interface ParseResult {
   records: LadderRecord[];
   skipped: Array<{ row: number; serialNum: string; reason: string }>;
+}
+
+// "(2) G13"  → { searchTerm: "G13", quantity: 2 }  (qty prefix)
+// "W44 (2)"  → { searchTerm: "W44", quantity: 2 }  (qty suffix)
+// "PM36"     → { searchTerm: "PM36", quantity: 1 }
+// ""         → null (skip)
+function parsePartValue(val: string): PartEntry | null {
+  const v = val.trim();
+  if (!v) return null;
+  // Qty as prefix: "(2) G13"
+  let m = v.match(/^\((\d+)\)\s*(.+)$/);
+  if (m) {
+    const qty = parseInt(m[1], 10);
+    const term = m[2].trim();
+    return term ? { searchTerm: term, quantity: qty } : null;
+  }
+  // Qty as suffix: "W44 (2)"
+  m = v.match(/^(.+?)\s*\((\d+)\)$/);
+  if (m) {
+    const term = m[1].trim();
+    const qty = parseInt(m[2], 10);
+    return term ? { searchTerm: term, quantity: qty } : null;
+  }
+  return { searchTerm: v, quantity: 1 };
 }
 
 export function parseCsv(filePath: string): ParseResult {
@@ -23,10 +42,7 @@ export function parseCsv(filePath: string): ParseResult {
   }
 
   const content = fs.readFileSync(filePath, 'utf-8');
-  const result = Papa.parse<CsvRow>(content, {
-    header: true,
-    skipEmptyLines: true,
-  });
+  const result = Papa.parse<CsvRow>(content, { header: true, skipEmptyLines: true });
 
   if (result.errors.length > 0) {
     const fatal = result.errors.find((e) => e.type === 'Delimiter' || e.type === 'Quotes');
@@ -34,44 +50,35 @@ export function parseCsv(filePath: string): ParseResult {
   }
 
   const headers = result.meta.fields ?? [];
-
-  // Collect unique part indices: Part1, Part2, ... → ['1', '2', ...]
-  const partIndices = [
-    ...new Set(
-      headers
-        .filter((h) => /^Part\d+$/.test(h))
-        .map((h) => h.replace('Part', '')),
-    ),
-  ].sort((a, b) => Number(a) - Number(b));
+  const partCols = headers.filter((h) => !METADATA_COLS.has(h));
 
   const records: LadderRecord[] = [];
   const skipped: ParseResult['skipped'] = [];
 
   result.data.forEach((row, idx) => {
     const rowNum = idx + 2;
-    if (!row.SerialNum?.trim()) {
-      skipped.push({
-        row: rowNum,
-        serialNum: '(blank)',
-        reason: 'Missing required column: SerialNum',
-      });
+    const serial = row['Serial #']?.trim() ?? '';
+    if (!serial) {
+      skipped.push({ row: rowNum, serialNum: '(blank)', reason: 'Missing Serial #' });
       return;
     }
 
-    const parts: PartEntry[] = partIndices
-      .map((n) => ({
-        searchTerm: (row[`Part${n}`] ?? '').trim(),
-        quantity: parseInt((row[`Part${n}Qty`] ?? '1').trim(), 10) || 1,
-      }))
-      .filter((p) => p.searchTerm !== '');
+    const brand  = row['Brand']?.trim()       ?? '';
+    const type   = row['Type']?.trim()        ?? '';
+    const length = row['Length']?.trim()      ?? '';
+    const desc   = row['Description']?.trim() ?? '';
+
+    const parts: PartEntry[] = partCols
+      .map((col) => parsePartValue(row[col] ?? ''))
+      .filter((p): p is PartEntry => p !== null);
 
     records.push({
-      serialNum: row.SerialNum.trim(),
-      truckId: row.TruckID?.trim() ?? '',
-      brand: row.Brand?.trim() ?? '',
-      type: row.Type?.trim() ?? '',
-      length: row.Length?.trim() ?? '',
-      desc: row.Desc?.trim() ?? '',
+      serialNum: serial,
+      truckId: row['Location ID']?.trim() ?? '',
+      brand,
+      type,
+      length,
+      desc,
       parts,
     });
   });
