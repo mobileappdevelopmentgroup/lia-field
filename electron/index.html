@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lia — Ladder Import Assistant</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f1a;
+      --surface:   #16162a;
+      --surface2:  #1e1e36;
+      --border:    #2b2b4b;
+      --accent:    #4f6ef7;
+      --accent-h:  #6880f9;
+      --success:   #2ecc71;
+      --warn:      #f0a500;
+      --error:     #e74c3c;
+      --text:      #dde0f0;
+      --muted:     #5e6080;
+      --log-bg:    #08080f;
+      --log-text:  #a8f5a2;
+      --radius:    8px;
+      --font:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono:      'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    html, body { height: 100%; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    /* ── Title bar (macOS inset) ────────────────────── */
+    .titlebar {
+      -webkit-app-region: drag;
+      height: 30px;
+      background: var(--surface);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 80px 0 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Steps sidebar ──────────────────────────────── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 160px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      cursor: default;
+      transition: background 0.15s;
+      border-left: 2px solid transparent;
+    }
+    .step-item.active   { border-left-color: var(--accent); background: rgba(79,110,247,0.08); }
+    .step-item.done     { border-left-color: var(--success); }
+    .step-item.upcoming { opacity: 0.35; }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+    }
+    .step-item.active .step-num   { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .step-item.done   .step-num   { background: var(--success); color: #fff; border-color: var(--success); }
+
+    .step-label { font-size: 11.5px; font-weight: 500; color: var(--text); line-height: 1.2; }
+    .step-item.upcoming .step-label { color: var(--muted); }
+
+    /* ── Main content ───────────────────────────────── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* ── Cards ──────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .card-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* ── Buttons ────────────────────────────────────── */
+    button {
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 18px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s, transform 0.08s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    button:active:not(:disabled) { transform: scale(0.97); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-h); }
+    .btn-success { background: var(--success); color: #fff; font-size: 14px; padding: 10px 24px; }
+    .btn-success:hover:not(:disabled) { background: #27ae60; }
+    .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover:not(:disabled)   { color: var(--text); border-color: #4a4a6a; }
+    .btn-danger  { background: var(--error); color: #fff; }
+    .btn-danger:hover:not(:disabled)  { background: #c0392b; }
+
+    .action-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+    /* ── File picker ────────────────────────────────── */
+    .file-row { display: flex; align-items: center; gap: 12px; }
+    .file-label {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-label.has-file { color: var(--text); }
+
+    /* ── CSV preview table ──────────────────────────── */
+    #preview-section { display: none; }
+    #preview-section.visible { display: block; }
+
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .preview-stat {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .preview-stat strong { color: var(--text); }
+
+    .ladder-table-wrap {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      overflow-x: auto;
+      margin-bottom: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead th {
+      background: var(--surface2);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(43,43,75,0.6);
+      vertical-align: top;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .serial-cell {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .meta-cell { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .parts-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+
+    .part-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: rgba(79,110,247,0.12);
+      color: #8fa4ff;
+      border: 1px solid rgba(79,110,247,0.22);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+    .part-qty {
+      background: rgba(79,110,247,0.25);
+      border-radius: 3px;
+      padding: 0 4px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .no-parts { color: var(--muted); font-size: 11px; font-style: italic; }
+
+    .skip-warning {
+      background: rgba(240,165,0,0.08);
+      border: 1px solid rgba(240,165,0,0.2);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #f5c842;
+      margin-bottom: 12px;
+    }
+
+    /* ── Status badge ───────────────────────────────── */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 99px;
+      margin-bottom: 12px;
+    }
+    .pill-waiting { background: rgba(79,110,247,0.12); color: #8fa4ff; border: 1px solid rgba(79,110,247,0.25); }
+    .pill-ready   { background: rgba(46,204,113,0.12); color: #5de89a; border: 1px solid rgba(46,204,113,0.25); }
+    .pill-running { background: rgba(240,165,0,0.12);  color: #f5c842; border: 1px solid rgba(240,165,0,0.25); }
+    .pill-done    { background: rgba(46,204,113,0.12); color: #5de89a; border: 1px solid rgba(46,204,113,0.25); }
+    .pill-error   { background: rgba(231,76,60,0.12);  color: #ff7b6e; border: 1px solid rgba(231,76,60,0.25); }
+
+    .dots::after { content: ''; animation: dots 1.5s steps(4,end) infinite; }
+    @keyframes dots { 0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''} }
+
+    /* ── Instructions ───────────────────────────────── */
+    .instr-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .instr-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .instr-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(79,110,247,0.15);
+      color: #8fa4ff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ── Log area ───────────────────────────────────── */
+    #log-section { display: none; }
+    #log-section.visible { display: block; }
+    #log {
+      background: var(--log-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.65;
+      color: var(--log-text);
+      height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    #log .err { color: #ff7b6e; }
+
+    /* ── Summary ────────────────────────────────────── */
+    #summary-section { display: none; }
+    #summary-section.visible { display: block; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .stat-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+    .stat-n { font-size: 30px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+    .stat-l { font-size: 10.5px; color: var(--muted); }
+    .stat-box.good .stat-n  { color: var(--success); }
+    .stat-box.bad  .stat-n  { color: var(--error); }
+    .stat-box.warn .stat-n  { color: var(--warn); }
+    .stat-box.plain .stat-n { color: var(--text); }
+
+    .result-note {
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    .result-note.all-good  { background: rgba(46,204,113,0.08); color: #5de89a; border: 1px solid rgba(46,204,113,0.2); }
+    .result-note.has-issue { background: rgba(240,165,0,0.08);  color: #f5c842; border: 1px solid rgba(240,165,0,0.2); }
+    .log-path-line { font-size: 11px; font-family: var(--mono); color: var(--muted); margin-top: 6px; }
+
+    /* ── Error section ──────────────────────────────── */
+    #error-section { display: none; }
+    #error-section.visible { display: block; }
+    #error-msg {
+      font-size: 12.5px;
+      font-family: var(--mono);
+      color: #ff7b6e;
+      background: rgba(231,76,60,0.07);
+      border: 1px solid rgba(231,76,60,0.22);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+
+<div class="titlebar">Lia — Ladder Import Assistant</div>
+
+<div class="layout">
+
+  <!-- ── Sidebar steps ────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+    <div class="step-item active"   data-step="1"><div class="step-num">1</div><div class="step-label">Load CSV</div></div>
+    <div class="step-item upcoming" data-step="2"><div class="step-num">2</div><div class="step-label">Review Data</div></div>
+    <div class="step-item upcoming" data-step="3"><div class="step-num">3</div><div class="step-label">Open Browser</div></div>
+    <div class="step-item upcoming" data-step="4"><div class="step-num">4</div><div class="step-label">Begin Import</div></div>
+    <div class="step-item upcoming" data-step="5"><div class="step-num">5</div><div class="step-label">Summary</div></div>
+  </nav>
+
+  <!-- ── Main content area ────────────────────────── -->
+  <main class="content">
+
+    <!-- Step 1: Load CSV -->
+    <div class="card" id="card-load">
+      <div class="card-title">Select CSV File</div>
+      <div class="file-row">
+        <button class="btn-ghost" id="btn-choose">Choose File…</button>
+        <span class="file-label" id="file-label">No file selected</span>
+      </div>
+    </div>
+
+    <!-- Step 2: Preview -->
+    <div class="card" id="preview-section">
+      <div class="card-title">CSV Preview — Review Before Starting</div>
+      <div class="preview-header">
+        <span class="preview-stat" id="preview-stat"></span>
+      </div>
+      <div id="skip-warn" class="skip-warning" style="display:none;"></div>
+      <div class="ladder-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Serial #</th>
+              <th>Brand / Type</th>
+              <th>Length</th>
+              <th>Parts to Add</th>
+            </tr>
+          </thead>
+          <tbody id="ladder-tbody"></tbody>
+        </table>
+      </div>
+      <div class="action-row">
+        <button class="btn-success" id="btn-open-browser">Open Browser →</button>
+        <button class="btn-ghost" id="btn-reload-csv">← Change File</button>
+      </div>
+    </div>
+
+    <!-- Step 3 + 4: Browser + automation -->
+    <div class="card" id="card-run" style="display:none;">
+      <div class="card-title">Run Automation</div>
+
+      <div id="status-pill-wrap" style="margin-bottom:12px;">
+        <span class="status-pill pill-waiting dots" id="status-pill">Waiting for popup</span>
+      </div>
+
+      <ul class="instr-list" id="instr-list">
+        <li><div class="instr-num">1</div><span>Log in to <strong>bsiwebapp.com</strong> in the browser that opened.</span></li>
+        <li><div class="instr-num">2</div><span>Navigate to <strong>Work Orders → Work Orders List</strong>.</span></li>
+        <li><div class="instr-num">3</div><span>Click <strong>VIEW</strong> on your work order to open the popup.</span></li>
+        <li><div class="instr-num">4</div><span>Come back here and click <strong>Begin Import</strong> when ready.</span></li>
+      </ul>
+
+      <div class="action-row">
+        <button class="btn-success" id="btn-begin" style="display:none;">Begin Import</button>
+        <button class="btn-danger"  id="btn-stop">Stop</button>
+      </div>
+    </div>
+
+    <!-- Log output -->
+    <div id="log-section">
+      <div class="card-title" style="margin-bottom:8px;">Live Output</div>
+      <pre id="log"></pre>
+    </div>
+
+    <!-- Step 5: Summary -->
+    <div class="card" id="summary-section">
+      <div class="card-title">Run Summary</div>
+      <div class="stat-grid" id="stat-grid"></div>
+      <div class="result-note" id="result-note"></div>
+      <div class="log-path-line" id="log-path-line"></div>
+      <div class="action-row" style="margin-top:14px;">
+        <button class="btn-ghost" id="btn-start-over">Start Over</button>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div class="card" id="error-section">
+      <div class="card-title" style="color:var(--error);">Error</div>
+      <div id="error-msg"></div>
+      <div class="action-row">
+        <button class="btn-ghost" id="btn-try-again">Start Over</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+// States: idle | preview | browser-open | waiting-for-ready | running | complete | error
+let state = 'idle';
+let currentCsvPath = null;
+
+const $ = (id) => document.getElementById(id);
+
+const els = {
+  btnChoose:      $('btn-choose'),
+  fileLabel:      $('file-label'),
+  previewSection: $('preview-section'),
+  previewStat:    $('preview-stat'),
+  skipWarn:       $('skip-warn'),
+  ladderTbody:    $('ladder-tbody'),
+  btnOpenBrowser: $('btn-open-browser'),
+  btnReloadCsv:   $('btn-reload-csv'),
+  cardRun:        $('card-run'),
+  statusPill:     $('status-pill'),
+  instrList:      $('instr-list'),
+  btnBegin:       $('btn-begin'),
+  btnStop:        $('btn-stop'),
+  logSection:     $('log-section'),
+  logEl:          $('log'),
+  summarySection: $('summary-section'),
+  statGrid:       $('stat-grid'),
+  resultNote:     $('result-note'),
+  logPathLine:    $('log-path-line'),
+  btnStartOver:   $('btn-start-over'),
+  errorSection:   $('error-section'),
+  errorMsg:       $('error-msg'),
+  btnTryAgain:    $('btn-try-again'),
+};
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function setStep(active) {
+  document.querySelectorAll('.step-item').forEach((el) => {
+    const n = parseInt(el.dataset.step);
+    el.className = 'step-item ' + (n < active ? 'done' : n === active ? 'active' : 'upcoming');
+  });
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+function appendLog(msg) {
+  const span = document.createElement('span');
+  span.textContent = msg + '\n';
+  if (msg.startsWith('[ERROR]') || msg.startsWith('[STDERR]')) span.classList.add('err');
+  els.logEl.appendChild(span);
+  els.logEl.scrollTop = els.logEl.scrollHeight;
+}
+
+// ── Status pill ───────────────────────────────────────────────────────────────
+function setPill(text, cls) {
+  els.statusPill.textContent = text;
+  els.statusPill.className = 'status-pill ' + cls;
+}
+
+// ── CSV preview rendering ─────────────────────────────────────────────────────
+function renderPreview(parsed) {
+  const { records, skipped } = parsed;
+  const totalParts = records.reduce((s, r) => s + r.parts.length, 0);
+
+  els.previewStat.innerHTML =
+    `<strong>${records.length}</strong> ladder${records.length !== 1 ? 's' : ''} · ` +
+    `<strong>${totalParts}</strong> part${totalParts !== 1 ? 's' : ''} total`;
+
+  if (skipped.length > 0) {
+    els.skipWarn.style.display = 'block';
+    els.skipWarn.textContent =
+      `⚠  ${skipped.length} row${skipped.length > 1 ? 's' : ''} skipped (missing Serial #): ` +
+      skipped.map((s) => `row ${s.row}`).join(', ');
+  } else {
+    els.skipWarn.style.display = 'none';
+  }
+
+  els.ladderTbody.innerHTML = '';
+  records.forEach((r) => {
+    const tr = document.createElement('tr');
+
+    const brandType = [r.brand, r.type].filter(Boolean).join(' · ') || '—';
+
+    const partsHtml = r.parts.length === 0
+      ? '<span class="no-parts">No parts</span>'
+      : r.parts.map((p) =>
+          `<span class="part-badge">${escHtml(p.searchTerm)}` +
+          (p.quantity > 1 ? ` <span class="part-qty">×${p.quantity}</span>` : '') +
+          `</span>`
+        ).join('');
+
+    tr.innerHTML =
+      `<td class="serial-cell">${escHtml(r.serialNum)}</td>` +
+      `<td class="meta-cell">${escHtml(brandType)}</td>` +
+      `<td class="meta-cell">${escHtml(r.length || '—')}</td>` +
+      `<td><div class="parts-cell">${partsHtml}</div></td>`;
+
+    els.ladderTbody.appendChild(tr);
+  });
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Summary rendering ─────────────────────────────────────────────────────────
+function renderSummary(result) {
+  const s = result.summary;
+  if (!s) return;
+
+  const stats = [
+    { n: s.totalLadders,   l: 'Ladders',      cls: 'plain' },
+    { n: s.successLadders, l: 'Success',       cls: 'good' },
+    { n: s.partialLadders, l: 'Partial',       cls: s.partialLadders ? 'warn' : 'plain' },
+    { n: s.errorLadders,   l: 'Errors',        cls: s.errorLadders   ? 'bad'  : 'plain' },
+    { n: s.totalParts,     l: 'Parts Total',   cls: 'plain' },
+    { n: s.successParts,   l: 'Parts Added',   cls: 'good' },
+    { n: s.failedParts,    l: 'Parts Failed',  cls: s.failedParts    ? 'bad'  : 'plain' },
+  ];
+
+  els.statGrid.innerHTML = stats.map(({ n, l, cls }) =>
+    `<div class="stat-box ${cls}"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`
+  ).join('');
+
+  const hasIssues = s.errorLadders > 0 || s.partialLadders > 0 || s.failedParts > 0;
+  els.resultNote.className = 'result-note ' + (hasIssues ? 'has-issue' : 'all-good');
+  els.resultNote.textContent = hasIssues
+    ? '⚠  Some items need attention — review the output above before submitting the work order.'
+    : '✓  All ladders and parts added successfully. Review the work order and submit.';
+
+  if (result.logPath) els.logPathLine.textContent = `Log: ${result.logPath}`;
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+function reset() {
+  currentCsvPath = null;
+  els.fileLabel.textContent = 'No file selected';
+  els.fileLabel.classList.remove('has-file');
+  els.logEl.innerHTML = '';
+  els.ladderTbody.innerHTML = '';
+  els.statGrid.innerHTML = '';
+
+  els.previewSection.classList.remove('visible');
+  els.cardRun.style.display = 'none';
+  els.logSection.classList.remove('visible');
+  els.summarySection.classList.remove('visible');
+  els.errorSection.classList.remove('visible');
+
+  els.btnBegin.style.display = 'none';
+  els.btnStop.style.display = '';
+
+  state = 'idle';
+  setStep(1);
+}
+
+// ── Event: choose file ────────────────────────────────────────────────────────
+els.btnChoose.addEventListener('click', async () => {
+  const p = await window.api.openCsv();
+  if (!p) return;
+
+  currentCsvPath = p;
+  els.fileLabel.textContent = p.split('/').pop();
+  els.fileLabel.classList.add('has-file');
+
+  const parsed = await window.api.parseCsv(p);
+  if (parsed.error) {
+    els.errorSection.classList.add('visible');
+    els.errorMsg.textContent = parsed.error;
+    return;
+  }
+  if (!parsed.records || parsed.records.length === 0) {
+    els.errorSection.classList.add('visible');
+    els.errorMsg.textContent = 'No valid rows found. Make sure the CSV has a "Serial #" column.';
+    return;
+  }
+
+  renderPreview(parsed);
+  els.previewSection.classList.add('visible');
+  state = 'preview';
+  setStep(2);
+});
+
+// ── Event: reload CSV ─────────────────────────────────────────────────────────
+els.btnReloadCsv.addEventListener('click', () => {
+  els.previewSection.classList.remove('visible');
+  els.errorSection.classList.remove('visible');
+  state = 'idle';
+  setStep(1);
+  // Trigger the file picker again
+  els.btnChoose.click();
+});
+
+// ── Event: open browser ───────────────────────────────────────────────────────
+els.btnOpenBrowser.addEventListener('click', () => {
+  if (!currentCsvPath) return;
+  els.previewSection.classList.remove('visible');
+  els.cardRun.style.display = 'block';
+  els.logSection.classList.add('visible');
+  setPill('Waiting for work order popup', 'pill-waiting dots');
+  state = 'browser-open';
+  setStep(3);
+  window.api.startAutomation(currentCsvPath);
+});
+
+// ── Event: begin automation ───────────────────────────────────────────────────
+els.btnBegin.addEventListener('click', () => {
+  els.btnBegin.style.display = 'none';
+  els.instrList.style.display = 'none';
+  setPill('Running import…', 'pill-running dots');
+  state = 'running';
+  setStep(4);
+  window.api.beginAutomation();
+});
+
+// ── Event: stop ───────────────────────────────────────────────────────────────
+els.btnStop.addEventListener('click', () => {
+  window.api.stopAutomation();
+  appendLog('\n[Stopped by user]');
+  els.cardRun.style.display = 'none';
+  els.errorSection.classList.add('visible');
+  els.errorMsg.textContent = 'Automation stopped by user.';
+  state = 'error';
+  setStep(1);
+});
+
+// ── Event: start over ─────────────────────────────────────────────────────────
+els.btnStartOver.addEventListener('click', reset);
+els.btnTryAgain.addEventListener('click', reset);
+
+// ── Automation events ─────────────────────────────────────────────────────────
+window.api.onLog((msg) => appendLog(msg));
+
+window.api.onWaitingForReady(() => {
+  setPill('Popup detected — ready to begin', 'pill-ready');
+  els.btnBegin.style.display = '';
+  appendLog('\n[Work order popup detected — click "Begin Import" when ready]\n');
+});
+
+window.api.onComplete((result) => {
+  els.cardRun.style.display = 'none';
+  setPill('Done', 'pill-done');
+  renderSummary(result);
+  els.summarySection.classList.add('visible');
+  state = 'complete';
+  setStep(5);
+});
+
+window.api.onError((msg) => {
+  els.cardRun.style.display = 'none';
+  els.errorSection.classList.add('visible');
+  els.errorMsg.textContent = msg;
+  state = 'error';
+});
+
+window.api.onExited((code) => {
+  if (state === 'running' && code !== 0) {
+    els.errorSection.classList.add('visible');
+    els.errorMsg.textContent = `Process exited unexpectedly (code ${code}).`;
+    state = 'error';
+  }
+});
+</script>
+</body>
+</html>

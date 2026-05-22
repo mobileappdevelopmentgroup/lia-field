@@ -114,11 +114,11 @@ export function printSummary(summary: RunSummary): void {
   }
 }
 
-export function writeJsonLog(summary: RunSummary): string {
-  const logsDir = path.join(process.cwd(), 'logs');
-  fs.mkdirSync(logsDir, { recursive: true });
+export function writeJsonLog(summary: RunSummary, logsDir?: string): string {
+  const dir = logsDir ?? path.join(process.cwd(), 'logs');
+  fs.mkdirSync(dir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const logPath = path.join(logsDir, `run-${ts}.json`);
+  const logPath = path.join(dir, `run-${ts}.json`);
   fs.writeFileSync(logPath, JSON.stringify(summary, null, 2));
   return logPath;
 }
