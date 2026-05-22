@@ -183,13 +183,13 @@ async function keyboardSelectDropdown(
     return;
   }
 
-  // Press Home to reset to first option, then ArrowDown to the target index.
-  await el.press('Home');
-  await pause(150);
+  // ArrowDown once to activate, then navigate to the target, then Enter to confirm.
+  // BSI requires the Enter keypress for the field to register as valid (outline turns green).
   for (let i = 0; i < targetIndex; i++) {
     await el.press('ArrowDown');
     await pause(120);
   }
+  await el.press('Enter');
   await pause(delay);
 }
 
