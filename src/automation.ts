@@ -14,18 +14,38 @@ const LOGS_DIR = path.join(process.cwd(), 'logs');
 // CSV abbreviation → BSI dropdown search term.
 // The value just needs to be a substring of the actual option text (case-insensitive).
 // Update these if BSI's dropdown text ever changes.
+// Values must match BSI dropdown text exactly (case-insensitive partial match is fine).
 const BRAND_ABBREV: Record<string, string> = {
-  lg:  'Little Giant',
-  lou: 'Louisville',
-  wer: 'Werner',
-  fea: 'Featherlite',
-  oth: 'Other',
+  lg:    'Little Giant',
+  lou:   'Louisville',
+  wer:   'Werner',
+  fea:   'Featherlite',
+  bab:   'Babcock',
+  bal:   'Ballymore',
+  bau:   'Bauer',
+  grn:   'Grn Bull',
+  loc:   'Lock-n-climb',
+  lyn:   'Lynn',
+  put:   'Putnam',
+  sun:   'Sunset',
+  oth:   'Other',
 };
 
+// Values must match BSI dropdown text exactly (case-insensitive partial match is fine).
 const TYPE_ABBREV: Record<string, string> = {
-  ext: 'Extension',
-  com: 'Combination',
-  ste: 'Step',
+  ext:    'Ext',
+  combo:  'Combo',
+  com:    'Combo',
+  comp:   'Composite',
+  dbl:    'Dbl Step',
+  mhole:  'Mhole',
+  other:  'Other',
+  pltfrm: 'Pltfrm Stp',
+  rack:   'Rack',
+  roll:   'Rolling',
+  ste:    'Step',
+  step:   'Step',
+  str:    'Straight',
 };
 
 function expandAbbrev(map: Record<string, string>, value: string): string {
@@ -85,7 +105,7 @@ async function fillIfEmpty(
   }
 }
 
-// Select a <select> only when it has no meaningful selection yet.
+// Select a <select> only when it has no meaningful selection yet (existing-serial path).
 // Non-throwing: logs a warning and continues if the element is missing or has no match.
 async function selectIfEmpty(
   page: Page,
@@ -108,6 +128,86 @@ async function selectIfEmpty(
   } catch (err: unknown) {
     console.warn(`  [WARN] Could not set ${selector} to "${label}": ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+// Navigate a BSI dropdown with keyboard: Home to reset, then ArrowDown to the target.
+// BSI requires real key events for field validation (selectOption() bypasses its handlers).
+async function keyboardSelectDropdown(
+  page: Page,
+  selector: string,
+  label: string,
+  delay: number,
+): Promise<void> {
+  if (!label) return;
+  const normalized = label.trim().toLowerCase();
+  const el = page.locator(selector);
+
+  const targetIndex = await el.evaluate((selectEl, norm) => {
+    const opts = Array.from((selectEl as HTMLSelectElement).options);
+    return opts.findIndex(
+      (o) => o.text.trim().toLowerCase() === norm || o.text.trim().toLowerCase().includes(norm),
+    );
+  }, normalized).catch(() => -1);
+
+  if (targetIndex < 0) {
+    console.warn(`  [WARN] No option matching "${label}" in ${selector}`);
+    return;
+  }
+
+  // Press Home to reset to first option, then ArrowDown to the target index.
+  await el.press('Home');
+  await pause(150);
+  for (let i = 0; i < targetIndex; i++) {
+    await el.press('ArrowDown');
+    await pause(120);
+  }
+  await pause(delay);
+}
+
+// Fill Location ID + Brand + Type + Length + Description for a new/unknown serial.
+// Uses Tab between fields and ArrowDown inside dropdowns — the exact keyboard flow
+// BSI requires for its validation to accept (outline turns green).
+async function fillNewSerialFields(
+  page: Page,
+  record: LadderRecord,
+  opts: AutomationOptions,
+): Promise<void> {
+  // 1. Location ID (text field)
+  await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
+
+  // Tab to Brand dropdown
+  const locField = page.getByRole('textbox', { name: 'Truck or Location ID' });
+  if (await locField.isVisible().catch(() => false)) {
+    await locField.press('Tab');
+    await pause(500);
+  }
+
+  // 2. Brand — keyboard navigate
+  await keyboardSelectDropdown(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
+  await page.locator('#LadderBrand').press('Tab');
+  await pause(400);
+
+  // 3. Type
+  await keyboardSelectDropdown(page, '#WoLadType', expandAbbrev(TYPE_ABBREV, record.type), opts.actionDelay);
+  await page.locator('#WoLadType').press('Tab');
+  await pause(400);
+
+  // 4. Length — dropdown is populated via AJAX after type is selected; wait for it.
+  if (record.length && record.length !== '?') {
+    await page.waitForFunction(
+      () => {
+        const sel = document.querySelector('#LadderLength') as HTMLSelectElement | null;
+        return sel != null && sel.options.length > 1;
+      },
+      { timeout: 8_000 },
+    ).catch(() => console.warn('  [WARN] #LadderLength options did not load in time'));
+    await keyboardSelectDropdown(page, '#LadderLength', record.length, opts.actionDelay);
+    await page.locator('#LadderLength').press('Tab');
+    await pause(400);
+  }
+
+  // 5. Description — always "Ladder Repair"
+  await keyboardSelectDropdown(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
 }
 
 // Find the most recently added #box-N element.
@@ -374,22 +474,19 @@ async function addLadderBox(
       console.log(`  Serial ${outcome.kind === 'new' ? '(new)' : '(found)'}`);
     }
 
-    // For existing serials BSI auto-populates the fields, so selectIfEmpty is a no-op.
-    // For new/not-found serials the fields are blank and we fill from CSV.
-    await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
-
-    // Tab out of Location ID to let BSI enable the subsequent dropdowns.
-    const locField = page.getByRole('textbox', { name: 'Truck or Location ID' });
-    if (await locField.isVisible().catch(() => false)) {
-      await locField.press('Tab');
-      await pause(600);
+    if (outcome.kind === 'existing') {
+      // BSI auto-populated all fields from its database.
+      // Only fill in anything that's still blank (edge case).
+      await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
+      await selectIfEmpty(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
+      await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
+      await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
+      await selectIfEmpty(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
+    } else {
+      // New or not-found serial — BSI fields are blank and require keyboard navigation
+      // for validation (Tab between fields, ArrowDown inside dropdowns).
+      await fillNewSerialFields(page, record, opts);
     }
-
-    await selectIfEmpty(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
-    await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
-    await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
-    // Description is always "Ladder Repair" regardless of what's in the CSV.
-    await selectIfEmpty(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
 
     await page.getByRole('button', { name: 'Add Box' }).click();
     await pause(opts.actionDelay * 2);
