@@ -86,6 +86,7 @@ async function fillIfEmpty(
 }
 
 // Select a <select> only when it has no meaningful selection yet.
+// Non-throwing: logs a warning and continues if the element is missing or has no match.
 async function selectIfEmpty(
   page: Page,
   selector: string,
@@ -93,15 +94,19 @@ async function selectIfEmpty(
   delay: number,
 ): Promise<void> {
   if (!label) return;
-  const current = await page.locator(selector).evaluate((el) => {
-    const s = el as HTMLSelectElement;
-    return s.options[s.selectedIndex]?.text?.trim() ?? '';
-  }).catch(() => '');
-  const isPlaceholder =
-    !current || current.toLowerCase().includes('select') || current === '-' || current === '--';
-  if (isPlaceholder) {
-    await selectByLabel(page, selector, label);
-    await pause(delay);
+  try {
+    const current = await page.locator(selector).evaluate((el) => {
+      const s = el as HTMLSelectElement;
+      return s.options[s.selectedIndex]?.text?.trim() ?? '';
+    }).catch(() => '');
+    const isPlaceholder =
+      !current || current.toLowerCase().includes('select') || current === '-' || current === '--';
+    if (isPlaceholder) {
+      await selectByLabel(page, selector, label);
+      await pause(delay);
+    }
+  } catch (err: unknown) {
+    console.warn(`  [WARN] Could not set ${selector} to "${label}": ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -372,10 +377,19 @@ async function addLadderBox(
     // For existing serials BSI auto-populates the fields, so selectIfEmpty is a no-op.
     // For new/not-found serials the fields are blank and we fill from CSV.
     await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
+
+    // Tab out of Location ID to let BSI enable the subsequent dropdowns.
+    const locField = page.getByRole('textbox', { name: 'Truck or Location ID' });
+    if (await locField.isVisible().catch(() => false)) {
+      await locField.press('Tab');
+      await pause(600);
+    }
+
     await selectIfEmpty(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
     await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
     await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
-    await selectIfEmpty(page, '#WoLadDesc', record.desc, opts.actionDelay);
+    // Description is always "Ladder Repair" regardless of what's in the CSV.
+    await selectIfEmpty(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
 
     await page.getByRole('button', { name: 'Add Box' }).click();
     await pause(opts.actionDelay * 2);
@@ -446,8 +460,13 @@ export async function launchBrowser(): Promise<{
   context: BrowserContext;
   mainPage: Page;
 }> {
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
+  const browser = await chromium.launch({
+    headless: false,
+    args: ['--start-maximized'],
+  });
+  const context = await browser.newContext({
+    viewport: null, // let the OS window size dictate the viewport
+  });
   const mainPage = await context.newPage();
   await mainPage.goto('https://www.bsiwebapp.com/login/');
   return { browser, context, mainPage };
