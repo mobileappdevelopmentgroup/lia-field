@@ -1,15 +1,12 @@
 import readline from 'readline';
+import fs from 'fs';
 import path from 'path';
 import { parseCsv } from './csv-parser.js';
 import { launchBrowser, findWorkOrderPage, runAutomation } from './automation.js';
 import { buildSummary, printSummary, writeJsonLog } from './reporter.js';
 import type { AutomationOptions } from './types.js';
 
-const DEFAULT_CSV = path.join(
-  process.cwd(),
-  'Ladders - Add your csv file here',
-  'ladders.csv',
-);
+const CSV_DIR = path.join(process.cwd(), 'Ladders - Add your csv file here');
 
 const AUTOMATION_OPTS: AutomationOptions = {
   dropdownTimeout: 15_000,      // 15s for slow BSI API
@@ -31,7 +28,13 @@ function ask(question: string): Promise<string> {
 function getCsvPath(): string {
   const flag = process.argv.indexOf('--csv');
   if (flag !== -1 && process.argv[flag + 1]) return path.resolve(process.argv[flag + 1]);
-  return DEFAULT_CSV;
+  // Pick the first .csv found in the drop folder, regardless of filename
+  if (fs.existsSync(CSV_DIR)) {
+    const files = fs.readdirSync(CSV_DIR)
+      .filter((f) => f.toLowerCase().endsWith('.csv') && !f.startsWith('.'));
+    if (files.length > 0) return path.join(CSV_DIR, files[0]);
+  }
+  return path.join(CSV_DIR, 'ladders.csv'); // fallback path for the error message
 }
 
 async function main(): Promise<void> {
@@ -47,13 +50,13 @@ async function main(): Promise<void> {
     ({ records, skipped } = parseCsv(csvPath));
   } catch (err: unknown) {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
-    console.error(`\nExpected CSV location:\n  ${DEFAULT_CSV}`);
+    console.error(`\nDrop your CSV into:\n  ${CSV_DIR}`);
     console.error('Or pass a custom path:  --csv /path/to/file.csv\n');
     process.exit(1);
   }
 
   if (records.length === 0) {
-    console.error('No valid rows found. Every row needs a SerialNum column.');
+    console.error('No valid rows found. Every row needs a "Serial #" column with a value.');
     process.exit(1);
   }
 
@@ -85,8 +88,6 @@ async function main(): Promise<void> {
     try {
       workPage = await findWorkOrderPage(context, mainPage);
       console.log(`\nPopup detected: ${workPage.url()}`);
-      // Give it a moment to fully load before we start
-      await new Promise((r) => setTimeout(r, 2000));
       break;
     } catch {
       await new Promise((r) => setTimeout(r, 1000));
@@ -106,7 +107,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nConnected to work order popup. Starting automation...\n`);
+  console.log('\n──────────────────────────────────────────────────');
+  console.log('Work order popup detected.');
+  console.log('Navigate to the correct work order, then press ENTER to begin.');
+  console.log('──────────────────────────────────────────────────');
+  await ask('Press ENTER when ready...');
+
+  // Give the page a moment to fully settle after any navigation
+  await new Promise((r) => setTimeout(r, 2000));
+
+  console.log(`\nStarting automation...\n`);
 
   const startTime = Date.now();
   let ladderResults;
