@@ -14,21 +14,38 @@ const LOGS_DIR = path.join(process.cwd(), 'logs');
 // CSV abbreviation → BSI dropdown search term.
 // The value just needs to be a substring of the actual option text (case-insensitive).
 // Update these if BSI's dropdown text ever changes.
-// Values must match BSI dropdown text exactly (case-insensitive partial match is fine).
+// Maps CSV abbreviations → BSI dropdown text.
+// When a CSV value is NOT in this map it is passed raw to keyboardSelectDropdown,
+// which tries multiple fuzzy strategies (see below) — so unknown abbrevs may still match.
 const BRAND_ABBREV: Record<string, string> = {
-  lg:    'Little Giant',
-  lou:   'Louisville',
-  wer:   'Werner',
-  fea:   'Featherlite',
-  bab:   'Babcock',
-  bal:   'Ballymore',
-  bau:   'Bauer',
-  grn:   'Grn Bull',
-  loc:   'Lock-n-climb',
-  lyn:   'Lynn',
-  put:   'Putnam',
-  sun:   'Sunset',
-  oth:   'Other',
+  // Little Giant
+  lg: 'Little Giant', littleg: 'Little Giant', litg: 'Little Giant',
+  little: 'Little Giant', giant: 'Little Giant', litlegi: 'Little Giant',
+  // Louisville
+  lou: 'Louisville', louis: 'Louisville', louie: 'Louisville',
+  louisv: 'Louisville', louisville: 'Louisville', loui: 'Louisville',
+  // Werner
+  wer: 'Werner', werner: 'Werner',
+  // Featherlite
+  fea: 'Featherlite', feath: 'Featherlite', feather: 'Featherlite',
+  // Babcock
+  bab: 'Babcock', babcock: 'Babcock',
+  // Ballymore
+  bal: 'Ballymore', ball: 'Ballymore', ballym: 'Ballymore',
+  // Bauer
+  bau: 'Bauer', bauer: 'Bauer',
+  // Grn Bull
+  grn: 'Grn Bull', grnb: 'Grn Bull', bull: 'Grn Bull',
+  // Lock-n-climb
+  loc: 'Lock-n-climb', lock: 'Lock-n-climb', locknc: 'Lock-n-climb',
+  // Lynn
+  lyn: 'Lynn', lynn: 'Lynn',
+  // Putnam
+  put: 'Putnam', putnam: 'Putnam',
+  // Sunset
+  sun: 'Sunset', sunset: 'Sunset',
+  // Other
+  oth: 'Other', other: 'Other',
 };
 
 // Values must match BSI dropdown text exactly (case-insensitive partial match is fine).
@@ -144,9 +161,21 @@ async function keyboardSelectDropdown(
 
   const targetIndex = await el.evaluate((selectEl, norm) => {
     const opts = Array.from((selectEl as HTMLSelectElement).options);
-    return opts.findIndex(
-      (o) => o.text.trim().toLowerCase() === norm || o.text.trim().toLowerCase().includes(norm),
-    );
+    // Acronym: first letter of each word, e.g. "Little Giant" → "lg"
+    const acronym = (text: string) =>
+      text.split(/[\s\-_]+/).map((w: string) => w[0]?.toLowerCase() ?? '').join('');
+
+    return opts.findIndex((o) => {
+      const t = o.text.trim().toLowerCase();
+      return (
+        t === norm ||                        // exact
+        t.includes(norm) ||                  // option contains search
+        norm.includes(t) ||                  // search contains option (e.g. "louisville" → "Louisville")
+        acronym(o.text.trim()) === norm ||   // acronym: "LG" → "Little Giant"
+        t.startsWith(norm) ||               // option starts with search
+        norm.startsWith(t.slice(0, 4))      // search starts with first 4 chars of option
+      );
+    });
   }, normalized).catch(() => -1);
 
   if (targetIndex < 0) {
