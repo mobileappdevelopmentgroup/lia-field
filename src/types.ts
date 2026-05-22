@@ -13,7 +13,7 @@ export interface LadderRecord {
   parts: PartEntry[];
 }
 
-export type PartStatus = 'success' | 'not_found' | 'error';
+export type PartStatus = 'success' | 'not_found' | 'error' | 'skipped';
 
 export interface PartResult {
   searchTerm: string;
@@ -45,6 +45,29 @@ export interface RunSummary {
   ladderResults: LadderResult[];
   durationMs: number;
 }
+
+// ── Diff / idempotent re-run types ───────────────────────────────────────────
+
+export interface WorkOrderBox {
+  selector: string;    // e.g. "#box-3"
+  serialNum: string;   // from #boxserialnumberh-{N} input value
+  partNums: string[];  // part numbers from table rows (e.g. ["M23","R28L","RC"])
+}
+
+export interface DiffItemWithGaps {
+  record: LadderRecord;
+  boxSelector: string;
+  missingParts: PartEntry[];
+  presentParts: string[];   // searchTerms detected in box text
+}
+
+export interface DiffResult {
+  missingBoxes: LadderRecord[];        // in CSV, not on work order
+  existingWithGaps: DiffItemWithGaps[]; // on work order but has missing parts
+  alreadyComplete: LadderRecord[];     // on work order and appears fully done
+}
+
+export type DiffChoice = 'all' | 'boxes-only' | 'cancel';
 
 export interface AutomationOptions {
   dropdownTimeout: number;     // ms to wait for a dropdown/search to populate

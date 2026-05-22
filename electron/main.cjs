@@ -165,6 +165,7 @@ ipcMain.on('automation:start', (_event, csvPath) => {
         switch (event.type) {
           case 'log':               mainWindow.webContents.send('automation:log', event.message); break;
           case 'waiting-for-ready': mainWindow.webContents.send('automation:waiting-for-ready'); break;
+          case 'diff':              mainWindow.webContents.send('automation:diff', event.result); break;
           case 'complete':          mainWindow.webContents.send('automation:complete', event); break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;
         }
@@ -182,9 +183,17 @@ ipcMain.on('automation:start', (_event, csvPath) => {
   });
 });
 
-ipcMain.on('automation:begin', () => {
+// "Analyze Work Order" button — sends ready signal to child
+ipcMain.on('automation:analyze', () => {
   if (automationChild?.stdin) {
     automationChild.stdin.write(JSON.stringify({ type: 'ready' }) + '\n');
+  }
+});
+
+// User chose a diff mode
+ipcMain.on('automation:choice', (_event, value) => {
+  if (automationChild?.stdin) {
+    automationChild.stdin.write(JSON.stringify({ type: 'choice', value }) + '\n');
   }
 });
 
@@ -193,3 +202,28 @@ ipcMain.on('automation:stop', () => {
 });
 
 ipcMain.handle('app:get-logs-dir', () => getLogsDir());
+
+// ── IPC: sample CSV template ──────────────────────────────────────────────────
+
+const SAMPLE_CSV = [
+  'Row#,Serial #,Location ID,Brand,Type,Length,Description,C&S,Rope,SLS-1,A,B,C,D',
+  '1,1509436,1,LG,Ext,28,Ladder Repair,M23,R28L,,,Lgh92,Lgh123WP,RC',
+  '2,1669421,78,LG,Ext,28,Ladder Repair,M23,R28L,,,(2) Lgh26p,Hlm100,RC',
+  '3,1669497,13,LG,Ext,28,Ladder Repair,M23,R28L,,,(2) LGE26p,Hlm100,RC',
+].join('\r\n');
+
+// Brand codes: LG=Little Giant  WER=Werner  LOU=Louisville  FEA=Featherlite  OTH=Other
+// Type codes:  Ext=Extension    Com=Combination  Ste=Step
+// Part columns: any column name works — the value is the BSI part search term
+// Quantity prefix: (2) M23 = 2 of M23.  Suffix also works: M23 (2)
+
+ipcMain.handle('csv:save-sample', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save CSV Template',
+    defaultPath: 'lia-template.csv',
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  require('fs').writeFileSync(result.filePath, SAMPLE_CSV);
+  return result.filePath;
+});

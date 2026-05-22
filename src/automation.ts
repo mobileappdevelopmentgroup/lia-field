@@ -391,9 +391,11 @@ async function addLadderBox(
 
 // ── Pass 2: add parts to an existing box ─────────────────────────────────────
 
+// parts parameter lets callers pass a subset (for diff/re-run mode).
 async function addPartsToBox(
   page: Page,
-  record: LadderRecord,
+  parts: import('./types.js').PartEntry[],
+  serialNum: string,
   boxSel: string,
   opts: AutomationOptions,
 ): Promise<PartResult[]> {
@@ -402,14 +404,13 @@ async function addPartsToBox(
     await page.locator(boxSel).getByRole('button', { name: 'Add Product' }).click();
     await pause(opts.actionDelay);
 
-    for (let i = 0; i < record.parts.length; i++) {
-      const isLast = i === record.parts.length - 1;
-      const result = await addPart(page, record.parts[i], isLast, opts);
+    for (let i = 0; i < parts.length; i++) {
+      const isLast = i === parts.length - 1;
+      const result = await addPart(page, parts[i], isLast, opts);
       partResults.push(result);
       if (result.status !== 'success') {
         console.warn(`  [WARN] Part "${result.searchTerm}" → ${result.status}: ${result.message ?? ''}`);
         if (!isLast) {
-          // Modal may have closed due to the error — re-open it for remaining parts
           const searchVisible = await page
             .getByRole('textbox', { name: 'Search for ID / Type / Part' })
             .isVisible()
@@ -506,7 +507,7 @@ export async function runAutomation(
     // Step 2: add parts to the box we just created
     let partResults: PartResult[] = [];
     if (record.parts.length > 0) {
-      partResults = await addPartsToBox(workPage, record, boxSel, opts);
+      partResults = await addPartsToBox(workPage, record.parts, record.serialNum, boxSel, opts);
     }
 
     const partsOk = partResults.filter((p) => p.status === 'success').length;
@@ -530,6 +531,177 @@ export async function runAutomation(
       partResults,
     });
 
+    await pause(opts.pauseBetweenLadders);
+  }
+
+  return results;
+}
+
+// ── Scrape existing work order ────────────────────────────────────────────────
+
+export async function scrapeWorkOrderBoxes(
+  page: Page,
+): Promise<import('./types.js').WorkOrderBox[]> {
+  const boxes = await page.locator('[id^="box-"]').all();
+  const result: import('./types.js').WorkOrderBox[] = [];
+
+  for (const box of boxes) {
+    const id = await box.getAttribute('id') ?? '';
+    const num = id.replace('box-', '');
+    if (!num || isNaN(Number(num))) continue;
+
+    // Serial number from the dedicated read-only input
+    const serial = await box.locator(`#boxserialnumberh-${num}`)
+      .inputValue()
+      .catch(() => '');
+    if (!serial) continue;
+
+    // Part numbers from table rows — each data row: "DBID PartNum Description..."
+    const rows = await box.locator('tr').all();
+    const partNums: string[] = [];
+    for (const row of rows) {
+      const text = (await row.innerText().catch(() => '')).trim();
+      const match = text.match(/^\d+\s+(\S+)/);
+      if (match?.[1]) partNums.push(match[1]);
+    }
+
+    result.push({ selector: `#${id}`, serialNum: serial, partNums });
+  }
+
+  return result;
+}
+
+// ── Diff CSV vs work order ────────────────────────────────────────────────────
+
+export function diffCsvVsWorkOrder(
+  records: import('./types.js').LadderRecord[],
+  boxes: import('./types.js').WorkOrderBox[],
+): import('./types.js').DiffResult {
+  const missingBoxes: import('./types.js').LadderRecord[] = [];
+  const existingWithGaps: import('./types.js').DiffItemWithGaps[] = [];
+  const alreadyComplete: import('./types.js').LadderRecord[] = [];
+
+  for (const record of records) {
+    const existing = boxes.find((b) => b.serialNum === record.serialNum);
+
+    if (!existing) {
+      missingBoxes.push(record);
+      continue;
+    }
+
+    const existingLower = existing.partNums.map((p) => p.toLowerCase());
+    const missingParts = record.parts.filter(
+      (p) => !existingLower.includes(p.searchTerm.toLowerCase()),
+    );
+    const presentParts = record.parts
+      .filter((p) => existingLower.includes(p.searchTerm.toLowerCase()))
+      .map((p) => p.searchTerm);
+
+    if (missingParts.length === 0) {
+      alreadyComplete.push(record);
+    } else {
+      existingWithGaps.push({
+        record,
+        boxSelector: existing.selector,
+        missingParts,
+        presentParts,
+      });
+    }
+  }
+
+  return { missingBoxes, existingWithGaps, alreadyComplete };
+}
+
+// ── Run automation with diff result ──────────────────────────────────────────
+
+export async function runAutomationWithDiff(
+  diff: import('./types.js').DiffResult,
+  mode: 'all' | 'boxes-only',
+  workPage: Page,
+  opts: AutomationOptions,
+): Promise<LadderResult[]> {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+
+  workPage.on('dialog', async (dialog) => {
+    console.warn(`  [BSI alert] ${dialog.message()}`);
+    await dialog.accept();
+  });
+
+  const results: LadderResult[] = [];
+
+  // ── Already complete: skip entirely ──────────────────────────────────────
+  for (const record of diff.alreadyComplete) {
+    console.log(`  = SN ${record.serialNum}: already complete — skipped`);
+    results.push({
+      serialNum: record.serialNum,
+      status: 'skipped',
+      partsTotal: record.parts.length,
+      partsOk: record.parts.length,
+      partResults: record.parts.map((p) => ({ searchTerm: p.searchTerm, status: 'success' as const })),
+    });
+  }
+
+  // ── Missing boxes: add in full ────────────────────────────────────────────
+  for (const record of diff.missingBoxes) {
+    console.log(`\nAdding new box — SN ${record.serialNum}...`);
+    const { boxSel, status, errorMsg } = await addLadderBox(workPage, record, opts);
+    if (!boxSel) {
+      console.log(`  ✗ SN ${record.serialNum}: ${status}`);
+      results.push({ serialNum: record.serialNum, status, partsTotal: record.parts.length, partsOk: 0, partResults: [], ...(errorMsg ? { errorMsg } : {}) });
+      await pause(opts.pauseBetweenLadders);
+      continue;
+    }
+    let partResults: PartResult[] = [];
+    if (record.parts.length > 0) {
+      partResults = await addPartsToBox(workPage, record.parts, record.serialNum, boxSel, opts);
+    }
+    const partsOk = partResults.filter((p) => p.status === 'success').length;
+    const allOk = record.parts.length === 0 || partsOk === record.parts.length;
+    const finalStatus: LadderResult['status'] = allOk ? 'success' : partsOk > 0 ? 'partial' : 'error';
+    console.log(`  ✓ SN ${record.serialNum}: ${finalStatus} (${partsOk}/${record.parts.length} parts)`);
+    results.push({ serialNum: record.serialNum, status: finalStatus, partsTotal: record.parts.length, partsOk, partResults });
+    await pause(opts.pauseBetweenLadders);
+  }
+
+  // ── Existing with gaps ────────────────────────────────────────────────────
+  for (const { record, boxSelector, missingParts } of diff.existingWithGaps) {
+    if (mode === 'boxes-only') {
+      // User chose to skip existing boxes
+      console.log(`  - SN ${record.serialNum}: box exists — skipped (boxes-only mode)`);
+      results.push({
+        serialNum: record.serialNum,
+        status: 'skipped',
+        partsTotal: record.parts.length,
+        partsOk: record.parts.length - missingParts.length,
+        partResults: record.parts.map((p) =>
+          missingParts.some((m) => m.searchTerm === p.searchTerm)
+            ? { searchTerm: p.searchTerm, status: 'skipped' as const, message: 'skipped (boxes-only mode)' }
+            : { searchTerm: p.searchTerm, status: 'success' as const },
+        ),
+      });
+      continue;
+    }
+
+    // mode === 'all': add only the missing parts
+    console.log(`\nAdding ${missingParts.length} missing part(s) to existing box — SN ${record.serialNum}...`);
+    const partResults = await addPartsToBox(workPage, missingParts, record.serialNum, boxSelector, opts);
+    const partsOk = partResults.filter((p) => p.status === 'success').length;
+    const totalOk = (record.parts.length - missingParts.length) + partsOk;
+    const finalStatus: LadderResult['status'] =
+      totalOk === record.parts.length ? 'success' : totalOk > 0 ? 'partial' : 'error';
+    console.log(`  ${finalStatus === 'success' ? '✓' : '~'} SN ${record.serialNum}: ${finalStatus}`);
+    results.push({
+      serialNum: record.serialNum,
+      status: finalStatus,
+      partsTotal: record.parts.length,
+      partsOk: totalOk,
+      partResults: [
+        ...record.parts
+          .filter((p) => !missingParts.some((m) => m.searchTerm === p.searchTerm))
+          .map((p) => ({ searchTerm: p.searchTerm, status: 'success' as const })),
+        ...partResults,
+      ],
+    });
     await pause(opts.pauseBetweenLadders);
   }
 
