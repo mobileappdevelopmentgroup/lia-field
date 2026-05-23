@@ -643,42 +643,62 @@ function updateBadge(session) {
   }
 }
 
-// ── App startup ───────────────────────────────────────────────────────────────
+// ── App startup — always open to home, no login gate ─────────────────────────
 (async () => {
   _supabaseConfigured = await window.api.isSupabaseConfigured();
-
+  // Silently restore any saved session in the background
   if (_supabaseConfigured) {
     _session = await window.api.getSession();
-    if (_session) {
-      updateBadge(_session);
-      showHomeScreen(_session);
-    } else {
-      showScreen('login');
-    }
-  } else {
-    // No supabase configured — go straight to home (no login required)
-    showHomeScreen(null);
+    if (_session) updateBadge(_session);
   }
+  showScreen('home');
 })();
 
-function showHomeScreen(session) {
-  if (session?.user?.name) {
-    $('home-title').textContent = `Welcome, ${session.user.name}`;
-  }
-  if (session?.credits !== null && session?.credits !== undefined) {
+function showHomeScreen() {
+  if (_session?.user?.name) $('home-title').textContent = `Welcome, ${_session.user.name}`;
+  if (_session?.credits !== null && _session?.credits !== undefined) {
     const el = $('home-credits');
     el.style.display = '';
-    el.textContent = session.credits === -1
+    el.textContent = _session.credits === -1
       ? 'Unlimited imports'
-      : `${session.credits} import credit${session.credits !== 1 ? 's' : ''} remaining`;
+      : `${_session.credits} import credit${_session.credits !== 1 ? 's' : ''} remaining`;
   }
-  $('btn-signout').style.display = _supabaseConfigured ? '' : 'none';
+  $('btn-signout').style.display = (_supabaseConfigured && _session) ? '' : 'none';
   showScreen('home');
 }
 
 // ════════════════════════════════════════════════════════════════
-// Login
+// Login — only shown when a licensed feature is requested
 // ════════════════════════════════════════════════════════════════
+let _loginDestination = null; // 'office' | 'inspect'
+
+// Call this before entering any feature that needs auth.
+// If already logged in (including restored session), goes directly there.
+async function requireAuth(destination) {
+  if (!_supabaseConfigured) {
+    // No licensing configured — just open the feature
+    goToDestination(destination);
+    return;
+  }
+  // Try to use the cached session (or refresh it silently)
+  if (!_session) _session = await window.api.getSession();
+  if (_session) {
+    updateBadge(_session);
+    goToDestination(destination);
+  } else {
+    _loginDestination = destination;
+    $('login-sub').textContent = destination === 'office'
+      ? 'Sign in to use Office Mode'
+      : 'Sign in to log inspections';
+    showScreen('login');
+  }
+}
+
+function goToDestination(dest) {
+  if (dest === 'office') { showScreen('office'); officeReset(); }
+  else if (dest === 'inspect') { showScreen('inspect'); inspectReset(); }
+}
+
 $('btn-login').addEventListener('click', doLogin);
 $('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
@@ -697,7 +717,11 @@ async function doLogin() {
   if (!result.ok) { showLoginError(result.error); return; }
   _session = result;
   updateBadge(_session);
-  showHomeScreen(_session);
+
+  const dest = _loginDestination;
+  _loginDestination = null;
+  if (dest) goToDestination(dest);
+  else showHomeScreen();
 }
 
 function showLoginError(msg) {
@@ -714,15 +738,8 @@ $('home-field').addEventListener('click', () => {
   showFieldView('jobs');
 });
 
-$('home-office').addEventListener('click', () => {
-  showScreen('office');
-  officeReset();
-});
-
-$('home-inspect').addEventListener('click', () => {
-  showScreen('inspect');
-  inspectReset();
-});
+$('home-office').addEventListener('click', () => requireAuth('office'));
+$('home-inspect').addEventListener('click', () => requireAuth('inspect'));
 
 $('btn-signout').addEventListener('click', async () => {
   await window.api.logout();
@@ -730,8 +747,8 @@ $('btn-signout').addEventListener('click', async () => {
   updateBadge(null);
   $('home-title').textContent = 'Welcome to Lia';
   $('home-credits').style.display = 'none';
-  if (_supabaseConfigured) showScreen('login');
-  else showHomeScreen(null);
+  $('btn-signout').style.display = 'none';
+  showScreen('home');
 });
 
 // ════════════════════════════════════════════════════════════════
