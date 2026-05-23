@@ -354,6 +354,11 @@
         <div class="mode-desc">Import a CSV into BSI work order.</div>
         <div class="mode-credits" id="home-credits" style="display:none;"></div>
       </div>
+      <div class="mode-card" id="home-inspect">
+        <div class="mode-icon">🗃️</div>
+        <div class="mode-name">Log Inspections</div>
+        <div class="mode-desc">Upload historical inspection records to the database.</div>
+      </div>
     </div>
     <div class="home-footer">
       <a id="btn-signout">Sign out</a>
@@ -420,6 +425,59 @@
     <div class="field-table-footer">
       <button class="btn-g" id="btn-add-ladder" style="font-size:12px;padding:6px 14px;">+ Add Ladder</button>
       <span id="ladder-count" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: LOG INSPECTIONS ═══════════════ -->
+<div id="screen-inspect" class="screen">
+  <div class="field-topbar">
+    <button class="back-btn" id="btn-inspect-home">← Home</button>
+    <span class="field-title">Log Inspections</span>
+    <button class="btn-g" id="btn-inspect-template" style="font-size:12px;padding:6px 14px;">↓ CSV Template</button>
+  </div>
+
+  <!-- Step: pick file -->
+  <div id="inspect-step-pick" style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-ttl">Select Inspection CSV</div>
+      <p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;line-height:1.5;">
+        Import a spreadsheet of past inspections to add them to the database.<br>
+        Required columns: <span style="font-family:var(--mono);color:var(--text);">Serial #</span>
+        and <span style="font-family:var(--mono);color:var(--text);">Inspection Date</span> (YYYY-MM-DD).
+        Optional: Tech Name, Work Order #, Next Due Date, Notes.
+      </p>
+      <div class="row">
+        <button class="btn-p" id="btn-pick-inspect-csv">Choose CSV File…</button>
+        <span class="file-lbl" id="inspect-file-lbl">No file selected</span>
+      </div>
+    </div>
+
+    <!-- Preview (hidden until file chosen) -->
+    <div class="card" id="inspect-preview-card" style="display:none;">
+      <div class="card-ttl">Preview</div>
+      <div id="inspect-prev-stat" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+      <div id="inspect-skip-warn" style="display:none;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.2);border-radius:6px;padding:9px 13px;font-size:12px;color:#f5c842;margin-bottom:12px;"></div>
+      <div class="tbl-wrap" style="max-height:260px;">
+        <table>
+          <thead><tr><th>Serial #</th><th>Date</th><th>Tech</th><th>Work Order</th><th>Next Due</th><th>Notes</th></tr></thead>
+          <tbody id="inspect-prev-body"></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn-ok" id="btn-upload-inspections">Upload to Database</button>
+        <button class="btn-g" id="btn-inspect-change">← Change File</button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div class="card" id="inspect-result-card" style="display:none;">
+      <div class="card-ttl" id="inspect-result-ttl">Upload Complete</div>
+      <div id="inspect-result-body" style="font-size:13px;"></div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn-p" id="btn-inspect-another">Import Another File</button>
+        <button class="btn-g" id="btn-inspect-done">← Home</button>
+      </div>
     </div>
   </div>
 </div>
@@ -563,7 +621,7 @@ let _session = null;
 
 // ── Screen management ─────────────────────────────────────────────────────────
 function showScreen(name) {
-  ['login','home','field','office'].forEach(s => {
+  ['login','home','field','inspect','office'].forEach(s => {
     $(`screen-${s}`).classList.toggle('active', s === name);
   });
   document.body.classList.remove('summary-mode');
@@ -659,6 +717,11 @@ $('home-field').addEventListener('click', () => {
 $('home-office').addEventListener('click', () => {
   showScreen('office');
   officeReset();
+});
+
+$('home-inspect').addEventListener('click', () => {
+  showScreen('inspect');
+  inspectReset();
 });
 
 $('btn-signout').addEventListener('click', async () => {
@@ -1313,6 +1376,111 @@ window.api.onExited(code => {
     hideEl('run-card'); show('err-card');
     $('err-msg').textContent = `Process exited unexpectedly (code ${code}).`;
   }
+});
+
+// ════════════════════════════════════════════════════════════════
+// Log Inspections
+// ════════════════════════════════════════════════════════════════
+
+let _inspectRecords = [];
+
+function inspectReset() {
+  _inspectRecords = [];
+  $('inspect-file-lbl').textContent = 'No file selected';
+  $('inspect-file-lbl').classList.remove('has-file');
+  $('inspect-preview-card').style.display = 'none';
+  $('inspect-result-card').style.display = 'none';
+  $('inspect-prev-body').innerHTML = '';
+}
+
+$('btn-inspect-home').addEventListener('click', () => showScreen('home'));
+$('btn-inspect-done').addEventListener('click', () => showScreen('home'));
+$('btn-inspect-template').addEventListener('click', () => window.api.saveInspectionSample());
+$('btn-inspect-another').addEventListener('click', inspectReset);
+$('btn-inspect-change').addEventListener('click', () => {
+  $('inspect-preview-card').style.display = 'none';
+  pickInspectCsv();
+});
+
+async function pickInspectCsv() {
+  const p = await window.api.openCsv();
+  if (!p) return;
+  const result = await window.api.parseInspectionCsv(p);
+  if (result.error) {
+    alert('CSV error: ' + result.error);
+    return;
+  }
+  _inspectRecords = result.records || [];
+  $('inspect-file-lbl').textContent = p.split('/').pop();
+  $('inspect-file-lbl').classList.add('has-file');
+
+  const stat = $('inspect-prev-stat');
+  stat.innerHTML = `<strong>${_inspectRecords.length}</strong> record${_inspectRecords.length !== 1 ? 's' : ''} ready to upload`;
+
+  if (result.skipped && result.skipped.length > 0) {
+    $('inspect-skip-warn').style.display = 'block';
+    $('inspect-skip-warn').textContent =
+      `⚠  ${result.skipped.length} row${result.skipped.length > 1 ? 's' : ''} skipped: ` +
+      result.skipped.map(s => `row ${s.row} — ${s.reason}`).join('; ');
+  } else {
+    $('inspect-skip-warn').style.display = 'none';
+  }
+
+  const tbody = $('inspect-prev-body');
+  tbody.innerHTML = '';
+  _inspectRecords.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="sn">${esc(r.serial_num)}</td>` +
+      `<td class="meta">${esc(r.inspection_date)}</td>` +
+      `<td class="meta">${esc(r.tech_name || '—')}</td>` +
+      `<td class="meta">${esc(r.work_order_id || '—')}</td>` +
+      `<td class="meta">${esc(r.next_due_date || '—')}</td>` +
+      `<td style="font-size:11px;color:var(--muted);">${esc(r.notes || '')}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  $('inspect-preview-card').style.display = '';
+}
+
+$('btn-pick-inspect-csv').addEventListener('click', pickInspectCsv);
+
+$('btn-upload-inspections').addEventListener('click', async () => {
+  if (_inspectRecords.length === 0) return;
+  $('btn-upload-inspections').disabled = true;
+  $('btn-upload-inspections').textContent = 'Uploading…';
+
+  const result = await window.api.uploadInspections(_inspectRecords);
+
+  $('btn-upload-inspections').disabled = false;
+  $('btn-upload-inspections').textContent = 'Upload to Database';
+
+  $('inspect-preview-card').style.display = 'none';
+  $('inspect-result-card').style.display = '';
+
+  if (!result.ok) {
+    $('inspect-result-ttl').textContent = 'Upload Failed';
+    $('inspect-result-ttl').style.color = 'var(--err)';
+    $('inspect-result-body').innerHTML =
+      `<div style="color:#ff7b6e;font-family:var(--mono);font-size:12px;background:rgba(231,76,60,.07);
+       border:1px solid rgba(231,76,60,.22);border-radius:6px;padding:12px 14px;">` +
+      esc(result.error) + '</div>';
+    return;
+  }
+
+  $('inspect-result-ttl').textContent = 'Upload Complete';
+  $('inspect-result-ttl').style.color = '';
+  let html = `<div style="color:var(--ok);font-size:14px;font-weight:700;margin-bottom:10px;">
+    ✓ ${result.inserted} inspection record${result.inserted !== 1 ? 's' : ''} added to the database.
+  </div>`;
+  if (result.errors && result.errors.length > 0) {
+    html += `<div style="color:var(--warn);font-size:12px;margin-top:8px;">
+      ⚠ ${result.errors.length} batch error${result.errors.length > 1 ? 's' : ''}:<br>
+      ${result.errors.map(e => esc(e)).join('<br>')}
+    </div>`;
+  }
+  $('inspect-result-body').innerHTML = html;
+  _inspectRecords = [];
 });
 </script>
 </body>

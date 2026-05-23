@@ -419,3 +419,80 @@ ipcMain.handle('field:export-csv-dialog', async (_event, job) => {
   fs.writeFileSync(result.filePath, csv, 'utf-8');
   return result.filePath;
 });
+
+// ── Inspection Log: historical import ────────────────────────────────────────
+
+const INSPECTION_SAMPLE = [
+  'Serial #,Inspection Date,Tech Name,Work Order #,Next Due Date,Notes',
+  '1509436,2026-01-15,Nathan,WO-101,2027-01-15,Annual inspection',
+  '1669421,2026-01-15,Nathan,WO-101,2027-01-15,',
+  '1669497,2026-01-15,Nathan,WO-101,,Repaired — recheck in 6 months',
+].join('\r\n');
+
+ipcMain.handle('inspections:save-sample', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Inspection CSV Template',
+    defaultPath: 'inspection-template.csv',
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  fs.writeFileSync(result.filePath, INSPECTION_SAMPLE, 'utf-8');
+  return result.filePath;
+});
+
+ipcMain.handle('inspections:parse-csv', (_event, filePath) => {
+  const Papa = require('papaparse');
+  let content;
+  try { content = fs.readFileSync(filePath, 'utf-8'); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
+
+  const result = Papa.parse(content, { header: true, skipEmptyLines: true });
+  if (result.errors.length > 0) {
+    const fatal = result.errors.find(e => e.type === 'Delimiter' || e.type === 'Quotes');
+    if (fatal) return { error: `CSV parse error: ${fatal.message}` };
+  }
+
+  const records = [];
+  const skipped = [];
+  result.data.forEach((row, idx) => {
+    const rowNum = idx + 2;
+    const serial = (row['Serial #'] || '').trim();
+    if (!serial) { skipped.push({ row: rowNum, reason: 'Missing Serial #' }); return; }
+    const dateRaw = (row['Inspection Date'] || '').trim();
+    // Validate date if provided
+    if (dateRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) {
+      skipped.push({ row: rowNum, reason: `Invalid date format "${dateRaw}" — use YYYY-MM-DD` });
+      return;
+    }
+    records.push({
+      serial_num:      serial,
+      inspection_date: dateRaw || new Date().toISOString().split('T')[0],
+      tech_name:       (row['Tech Name'] || '').trim() || null,
+      work_order_id:   (row['Work Order #'] || '').trim() || null,
+      next_due_date:   (row['Next Due Date'] || '').trim() || null,
+      notes:           (row['Notes'] || '').trim() || null,
+    });
+  });
+  return { records, skipped };
+});
+
+ipcMain.handle('inspections:upload', async (_event, records) => {
+  try {
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, error: 'Not logged in — sign in first to upload inspections.' };
+
+    // Insert in batches of 50
+    const results = { inserted: 0, errors: [] };
+    for (let i = 0; i < records.length; i += 50) {
+      const batch = records.slice(i, i + 50);
+      const { error } = await sb.from('inspections').insert(batch);
+      if (error) {
+        results.errors.push(`Rows ${i + 1}–${i + batch.length}: ${error.message}`);
+      } else {
+        results.inserted += batch.length;
+      }
+    }
+    return { ok: true, ...results };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
