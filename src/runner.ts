@@ -12,9 +12,9 @@ import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffRes
 
 const AUTOMATION_OPTS: AutomationOptions = {
   dropdownTimeout: 15_000,
-  pauseBetweenLadders: 2_000,
+  pauseBetweenLadders: 4_000,
   actionDelay: 1_200,
-  serialApiDelay: 3_000,
+  serialApiDelay: 3_500,
 };
 
 export interface RunResult {
@@ -140,8 +140,34 @@ export async function run(
 
   const durationMs = Date.now() - startTime;
   const summary = buildSummary(ladderResults, durationMs);
-  printSummary(summary);
 
+  // Compare final work-order state vs CSV — flag any parts in BSI not present in CSV.
+  try {
+    const finalBoxes = await scrapeWorkOrderBoxes(workPage);
+    const csvPartsBySerial = new Map(records.map(r => [
+      r.serialNum,
+      new Set(r.parts.map(p => p.searchTerm.toUpperCase())),
+    ]));
+    const extra: import('./types.js').ExtraPartEntry[] = [];
+    for (const box of finalBoxes) {
+      const csvParts = csvPartsBySerial.get(box.serialNum);
+      for (const p of box.partNums) {
+        const pu = p.toUpperCase();
+        // "extra" = in BSI but not matched by any CSV search term
+        const inCsv = csvParts
+          ? [...csvParts].some(t => t === pu || pu.includes(t) || t.includes(pu))
+          : false;
+        if (!inCsv) extra.push({ boxSerial: box.serialNum, partNum: p });
+      }
+    }
+    if (extra.length > 0) {
+      console.log(`\n[EXTRA] ${extra.length} part(s) on work order not in CSV:`);
+      for (const e of extra) console.log(`  SN ${e.boxSerial}: ${e.partNum}`);
+      summary.extraOnWorkOrder = extra;
+    }
+  } catch { /* non-fatal */ }
+
+  printSummary(summary);
   const logPath = writeJsonLog(summary, logsDir);
   console.log(`\nDetailed log: ${logPath}\n`);
 

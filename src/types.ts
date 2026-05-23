@@ -33,6 +33,11 @@ export interface LadderResult {
   errorMsg?: string;
 }
 
+export interface ExtraPartEntry {
+  boxSerial: string;   // serial number of the box that has the extra part
+  partNum: string;     // part number found in BSI but not in CSV
+}
+
 export interface RunSummary {
   totalLadders: number;
   successLadders: number;
@@ -44,6 +49,7 @@ export interface RunSummary {
   failedParts: number;
   ladderResults: LadderResult[];
   durationMs: number;
+  extraOnWorkOrder?: ExtraPartEntry[]; // parts in BSI boxes not found in CSV
 }
 
 // ── Diff / idempotent re-run types ───────────────────────────────────────────
