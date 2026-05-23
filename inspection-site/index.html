@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ladder Inspection Records</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    /* ── Replace these two lines with your values before uploading to S3 ── */
+    /* SUPABASE_URL    = "https://your-project.supabase.co"                 */
+    /* SUPABASE_ANON_KEY = "sb_publishable_..."                              */
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #f8f9fc;
+      --white:  #ffffff;
+      --border: #e2e6ef;
+      --text:   #1a1d2e;
+      --muted:  #6b7080;
+      --accent: #2563eb;
+      --ok:     #16a34a;
+      --warn:   #d97706;
+      --err:    #dc2626;
+      --r:      8px;
+      --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono:   'SF Mono', 'Fira Code', monospace;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    header { background: var(--text); color: #fff; padding: 20px 32px; display: flex;
+             align-items: center; justify-content: space-between; }
+    .logo  { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+    .logo-sub { font-size: 12px; opacity: .55; margin-top: 2px; }
+
+    /* ── Search ─────────────────────────────────────────────────────────── */
+    .search-section { max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    .search-card { background: var(--white); border: 1px solid var(--border); border-radius: 12px;
+                   padding: 28px 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .search-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .search-sub   { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .search-row { display: flex; gap: 10px; }
+    input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid var(--border);
+                         border-radius: 6px; font-size: 14px; font-family: var(--font);
+                         color: var(--text); outline: none; transition: border-color .15s; }
+    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .btn-search { background: var(--accent); color: #fff; border: none; border-radius: 6px;
+                  padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+                  font-family: var(--font); transition: background .15s; white-space: nowrap; }
+    .btn-search:hover { background: #1d4ed8; }
+    .btn-search:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Status messages ─────────────────────────────────────────────────── */
+    #status { margin-top: 14px; font-size: 13px; color: var(--muted); display: none; }
+    #status.vis { display: block; }
+    #no-results { margin-top: 14px; padding: 14px 16px; background: #fef9ec;
+                  border: 1px solid #fde68a; border-radius: 6px; font-size: 13px;
+                  color: var(--warn); display: none; }
+    #no-results.vis { display: block; }
+
+    /* ── Results ─────────────────────────────────────────────────────────── */
+    #results { margin-top: 28px; display: none; }
+    #results.vis { display: block; }
+    .result-header { display: flex; align-items: flex-start; justify-content: space-between;
+                     margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .sn-label { font-size: 22px; font-weight: 700; font-family: var(--mono); }
+    .sn-label small { font-size: 12px; color: var(--muted); font-family: var(--font); font-weight: 400; margin-left: 8px; }
+    .btn-print { background: transparent; border: 1px solid var(--border); border-radius: 6px;
+                 padding: 7px 16px; font-size: 13px; cursor: pointer; font-family: var(--font);
+                 transition: background .15s; }
+    .btn-print:hover { background: var(--border); }
+
+    /* Latest certificate card */
+    .cert-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r);
+                 padding: 24px 24px 20px; margin-bottom: 20px;
+                 box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+    .cert-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+                  letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px;
+                  border-radius: 99px; margin-bottom: 14px; }
+    .badge-valid   { background: #dcfce7; color: var(--ok); }
+    .badge-due     { background: #fef9c3; color: var(--warn); }
+    .badge-overdue { background: #fee2e2; color: var(--err); }
+    .cert-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+    .cert-field { display: flex; flex-direction: column; gap: 3px; }
+    .cert-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+    .cert-value { font-size: 15px; font-weight: 600; }
+    .cert-value.ok { color: var(--ok); }
+    .cert-value.warn { color: var(--warn); }
+    .cert-value.err  { color: var(--err); }
+
+    /* History table */
+    .history-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r);
+                    overflow: hidden; }
+    .history-title { padding: 14px 20px 12px; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+                     text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { background: #f4f5f8; font-size: 11px; font-weight: 700; text-transform: uppercase;
+               letter-spacing: .06em; color: var(--muted); padding: 10px 16px; text-align: left;
+               border-bottom: 1px solid var(--border); }
+    tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f8f9fc; }
+    .mono { font-family: var(--mono); }
+
+    /* ── Print styles ────────────────────────────────────────────────────── */
+    @media print {
+      body { background: #fff; }
+      header { background: #1a1d2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .search-section { display: none; }
+      #results { margin: 0; padding: 20px; }
+      .result-header { page-break-after: avoid; }
+      .btn-print { display: none; }
+      .history-card { page-break-before: avoid; }
+      .cert-card { border: 2px solid #1a1d2e; }
+      .badge-valid, .badge-due, .badge-overdue { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    footer { text-align: center; padding: 32px 20px 24px; font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">Ladder Inspection Records</div>
+    <div class="logo-sub">Powered by Lia — Batavia</div>
+  </div>
+</header>
+
+<div class="search-section">
+  <div class="search-card">
+    <div class="search-title">Look Up a Ladder</div>
+    <div class="search-sub">Enter the ladder's serial number to view its inspection history and certificate.</div>
+    <div class="search-row">
+      <input type="text" id="serial-input" placeholder="e.g. 1509436" maxlength="20"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="btn-search" id="btn-search">Search</button>
+    </div>
+    <div id="status"></div>
+    <div id="no-results"></div>
+  </div>
+
+  <div id="results">
+    <div class="result-header">
+      <div>
+        <div class="sn-label" id="res-sn"></div>
+      </div>
+      <button class="btn-print" onclick="window.print()">Print / Save PDF</button>
+    </div>
+
+    <!-- Latest inspection certificate -->
+    <div class="cert-card" id="cert-card">
+      <div class="cert-badge badge-valid" id="cert-badge">Valid</div>
+      <div class="cert-grid" id="cert-grid"></div>
+    </div>
+
+    <!-- Full history table -->
+    <div class="history-card" id="history-card" style="display:none;">
+      <div class="history-title">Inspection History</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Tech</th>
+            <th>Work Order</th>
+            <th>Next Due</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Inspection records are maintained by Batavia. For questions contact your supervisor.
+</footer>
+
+<script>
+// ── Replace with your Supabase project values ────────────────────────────────
+const SUPABASE_URL     = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function daysUntil(d) {
+  if (!d) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const due = new Date(d + 'T00:00:00');
+  return Math.round((due - now) / 86400000);
+}
+
+function statusBadge(days) {
+  if (days === null) return { cls: 'badge-valid', text: 'No Expiry Set' };
+  if (days < 0)      return { cls: 'badge-overdue', text: `Overdue by ${Math.abs(days)} days` };
+  if (days <= 30)    return { cls: 'badge-due', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
+  return { cls: 'badge-valid', text: `Valid — ${days} days remaining` };
+}
+
+async function search() {
+  const serial = document.getElementById('serial-input').value.trim();
+  if (!serial) return;
+
+  document.getElementById('btn-search').disabled = true;
+  document.getElementById('status').textContent = 'Searching…';
+  document.getElementById('status').classList.add('vis');
+  document.getElementById('no-results').classList.remove('vis');
+  document.getElementById('results').classList.remove('vis');
+
+  const { data, error } = await db
+    .from('ladder_inspections_public')
+    .select('*')
+    .eq('serial_num', serial)
+    .order('inspection_date', { ascending: false });
+
+  document.getElementById('btn-search').disabled = false;
+  document.getElementById('status').classList.remove('vis');
+
+  if (error) {
+    document.getElementById('no-results').textContent = `Error: ${error.message}`;
+    document.getElementById('no-results').classList.add('vis');
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    document.getElementById('no-results').textContent = `No inspection records found for serial number "${serial}".`;
+    document.getElementById('no-results').classList.add('vis');
+    return;
+  }
+
+  renderResults(serial, data);
+}
+
+function renderResults(serial, records) {
+  const latest = records[0];
+  document.getElementById('res-sn').innerHTML = `SN ${serial} <small>${records.length} inspection${records.length !== 1 ? 's' : ''} on record</small>`;
+
+  // Certificate
+  const days = daysUntil(latest.next_due_date);
+  const { cls, text } = statusBadge(days);
+  const badge = document.getElementById('cert-badge');
+  badge.className = `cert-badge ${cls}`;
+  badge.textContent = text;
+
+  const nextDueCls = days === null ? '' : days < 0 ? ' err' : days <= 30 ? ' warn' : ' ok';
+  document.getElementById('cert-grid').innerHTML = `
+    <div class="cert-field">
+      <div class="cert-label">Serial Number</div>
+      <div class="cert-value" style="font-family:var(--mono);">${serial}</div>
+    </div>
+    <div class="cert-field">
+      <div class="cert-label">Last Inspected</div>
+      <div class="cert-value">${fmtDate(latest.inspection_date)}</div>
+    </div>
+    <div class="cert-field">
+      <div class="cert-label">Inspected By</div>
+      <div class="cert-value">${latest.tech_name || '—'}</div>
+    </div>
+    <div class="cert-field">
+      <div class="cert-label">Work Order</div>
+      <div class="cert-value">${latest.work_order_id || '—'}</div>
+    </div>
+    <div class="cert-field">
+      <div class="cert-label">Next Due</div>
+      <div class="cert-value${nextDueCls}">${fmtDate(latest.next_due_date)}</div>
+    </div>
+    ${latest.notes ? `<div class="cert-field" style="grid-column:1/-1;">
+      <div class="cert-label">Notes</div>
+      <div class="cert-value" style="font-size:13px;font-weight:400;">${latest.notes}</div>
+    </div>` : ''}
+  `;
+
+  // History
+  const tbody = document.getElementById('history-body');
+  tbody.innerHTML = '';
+  records.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${fmtDate(r.inspection_date)}</td>
+      <td>${r.tech_name || '—'}</td>
+      <td class="mono">${r.work_order_id || '—'}</td>
+      <td>${fmtDate(r.next_due_date)}</td>
+      <td style="color:#6b7080;font-size:12px;">${r.notes || ''}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('history-card').style.display = records.length > 1 ? '' : 'none';
+  document.getElementById('results').classList.add('vis');
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.getElementById('btn-search').addEventListener('click', search);
+document.getElementById('serial-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') search();
+});
+
+// Auto-search if serial param in URL: ?serial=1234567
+const urlSerial = new URLSearchParams(location.search).get('serial');
+if (urlSerial) {
+  document.getElementById('serial-input').value = urlSerial;
+  search();
+}
+</script>
+</body>
+</html>

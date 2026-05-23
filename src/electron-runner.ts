@@ -5,12 +5,6 @@
 import { run } from './runner.js';
 import type { DiffResult, DiffChoice } from './types.js';
 
-// ── Build expiry ──────────────────────────────────────────────────────────────
-if (new Date() > new Date('2026-11-22')) {
-  process.stdout.write(JSON.stringify({ type: 'error', message: 'Unable to initialize session. Please contact support.' }) + '\n');
-  process.exit(0);
-}
-
 // ── stdio interception ────────────────────────────────────────────────────────
 
 const _stdoutWrite = process.stdout.write.bind(process.stdout);
