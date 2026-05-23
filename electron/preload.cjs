@@ -39,4 +39,9 @@ contextBridge.exposeInMainWorld('api', {
   deleteJob:         (id)        => ipcRenderer.invoke('field:delete-job', id),
   exportForLia:      (job)       => ipcRenderer.invoke('field:export-for-lia', job),
   exportCsvDialog:   (job)       => ipcRenderer.invoke('field:export-csv-dialog', job),
+
+  // ── Inspection Log ───────────────────────────────────────────────────────
+  saveInspectionSample: ()           => ipcRenderer.invoke('inspections:save-sample'),
+  parseInspectionCsv:   (filePath)   => ipcRenderer.invoke('inspections:parse-csv', filePath),
+  uploadInspections:    (records)    => ipcRenderer.invoke('inspections:upload', records),
 });
