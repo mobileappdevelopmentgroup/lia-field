@@ -1,4 +1,8 @@
 {
-  "username": "your-username-here",
-  "password": "your-password-here"
+  "username": "your-bsi-username",
+  "password": "your-bsi-password",
+  "supabase": {
+    "url": "https://your-project.supabase.co",
+    "anonKey": "sb_publishable_..."
+  }
 }

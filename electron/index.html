@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lia — Ladder Import Assistant</title>
+  <title>Lia</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -24,342 +24,943 @@
       --font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --mono:    'SF Mono','Fira Code','Cascadia Code',monospace;
     }
-    html,body { height:100%; }
-    body { font-family:var(--font); background:var(--bg); color:var(--text);
-           display:flex; flex-direction:column; height:100vh; overflow:hidden; font-size:13px; }
+    html, body { height: 100%; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text);
+           display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-size: 13px; }
 
-    /* title bar */
-    .titlebar { -webkit-app-region:drag; height:30px; background:var(--surf);
-                flex-shrink:0; display:flex; align-items:center; padding:0 80px 0 16px;
-                font-size:12px; font-weight:600; color:var(--muted); letter-spacing:.04em;
-                border-bottom:1px solid var(--border); }
+    /* ── Titlebar ──────────────────────────────────────────────────────── */
+    .titlebar { -webkit-app-region: drag; height: 30px; background: var(--surf); flex-shrink: 0;
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 0 16px 0 80px; font-size: 12px; font-weight: 600;
+                color: var(--muted); letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+    .titlebar-right { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 12px; }
+    #user-badge { font-size: 11px; color: var(--muted); }
+    #credit-badge { font-size: 11px; font-weight: 700; background: rgba(79,110,247,.15);
+                    color: #8fa4ff; border: 1px solid rgba(79,110,247,.25);
+                    border-radius: 99px; padding: 2px 10px; }
 
-    /* layout */
-    .layout { display:flex; flex:1; overflow:hidden; }
+    /* ── Screens ────────────────────────────────────────────────────────── */
+    .screen { display: none; flex: 1; overflow: hidden; }
+    .screen.active { display: flex; flex-direction: column; }
 
-    /* sidebar */
-    .sidebar { width:160px; flex-shrink:0; background:var(--surf);
-               border-right:1px solid var(--border); padding:20px 0;
-               display:flex; flex-direction:column; gap:2px; }
-    .step { display:flex; align-items:center; gap:10px; padding:9px 16px;
-            cursor:default; border-left:2px solid transparent; }
-    .step.active   { border-left-color:var(--accent); background:rgba(79,110,247,.08); }
-    .step.done     { border-left-color:var(--ok); }
-    .step.upcoming { opacity:.32; }
-    .step-num { width:20px; height:20px; border-radius:50%; display:flex; align-items:center;
-                justify-content:center; font-size:10px; font-weight:700; flex-shrink:0;
-                background:var(--surf2); color:var(--muted); border:1.5px solid var(--border); }
-    .step.active .step-num { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .step.done   .step-num { background:var(--ok);     color:#fff; border-color:var(--ok); }
-    .step-lbl { font-size:11.5px; font-weight:500; }
-    .step.upcoming .step-lbl { color:var(--muted); }
+    /* ── Login ──────────────────────────────────────────────────────────── */
+    #screen-login { align-items: center; justify-content: center; background: var(--bg); }
+    .login-box { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
+                 padding: 40px 36px; width: 340px; display: flex; flex-direction: column; gap: 16px; }
+    .login-logo { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -.02em; text-align: center; }
+    .login-sub  { font-size: 12px; color: var(--muted); text-align: center; margin-top: -10px; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; }
+    .form-field label { font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+    input[type="email"], input[type="password"], input[type="text"], input[type="number"] {
+      background: var(--surf2); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); font-family: var(--font); font-size: 13px; padding: 8px 12px;
+      width: 100%; outline: none; transition: border-color .15s; }
+    input[type="email"]:focus, input[type="password"]:focus,
+    input[type="text"]:focus, input[type="number"]:focus {
+      border-color: var(--accent); }
+    input::placeholder { color: var(--muted); }
+    #login-error { font-size: 12px; color: #ff7b6e; background: rgba(231,76,60,.07);
+                   border: 1px solid rgba(231,76,60,.22); border-radius: 6px;
+                   padding: 8px 12px; display: none; }
+    #login-error.vis { display: block; }
 
-    /* content */
-    .content { flex:1; overflow-y:auto; padding:24px; display:flex;
-               flex-direction:column; gap:16px; }
+    /* ── Home ───────────────────────────────────────────────────────────── */
+    #screen-home { align-items: center; justify-content: center; gap: 0; }
+    .home-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
+    .home-title { font-size: 22px; font-weight: 700; color: var(--text); }
+    .home-sub   { font-size: 13px; color: var(--muted); margin-top: -24px; }
+    .mode-cards { display: flex; gap: 20px; }
+    .mode-card  { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
+                  padding: 32px 28px; width: 200px; display: flex; flex-direction: column;
+                  align-items: center; gap: 12px; cursor: pointer; transition: border-color .2s, background .2s;
+                  text-align: center; -webkit-app-region: no-drag; }
+    .mode-card:hover { border-color: var(--accent); background: rgba(79,110,247,.06); }
+    .mode-icon  { font-size: 36px; }
+    .mode-name  { font-size: 15px; font-weight: 700; }
+    .mode-desc  { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+    .mode-credits { font-size: 11px; margin-top: 4px; color: #8fa4ff;
+                    background: rgba(79,110,247,.12); border-radius: 99px; padding: 2px 10px; }
+    .home-footer { font-size: 11px; color: var(--muted); }
+    .home-footer a { color: var(--muted); cursor: pointer; text-decoration: underline; }
+    .home-footer a:hover { color: var(--text); }
 
-    /* cards */
-    .card { background:var(--surf); border:1px solid var(--border); border-radius:var(--r); padding:18px 20px; }
-    .card-ttl { font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
-                color:var(--muted); margin-bottom:14px; }
+    /* ── Field Mode ─────────────────────────────────────────────────────── */
+    #screen-field { display: none; }
+    #screen-field.active { display: flex; flex-direction: column; }
+    .field-topbar { background: var(--surf); border-bottom: 1px solid var(--border);
+                    padding: 0 20px; height: 48px; display: flex; align-items: center;
+                    gap: 12px; flex-shrink: 0; }
+    .field-title { font-size: 14px; font-weight: 700; flex: 1; }
+    .field-sub { font-size: 11px; color: var(--muted); }
 
-    /* buttons */
-    button { font-family:var(--font); font-size:13px; font-weight:600; padding:8px 18px;
-             border-radius:6px; border:none; cursor:pointer;
-             transition:background .15s,opacity .15s,transform .08s; white-space:nowrap; flex-shrink:0; }
-    button:active:not(:disabled) { transform:scale(.97); }
-    button:disabled { opacity:.35; cursor:not-allowed; }
-    .btn-p { background:var(--accent); color:#fff; }
-    .btn-p:hover:not(:disabled) { background:var(--acc-h); }
-    .btn-ok { background:var(--ok); color:#fff; font-size:14px; padding:10px 24px; }
-    .btn-ok:hover:not(:disabled) { background:#27ae60; }
-    .btn-warn { background:var(--warn); color:#fff; }
-    .btn-warn:hover:not(:disabled) { background:#d0900a; }
-    .btn-g { background:transparent; color:var(--muted); border:1px solid var(--border); }
-    .btn-g:hover:not(:disabled) { color:var(--text); border-color:#4a4a6a; }
-    .btn-err { background:var(--err); color:#fff; }
-    .btn-err:hover:not(:disabled) { background:#c0392b; }
-    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    /* Job list */
+    #field-jobs { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .job-card { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+                padding: 14px 16px; display: flex; align-items: center; gap: 14px; cursor: pointer;
+                transition: border-color .15s; }
+    .job-card:hover { border-color: var(--accent); }
+    .job-card-info { flex: 1; }
+    .job-card-name { font-size: 13px; font-weight: 700; }
+    .job-card-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+    .job-empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 13px; }
 
-    /* file picker */
-    .file-lbl { flex:1; font-family:var(--mono); font-size:11.5px; color:var(--muted);
-                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .file-lbl.has-file { color:var(--text); }
-    .tmpl-link { font-size:11px; color:var(--muted); cursor:pointer; text-decoration:underline;
-                 background:none; border:none; padding:0; margin-top:10px; display:block; }
-    .tmpl-link:hover { color:var(--text); }
+    /* Job detail */
+    #field-detail { flex: 1; overflow: hidden; display: none; flex-direction: column; }
+    #field-detail.vis { display: flex; }
+    .field-meta-row { background: var(--surf2); border-bottom: 1px solid var(--border);
+                      padding: 10px 20px; display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
+    .field-meta-row input { background: var(--surf); border: 1px solid var(--border);
+                             padding: 5px 10px; border-radius: 5px; font-size: 12px;
+                             color: var(--text); font-family: var(--font); width: auto; }
+    .field-meta-row input:focus { border-color: var(--accent); }
+    #field-job-name { width: 220px; font-weight: 600; }
+    #field-job-wo   { width: 140px; }
 
-    /* CSV preview table */
-    #preview-card { display:none; }
-    #preview-card.vis { display:block; }
-    .prev-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-    .prev-stat { font-size:12px; color:var(--muted); }
-    .prev-stat strong { color:var(--text); }
-    .skip-warn { background:rgba(240,165,0,.08); border:1px solid rgba(240,165,0,.2);
-                 border-radius:6px; padding:9px 13px; font-size:12px; color:#f5c842; margin-bottom:12px; }
-    .tbl-wrap { border:1px solid var(--border); border-radius:6px; overflow:auto; margin-bottom:14px; }
-    table { width:100%; border-collapse:collapse; }
-    thead th { background:var(--surf2); color:var(--muted); font-size:10px; font-weight:700;
-               text-transform:uppercase; letter-spacing:.07em; padding:8px 12px; text-align:left;
-               border-bottom:1px solid var(--border); white-space:nowrap; }
-    tbody td { padding:9px 12px; border-bottom:1px solid rgba(43,43,75,.6); vertical-align:top; }
-    tbody tr:last-child td { border-bottom:none; }
-    tbody tr:hover td { background:rgba(255,255,255,.02); }
-    .sn { font-family:var(--mono); font-size:12px; font-weight:600; white-space:nowrap; }
-    .meta { font-size:12px; color:var(--muted); white-space:nowrap; }
-    .parts-cell { display:flex; flex-wrap:wrap; gap:4px; }
-    .badge { display:inline-flex; align-items:center; gap:3px; border-radius:4px;
-             padding:2px 7px; font-size:11px; font-family:var(--mono); white-space:nowrap; }
-    .badge-part { background:rgba(79,110,247,.12); color:#8fa4ff; border:1px solid rgba(79,110,247,.22); }
-    .badge-ok   { background:rgba(46,204,113,.12); color:#5de89a; border:1px solid rgba(46,204,113,.22); }
-    .badge-miss { background:rgba(240,165,0,.12);  color:#f5c842;  border:1px solid rgba(240,165,0,.22); }
-    .badge-skip { background:rgba(94,96,128,.12);  color:var(--muted); border:1px solid var(--border); }
-    .badge-qty { background:rgba(79,110,247,.25); border-radius:3px; padding:0 4px; font-size:10px; font-weight:700; }
-    .no-parts { color:var(--muted); font-size:11px; font-style:italic; }
+    /* Quick parts bar */
+    .quickparts-bar { background: var(--surf); border-bottom: 1px solid var(--border);
+                      padding: 8px 16px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+    .qp-label { font-size: 10.5px; color: var(--muted); font-weight: 600; white-space: nowrap; letter-spacing: .06em; text-transform: uppercase; }
+    .qp-btn { font-size: 11.5px; font-family: var(--mono); background: rgba(79,110,247,.1);
+              color: #8fa4ff; border: 1px solid rgba(79,110,247,.22); border-radius: 4px;
+              padding: 3px 10px; cursor: pointer; transition: background .12s; white-space: nowrap; }
+    .qp-btn:hover { background: rgba(79,110,247,.22); }
+    .qp-btn.inactive { opacity: .3; cursor: default; }
+    .qp-edit { font-size: 11px; color: var(--muted); cursor: pointer; margin-left: 4px;
+               background: none; border: none; padding: 2px 6px; text-decoration: underline; }
+    .qp-edit:hover { color: var(--text); }
 
-    /* status pill */
-    .pill { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600;
-            padding:4px 12px; border-radius:99px; margin-bottom:12px; }
-    .pill-wait { background:rgba(79,110,247,.12); color:#8fa4ff; border:1px solid rgba(79,110,247,.25); }
-    .pill-ok   { background:rgba(46,204,113,.12); color:#5de89a; border:1px solid rgba(46,204,113,.25); }
-    .pill-run  { background:rgba(240,165,0,.12);  color:#f5c842;  border:1px solid rgba(240,165,0,.25); }
-    .pill-done { background:rgba(46,204,113,.12); color:#5de89a; border:1px solid rgba(46,204,113,.25); }
-    .pill-err  { background:rgba(231,76,60,.12);  color:#ff7b6e;  border:1px solid rgba(231,76,60,.25); }
-    .dots::after { content:''; animation:dots 1.5s steps(4,end) infinite; }
-    @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''}}
+    /* Ladder table */
+    .ladder-table-wrap { flex: 1; overflow: auto; padding: 12px 16px 0; }
+    .ladder-table { width: 100%; border-collapse: collapse; }
+    .ladder-table th { background: var(--surf2); color: var(--muted); font-size: 10px; font-weight: 700;
+                       text-transform: uppercase; letter-spacing: .07em; padding: 6px 8px;
+                       border-bottom: 1px solid var(--border); white-space: nowrap; text-align: left; position: sticky; top: 0; }
+    .ladder-table td { padding: 4px 5px; border-bottom: 1px solid rgba(43,43,75,.4); vertical-align: middle; }
+    .ladder-table tbody tr:hover td { background: rgba(255,255,255,.015); }
+    .ladder-table input, .ladder-table select {
+      background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px;
+      font-size: 12px; color: var(--text); font-family: var(--font); width: 100%; outline: none; }
+    .ladder-table input:focus, .ladder-table select:focus {
+      background: var(--surf2); border-color: var(--accent); }
+    .ladder-table input.parts-input:focus { border-color: var(--ok); }
+    .ladder-table select option { background: var(--surf2); }
+    .td-num  { width: 32px; text-align: center; color: var(--muted); font-size: 11px; }
+    .td-sn   { width: 100px; }
+    .td-loc  { width: 60px; }
+    .td-br   { width: 80px; }
+    .td-ty   { width: 80px; }
+    .td-len  { width: 55px; }
+    .td-desc { width: 140px; }
+    .td-parts { /* flex */ }
+    .td-del  { width: 30px; text-align: center; }
+    .del-btn { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer;
+               padding: 2px 6px; border-radius: 4px; line-height: 1; }
+    .del-btn:hover { color: var(--err); background: rgba(231,76,60,.1); }
+    .field-table-footer { padding: 10px 16px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .save-status { font-size: 11px; color: var(--muted); transition: opacity .5s; }
+    .save-status.saved { color: var(--ok); }
 
-    /* instructions */
-    .instr { list-style:none; display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
-    .instr li { display:flex; align-items:flex-start; gap:10px; line-height:1.4; }
-    .instr-n { width:20px; height:20px; border-radius:50%; background:rgba(79,110,247,.15);
-               color:#8fa4ff; font-size:10px; font-weight:700; display:flex;
-               align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
-
-    /* diff section */
-    #diff-card { display:none; }
-    #diff-card.vis { display:block; }
-    .diff-section { margin-bottom:14px; }
-    .diff-section-ttl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-                        margin-bottom:8px; display:flex; align-items:center; gap:8px; }
-    .diff-section-ttl .cnt { font-size:13px; font-weight:700; }
-    .diff-miss  .diff-section-ttl { color:var(--ok); }
-    .diff-gap   .diff-section-ttl { color:var(--warn); }
-    .diff-done  .diff-section-ttl { color:var(--muted); }
-    .diff-row { display:flex; align-items:flex-start; gap:10px; padding:7px 0;
-                border-bottom:1px solid rgba(43,43,75,.5); }
-    .diff-row:last-child { border-bottom:none; }
-    .diff-sn { font-family:var(--mono); font-size:12px; font-weight:600; min-width:90px; }
-    .diff-parts { display:flex; flex-wrap:wrap; gap:4px; flex:1; }
-    .diff-note { font-size:11px; color:var(--muted); font-style:italic; }
-    .choice-strip { display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; padding-top:14px;
-                    border-top:1px solid var(--border); }
-
-    /* log */
-    #log-section { display:none; }
-    #log-section.vis { display:block; }
-    #log { background:var(--log-bg); border:1px solid var(--border); border-radius:6px;
-           padding:12px 14px; font-family:var(--mono); font-size:11px; line-height:1.65;
-           color:var(--log-txt); height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
-    #log .err { color:#ff7b6e; }
-
-    /* summary */
-    #sum-card { display:none; }
-    #sum-card.vis { display:block; }
-    .stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:10px; margin-bottom:14px; }
-    .stat-box { background:var(--surf2); border:1px solid var(--border); border-radius:6px; padding:14px 10px; text-align:center; }
-    .stat-n { font-size:28px; font-weight:700; line-height:1; margin-bottom:4px; }
-    .stat-l { font-size:10.5px; color:var(--muted); }
-    .stat-good .stat-n  { color:var(--ok); }
-    .stat-bad  .stat-n  { color:var(--err); }
-    .stat-warn .stat-n  { color:var(--warn); }
-    .stat-plain .stat-n { color:var(--text); }
-    .result-note { border-radius:6px; padding:10px 14px; font-size:13px; margin-bottom:10px; }
-    .note-good { background:rgba(46,204,113,.08); color:#5de89a; border:1px solid rgba(46,204,113,.2); }
-    .note-bad  { background:rgba(240,165,0,.08);  color:#f5c842;  border:1px solid rgba(240,165,0,.2); }
-    .log-path { font-size:11px; font-family:var(--mono); color:var(--muted); margin-top:6px; }
-    .part-tag { display:inline-block; padding:2px 7px; border-radius:4px; font-size:11px; font-family:var(--mono); margin:2px; }
-    .tag-error { background:#3b1a1a; color:#f87171; }
-    .tag-not_found { background:#2a2310; color:#fbbf24; }
-    .tag-skipped { background:#1e2330; color:#94a3b8; }
-    #sum-detail tr:nth-child(odd) td, #sum-extra tr:nth-child(odd) td { background:rgba(255,255,255,.03); }
-
-    /* full-page summary mode — hides sidebar and expands content */
-    body.summary-mode .sidebar { display:none; }
-    body.summary-mode .content { padding:32px 10%; }
-    body.summary-mode #sum-card { border:none; background:transparent; padding:0; }
-
-    /* collapsible log at bottom of summary */
-    .log-toggle { display:flex; align-items:center; gap:8px; cursor:pointer;
-                  font-size:11px; color:var(--muted); padding:8px 0; user-select:none; }
-    .log-toggle:hover { color:var(--text); }
-    .log-toggle .chevron { transition:transform .2s; font-style:normal; }
-    .log-toggle.open .chevron { transform:rotate(180deg); }
-    #log-collapsed { display:none; margin-top:6px; }
-    #log-collapsed.vis { display:block; }
-
-    /* error */
-    #err-card { display:none; }
-    #err-card.vis { display:block; }
-    #err-msg { font-size:12.5px; font-family:var(--mono); color:#ff7b6e;
-               background:rgba(231,76,60,.07); border:1px solid rgba(231,76,60,.22);
-               border-radius:6px; padding:12px 14px; margin-bottom:12px; white-space:pre-wrap; }
+    /* ── Office Mode (existing layout) ──────────────────────────────────── */
+    #screen-office { display: none; }
+    #screen-office.active { display: flex; flex-direction: column; }
+    .layout { display: flex; flex: 1; overflow: hidden; }
+    .sidebar { width: 160px; flex-shrink: 0; background: var(--surf);
+               border-right: 1px solid var(--border); padding: 20px 0;
+               display: flex; flex-direction: column; gap: 2px; }
+    .step { display: flex; align-items: center; gap: 10px; padding: 9px 16px;
+            cursor: default; border-left: 2px solid transparent; }
+    .step.active   { border-left-color: var(--accent); background: rgba(79,110,247,.08); }
+    .step.done     { border-left-color: var(--ok); }
+    .step.upcoming { opacity: .32; }
+    .step-num { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center;
+                justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0;
+                background: var(--surf2); color: var(--muted); border: 1.5px solid var(--border); }
+    .step.active .step-num { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .step.done   .step-num { background: var(--ok);     color: #fff; border-color: var(--ok); }
+    .step-lbl { font-size: 11.5px; font-weight: 500; }
+    .step.upcoming .step-lbl { color: var(--muted); }
+    .content { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r); padding: 18px 20px; }
+    .card-ttl { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+                color: var(--muted); margin-bottom: 14px; }
+    button { font-family: var(--font); font-size: 13px; font-weight: 600; padding: 8px 18px;
+             border-radius: 6px; border: none; cursor: pointer;
+             transition: background .15s, opacity .15s, transform .08s; white-space: nowrap; flex-shrink: 0; }
+    button:active:not(:disabled) { transform: scale(.97); }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-p   { background: var(--accent); color: #fff; }
+    .btn-p:hover:not(:disabled) { background: var(--acc-h); }
+    .btn-ok  { background: var(--ok); color: #fff; font-size: 14px; padding: 10px 24px; }
+    .btn-ok:hover:not(:disabled) { background: #27ae60; }
+    .btn-warn { background: var(--warn); color: #fff; }
+    .btn-warn:hover:not(:disabled) { background: #d0900a; }
+    .btn-g   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-g:hover:not(:disabled) { color: var(--text); border-color: #4a4a6a; }
+    .btn-err { background: var(--err); color: #fff; }
+    .btn-err:hover:not(:disabled) { background: #c0392b; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .file-lbl { flex: 1; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-lbl.has-file { color: var(--text); }
+    .tmpl-link { font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline;
+                 background: none; border: none; padding: 0; margin-top: 10px; display: block; }
+    .tmpl-link:hover { color: var(--text); }
+    #preview-card { display: none; }
+    #preview-card.vis { display: block; }
+    .prev-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .prev-stat { font-size: 12px; color: var(--muted); }
+    .prev-stat strong { color: var(--text); }
+    .tbl-wrap { border: 1px solid var(--border); border-radius: 6px; overflow: auto; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { background: var(--surf2); color: var(--muted); font-size: 10px; font-weight: 700;
+               text-transform: uppercase; letter-spacing: .07em; padding: 8px 12px; text-align: left;
+               border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody td { padding: 9px 12px; border-bottom: 1px solid rgba(43,43,75,.6); vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,.02); }
+    .sn { font-family: var(--mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .parts-cell { display: flex; flex-wrap: wrap; gap: 4px; }
+    .badge { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px;
+             padding: 2px 7px; font-size: 11px; font-family: var(--mono); white-space: nowrap; }
+    .badge-part { background: rgba(79,110,247,.12); color: #8fa4ff; border: 1px solid rgba(79,110,247,.22); }
+    .badge-ok   { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.22); }
+    .badge-miss { background: rgba(240,165,0,.12);  color: #f5c842;  border: 1px solid rgba(240,165,0,.22); }
+    .badge-qty  { background: rgba(79,110,247,.25); border-radius: 3px; padding: 0 4px; font-size: 10px; font-weight: 700; }
+    .no-parts   { color: var(--muted); font-size: 11px; font-style: italic; }
+    .wo-row     { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .wo-lbl     { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 94px; }
+    #work-order-input { flex: 1; max-width: 240px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
+            padding: 4px 12px; border-radius: 99px; margin-bottom: 12px; }
+    .pill-wait { background: rgba(79,110,247,.12); color: #8fa4ff; border: 1px solid rgba(79,110,247,.25); }
+    .pill-ok   { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.25); }
+    .pill-run  { background: rgba(240,165,0,.12);  color: #f5c842;  border: 1px solid rgba(240,165,0,.25); }
+    .pill-done { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.25); }
+    .pill-err  { background: rgba(231,76,60,.12);  color: #ff7b6e;  border: 1px solid rgba(231,76,60,.25); }
+    .dots::after { content: ''; animation: dots 1.5s steps(4,end) infinite; }
+    @keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} 100%{content:''} }
+    .instr { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .instr li { display: flex; align-items: flex-start; gap: 10px; line-height: 1.4; }
+    .instr-n { width: 20px; height: 20px; border-radius: 50%; background: rgba(79,110,247,.15);
+               color: #8fa4ff; font-size: 10px; font-weight: 700; display: flex;
+               align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+    #diff-card { display: none; }
+    #diff-card.vis { display: block; }
+    .diff-section { margin-bottom: 14px; }
+    .diff-section-ttl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+                        margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .diff-section-ttl .cnt { font-size: 13px; font-weight: 700; }
+    .diff-miss .diff-section-ttl { color: var(--ok); }
+    .diff-gap  .diff-section-ttl { color: var(--warn); }
+    .diff-done .diff-section-ttl { color: var(--muted); }
+    .diff-row  { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0;
+                 border-bottom: 1px solid rgba(43,43,75,.5); }
+    .diff-row:last-child { border-bottom: none; }
+    .diff-sn   { font-family: var(--mono); font-size: 12px; font-weight: 600; min-width: 90px; }
+    .diff-parts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+    .diff-note  { font-size: 11px; color: var(--muted); font-style: italic; }
+    .choice-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; padding-top: 14px;
+                    border-top: 1px solid var(--border); }
+    #log-section { display: none; }
+    #log-section.vis { display: block; }
+    #log { background: var(--log-bg); border: 1px solid var(--border); border-radius: 6px;
+           padding: 12px 14px; font-family: var(--mono); font-size: 11px; line-height: 1.65;
+           color: var(--log-txt); height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    #log .err { color: #ff7b6e; }
+    #sum-card { display: none; }
+    #sum-card.vis { display: block; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(115px,1fr)); gap: 10px; margin-bottom: 14px; }
+    .stat-box  { background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 14px 10px; text-align: center; }
+    .stat-n    { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+    .stat-l    { font-size: 10.5px; color: var(--muted); }
+    .stat-good .stat-n  { color: var(--ok); }
+    .stat-bad  .stat-n  { color: var(--err); }
+    .stat-warn .stat-n  { color: var(--warn); }
+    .stat-plain .stat-n { color: var(--text); }
+    .result-note { border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 10px; }
+    .note-good { background: rgba(46,204,113,.08); color: #5de89a; border: 1px solid rgba(46,204,113,.2); }
+    .note-bad  { background: rgba(240,165,0,.08);  color: #f5c842;  border: 1px solid rgba(240,165,0,.2); }
+    .log-path  { font-size: 11px; font-family: var(--mono); color: var(--muted); margin-top: 6px; }
+    .part-tag  { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-family: var(--mono); margin: 2px; }
+    .tag-error     { background: #3b1a1a; color: #f87171; }
+    .tag-not_found { background: #2a2310; color: #fbbf24; }
+    .tag-skipped   { background: #1e2330; color: #94a3b8; }
+    #sum-detail tr:nth-child(odd) td, #sum-extra tr:nth-child(odd) td { background: rgba(255,255,255,.03); }
+    body.summary-mode .sidebar  { display: none; }
+    body.summary-mode .content  { padding: 32px 10%; }
+    body.summary-mode #sum-card { border: none; background: transparent; padding: 0; }
+    .log-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer;
+                  font-size: 11px; color: var(--muted); padding: 8px 0; user-select: none; }
+    .log-toggle:hover { color: var(--text); }
+    .log-toggle .chevron { transition: transform .2s; font-style: normal; }
+    .log-toggle.open .chevron { transform: rotate(180deg); }
+    #log-collapsed { display: none; margin-top: 6px; }
+    #log-collapsed.vis { display: block; }
+    #err-card { display: none; }
+    #err-card.vis { display: block; }
+    #err-msg { font-size: 12.5px; font-family: var(--mono); color: #ff7b6e;
+               background: rgba(231,76,60,.07); border: 1px solid rgba(231,76,60,.22);
+               border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; white-space: pre-wrap; }
+    .back-btn { background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
+                padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; gap: 4px; }
+    .back-btn:hover { color: var(--text); background: rgba(255,255,255,.05); }
   </style>
 </head>
 <body>
 
-<div class="titlebar">Lia — Ladder Import Assistant</div>
+<div class="titlebar">
+  <span>Lia</span>
+  <div class="titlebar-right">
+    <span id="user-badge" style="display:none;"></span>
+    <span id="credit-badge" style="display:none;"></span>
+  </div>
+</div>
 
-<div class="layout">
-
-  <!-- sidebar -->
-  <nav class="sidebar">
-    <div class="step active" data-s="1"><div class="step-num">1</div><div class="step-lbl">Load CSV</div></div>
-    <div class="step upcoming" data-s="2"><div class="step-num">2</div><div class="step-lbl">Review Data</div></div>
-    <div class="step upcoming" data-s="3"><div class="step-num">3</div><div class="step-lbl">Open Browser</div></div>
-    <div class="step upcoming" data-s="4"><div class="step-num">4</div><div class="step-lbl">Analyze</div></div>
-    <div class="step upcoming" data-s="5"><div class="step-num">5</div><div class="step-lbl">Import</div></div>
-    <div class="step upcoming" data-s="6"><div class="step-num">6</div><div class="step-lbl">Summary</div></div>
-  </nav>
-
-  <main class="content">
-
-    <!-- Step 1: Load CSV -->
-    <div class="card" id="load-card">
-      <div class="card-ttl">Select CSV File</div>
-      <div class="row">
-        <button class="btn-p" id="btn-choose">Choose File…</button>
-        <span class="file-lbl" id="file-lbl">No file selected</span>
-      </div>
-      <button class="tmpl-link" id="btn-template">↓ Download sample CSV template</button>
+<!-- ═══════════════ SCREEN: LOGIN ═══════════════ -->
+<div id="screen-login" class="screen">
+  <div class="login-box">
+    <div class="login-logo">Lia</div>
+    <div class="login-sub">Ladder Import Assistant</div>
+    <div class="form-field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="you@company.com" autocomplete="username">
     </div>
-
-    <!-- Step 2: CSV Preview -->
-    <div class="card" id="preview-card">
-      <div class="card-ttl">CSV Preview — Review Before Starting</div>
-      <div class="prev-hdr">
-        <span class="prev-stat" id="prev-stat"></span>
-        <button class="btn-g" style="font-size:12px;padding:5px 12px;" id="btn-change">← Change File</button>
-      </div>
-      <div id="skip-warn" class="skip-warning" style="display:none;"></div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Serial #</th><th>Brand / Type</th><th>Length</th><th>Parts to Add</th></tr></thead>
-          <tbody id="prev-body"></tbody>
-        </table>
-      </div>
-      <div class="row">
-        <button class="btn-ok" id="btn-open-browser">Open Browser →</button>
-      </div>
+    <div class="form-field">
+      <label>Password</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password">
     </div>
+    <div id="login-error"></div>
+    <button class="btn-ok" id="btn-login" style="width:100%;">Sign In</button>
+  </div>
+</div>
 
-    <!-- Step 3+4: Browser / Analyze -->
-    <div class="card" id="run-card" style="display:none;">
-      <div class="card-ttl">Browser &amp; Analysis</div>
-      <div><span class="pill pill-wait dots" id="status-pill">Waiting for popup</span></div>
-      <ul class="instr" id="instr">
-        <li><div class="instr-n">1</div><span>Log in to <strong>bsiwebapp.com</strong> in the browser that opened.</span></li>
-        <li><div class="instr-n">2</div><span>Go to <strong>Work Orders → Work Orders List</strong>.</span></li>
-        <li><div class="instr-n">3</div><span>Click <strong>VIEW</strong> on your work order to open the popup.</span></li>
-        <li><div class="instr-n">4</div><span>Navigate inside the popup to the correct work order, then click <strong>Analyze Work Order</strong>.</span></li>
-      </ul>
-      <div class="row">
-        <button class="btn-p" id="btn-analyze" style="display:none;">Analyze Work Order</button>
-        <button class="btn-err" id="btn-stop">Stop</button>
+<!-- ═══════════════ SCREEN: HOME ═══════════════ -->
+<div id="screen-home" class="screen">
+  <div class="home-inner">
+    <div>
+      <div class="home-title" id="home-title">Welcome to Lia</div>
+      <div class="home-sub" style="margin-top:6px;">What are you doing today?</div>
+    </div>
+    <div class="mode-cards">
+      <div class="mode-card" id="home-field">
+        <div class="mode-icon">📋</div>
+        <div class="mode-name">Field Mode</div>
+        <div class="mode-desc">Collect ladder info offline. No internet required.</div>
+      </div>
+      <div class="mode-card" id="home-office">
+        <div class="mode-icon">🖥️</div>
+        <div class="mode-name">Office Mode</div>
+        <div class="mode-desc">Import a CSV into BSI work order.</div>
+        <div class="mode-credits" id="home-credits" style="display:none;"></div>
       </div>
     </div>
+    <div class="home-footer">
+      <a id="btn-signout">Sign out</a>
+    </div>
+  </div>
+</div>
 
-    <!-- Step 4: Diff results -->
-    <div class="card" id="diff-card">
-      <div class="card-ttl">Work Order Analysis</div>
+<!-- ═══════════════ SCREEN: FIELD MODE ═══════════════ -->
+<div id="screen-field" class="screen">
 
-      <!-- Missing boxes -->
-      <div class="diff-section diff-miss" id="diff-miss-section">
-        <div class="diff-section-ttl">
-          Will Be Added <span class="cnt" id="diff-miss-cnt"></span>
+  <!-- Job List -->
+  <div id="field-jobs-view" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+    <div class="field-topbar">
+      <button class="back-btn" id="btn-field-home">← Home</button>
+      <span class="field-title">Field Mode — Jobs</span>
+      <button class="btn-p" id="btn-new-job" style="font-size:12px;padding:6px 14px;">+ New Job</button>
+    </div>
+    <div id="field-jobs" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px;">
+      <div class="job-empty" id="field-jobs-empty" style="display:none;">
+        No jobs yet — click <strong>+ New Job</strong> to start collecting ladder data.
+      </div>
+    </div>
+  </div>
+
+  <!-- Job Detail -->
+  <div id="field-detail" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+    <div class="field-topbar">
+      <button class="back-btn" id="btn-back-jobs">← Jobs</button>
+      <div class="field-meta-row" style="flex:1;background:transparent;border:none;padding:0;margin:0;">
+        <input type="text" id="field-job-name" placeholder="Job description (e.g. Berwick Breezeline)">
+        <span style="font-size:11px;color:var(--muted);">WO#</span>
+        <input type="text" id="field-job-wo" placeholder="Work order #">
+      </div>
+      <span class="save-status" id="save-status">Saved</span>
+      <button class="btn-p" id="btn-export-lia" style="font-size:12px;padding:6px 14px;">→ Send to Office Mode</button>
+      <button class="btn-g" id="btn-export-csv" style="font-size:12px;padding:6px 14px;">↓ Save CSV</button>
+    </div>
+
+    <div class="quickparts-bar" id="quickparts-bar">
+      <span class="qp-label">Quick Parts:</span>
+      <div id="qp-buttons"></div>
+      <button class="qp-edit" id="btn-edit-qp">Edit</button>
+    </div>
+
+    <div class="ladder-table-wrap">
+      <table class="ladder-table">
+        <thead>
+          <tr>
+            <th class="td-num">#</th>
+            <th class="td-sn">Serial #</th>
+            <th class="td-loc">Loc ID</th>
+            <th class="td-br">Brand</th>
+            <th class="td-ty">Type</th>
+            <th class="td-len">Length</th>
+            <th class="td-desc">Description</th>
+            <th>Parts (comma-separated)</th>
+            <th class="td-del"></th>
+          </tr>
+        </thead>
+        <tbody id="ladder-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="field-table-footer">
+      <button class="btn-g" id="btn-add-ladder" style="font-size:12px;padding:6px 14px;">+ Add Ladder</button>
+      <span id="ladder-count" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: OFFICE MODE ═══════════════ -->
+<div id="screen-office" class="screen">
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <button class="back-btn" id="btn-office-home" style="margin:8px 8px 12px;width:auto;">← Home</button>
+      <div class="step active" data-s="1"><div class="step-num">1</div><div class="step-lbl">Load CSV</div></div>
+      <div class="step upcoming" data-s="2"><div class="step-num">2</div><div class="step-lbl">Review</div></div>
+      <div class="step upcoming" data-s="3"><div class="step-num">3</div><div class="step-lbl">Browser</div></div>
+      <div class="step upcoming" data-s="4"><div class="step-num">4</div><div class="step-lbl">Analyze</div></div>
+      <div class="step upcoming" data-s="5"><div class="step-num">5</div><div class="step-lbl">Import</div></div>
+      <div class="step upcoming" data-s="6"><div class="step-num">6</div><div class="step-lbl">Summary</div></div>
+    </nav>
+
+    <main class="content">
+
+      <!-- Step 1: Load CSV -->
+      <div class="card" id="load-card">
+        <div class="card-ttl">Select CSV File</div>
+        <div class="row">
+          <button class="btn-p" id="btn-choose">Choose File…</button>
+          <span class="file-lbl" id="file-lbl">No file selected</span>
         </div>
-        <div id="diff-miss-list"></div>
+        <button class="tmpl-link" id="btn-template">↓ Download sample CSV template</button>
       </div>
 
-      <!-- Existing with gaps -->
-      <div class="diff-section diff-gap" id="diff-gap-section" style="display:none;">
-        <div class="diff-section-ttl" style="margin-top:14px;">
-          Existing Boxes With Missing Parts <span class="cnt" id="diff-gap-cnt"></span>
+      <!-- Step 2: CSV Preview -->
+      <div class="card" id="preview-card">
+        <div class="card-ttl">CSV Preview — Review Before Starting</div>
+        <div class="prev-hdr">
+          <span class="prev-stat" id="prev-stat"></span>
+          <button class="btn-g" style="font-size:12px;padding:5px 12px;" id="btn-change">← Change File</button>
         </div>
-        <div id="diff-gap-list"></div>
-      </div>
-
-      <!-- Already complete -->
-      <div class="diff-section diff-done" id="diff-done-section" style="display:none;">
-        <div class="diff-section-ttl" style="margin-top:14px;">
-          Already Complete <span class="cnt" id="diff-done-cnt"></span>
+        <div id="skip-warn" style="display:none; background:rgba(240,165,0,.08); border:1px solid rgba(240,165,0,.2); border-radius:6px; padding:9px 13px; font-size:12px; color:#f5c842; margin-bottom:12px;"></div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Serial #</th><th>Brand / Type</th><th>Length</th><th>Parts to Add</th></tr></thead>
+            <tbody id="prev-body"></tbody>
+          </table>
         </div>
-        <div id="diff-done-list"></div>
+        <div class="wo-row">
+          <span class="wo-lbl">Work Order #</span>
+          <input type="text" id="work-order-input" placeholder="Optional — used for billing">
+        </div>
+        <div class="row">
+          <button class="btn-ok" id="btn-open-browser">Open Browser →</button>
+        </div>
       </div>
 
-      <div class="choice-strip">
-        <button class="btn-ok"   id="btn-add-all">Add All Missing</button>
-        <button class="btn-warn" id="btn-boxes-only">Add Missing Boxes Only</button>
-        <button class="btn-g"    id="btn-cancel-diff">Cancel</button>
-      </div>
-    </div>
-
-    <!-- Log output -->
-    <div id="log-section">
-      <div class="card-ttl" style="margin-bottom:8px;">Live Output</div>
-      <pre id="log"></pre>
-    </div>
-
-    <!-- Step 6: Summary -->
-    <div class="card" id="sum-card">
-      <div class="card-ttl">Run Summary</div>
-      <div class="stat-grid" id="stat-grid"></div>
-      <div id="sum-detail"></div>
-      <div id="sum-extra"></div>
-      <div class="result-note" id="result-note"></div>
-
-      <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center;">
-        <button class="btn-p" id="btn-restart">↺ Start Over</button>
-        <div class="log-path" id="log-path"></div>
+      <!-- Step 3+4: Browser / Analyze -->
+      <div class="card" id="run-card" style="display:none;">
+        <div class="card-ttl">Browser &amp; Analysis</div>
+        <div><span class="pill pill-wait dots" id="status-pill">Starting</span></div>
+        <ul class="instr" id="instr">
+          <li><div class="instr-n">1</div><span>Log in to <strong>bsiwebapp.com</strong> in the browser that opened.</span></li>
+          <li><div class="instr-n">2</div><span>Go to <strong>Work Orders → Work Orders List</strong>.</span></li>
+          <li><div class="instr-n">3</div><span>Click <strong>VIEW</strong> on your work order to open the popup.</span></li>
+          <li><div class="instr-n">4</div><span>Navigate to the correct work order, then click <strong>Analyze Work Order</strong>.</span></li>
+        </ul>
+        <div class="row">
+          <button class="btn-p" id="btn-analyze" style="display:none;">Analyze Work Order</button>
+          <button class="btn-err" id="btn-stop">Stop</button>
+        </div>
       </div>
 
-      <!-- Collapsible terminal output -->
-      <div class="log-toggle" id="log-toggle" style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">
-        <em class="chevron">▼</em>
-        <span>Show terminal output</span>
+      <!-- Step 4: Diff -->
+      <div class="card" id="diff-card">
+        <div class="card-ttl">Work Order Analysis</div>
+        <div class="diff-section diff-miss" id="diff-miss-section">
+          <div class="diff-section-ttl">Will Be Added <span class="cnt" id="diff-miss-cnt"></span></div>
+          <div id="diff-miss-list"></div>
+        </div>
+        <div class="diff-section diff-gap" id="diff-gap-section" style="display:none;">
+          <div class="diff-section-ttl" style="margin-top:14px;">Existing Boxes With Missing Parts <span class="cnt" id="diff-gap-cnt"></span></div>
+          <div id="diff-gap-list"></div>
+        </div>
+        <div class="diff-section diff-done" id="diff-done-section" style="display:none;">
+          <div class="diff-section-ttl" style="margin-top:14px;">Already Complete <span class="cnt" id="diff-done-cnt"></span></div>
+          <div id="diff-done-list"></div>
+        </div>
+        <div class="choice-strip">
+          <button class="btn-ok"   id="btn-add-all">Add All Missing</button>
+          <button class="btn-warn" id="btn-boxes-only">Add Missing Boxes Only</button>
+          <button class="btn-g"    id="btn-cancel-diff">Cancel</button>
+        </div>
       </div>
-      <div id="log-collapsed">
-        <pre id="log-sum" style="background:var(--log-bg);border:1px solid var(--border);border-radius:6px;
-             padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.65;
-             color:var(--log-txt);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+
+      <!-- Log -->
+      <div id="log-section">
+        <div class="card-ttl" style="margin-bottom:8px;">Live Output</div>
+        <pre id="log"></pre>
       </div>
-    </div>
 
-    <!-- Error -->
-    <div class="card" id="err-card">
-      <div class="card-ttl" style="color:var(--err);">Error</div>
-      <div id="err-msg"></div>
-      <button class="btn-g" id="btn-err-restart">Start Over</button>
-    </div>
+      <!-- Step 6: Summary -->
+      <div class="card" id="sum-card">
+        <div class="card-ttl">Run Summary</div>
+        <div class="stat-grid" id="stat-grid"></div>
+        <div id="sum-detail"></div>
+        <div id="sum-extra"></div>
+        <div class="result-note" id="result-note"></div>
+        <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center;">
+          <button class="btn-p" id="btn-restart">↺ Start Over</button>
+          <div class="log-path" id="log-path"></div>
+        </div>
+        <div class="log-toggle" id="log-toggle" style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">
+          <em class="chevron">▼</em>
+          <span>Show terminal output</span>
+        </div>
+        <div id="log-collapsed">
+          <pre id="log-sum" style="background:var(--log-bg);border:1px solid var(--border);border-radius:6px;
+               padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.65;
+               color:var(--log-txt);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+        </div>
+      </div>
 
-  </main>
+      <!-- Error -->
+      <div class="card" id="err-card">
+        <div class="card-ttl" style="color:var(--err);">Error</div>
+        <div id="err-msg"></div>
+        <button class="btn-g" id="btn-err-restart">Start Over</button>
+      </div>
+
+    </main>
+  </div>
 </div>
 
 <script>
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// Helpers
+// ════════════════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+let _supabaseConfigured = false;
+let _session = null;
+
+// ── Screen management ─────────────────────────────────────────────────────────
+function showScreen(name) {
+  ['login','home','field','office'].forEach(s => {
+    $(`screen-${s}`).classList.toggle('active', s === name);
+  });
+  document.body.classList.remove('summary-mode');
+}
+
+// ── User badge ────────────────────────────────────────────────────────────────
+function updateBadge(session) {
+  if (!session) {
+    $('user-badge').style.display = 'none';
+    $('credit-badge').style.display = 'none';
+    return;
+  }
+  $('user-badge').textContent = session.user.email;
+  $('user-badge').style.display = '';
+  if (session.credits !== null && session.credits !== undefined) {
+    const creditsEl = $('credit-badge');
+    creditsEl.textContent = session.credits === -1 ? 'Unlimited' : `${session.credits} credit${session.credits !== 1 ? 's' : ''}`;
+    creditsEl.style.display = '';
+  }
+}
+
+// ── App startup ───────────────────────────────────────────────────────────────
+(async () => {
+  _supabaseConfigured = await window.api.isSupabaseConfigured();
+
+  if (_supabaseConfigured) {
+    _session = await window.api.getSession();
+    if (_session) {
+      updateBadge(_session);
+      showHomeScreen(_session);
+    } else {
+      showScreen('login');
+    }
+  } else {
+    // No supabase configured — go straight to home (no login required)
+    showHomeScreen(null);
+  }
+})();
+
+function showHomeScreen(session) {
+  if (session?.user?.name) {
+    $('home-title').textContent = `Welcome, ${session.user.name}`;
+  }
+  if (session?.credits !== null && session?.credits !== undefined) {
+    const el = $('home-credits');
+    el.style.display = '';
+    el.textContent = session.credits === -1
+      ? 'Unlimited imports'
+      : `${session.credits} import credit${session.credits !== 1 ? 's' : ''} remaining`;
+  }
+  $('btn-signout').style.display = _supabaseConfigured ? '' : 'none';
+  showScreen('home');
+}
+
+// ════════════════════════════════════════════════════════════════
+// Login
+// ════════════════════════════════════════════════════════════════
+$('btn-login').addEventListener('click', doLogin);
+$('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin() {
+  const email = $('login-email').value.trim();
+  const pass  = $('login-pass').value;
+  if (!email || !pass) { showLoginError('Enter your email and password.'); return; }
+  $('btn-login').disabled = true;
+  $('btn-login').textContent = 'Signing in…';
+  $('login-error').classList.remove('vis');
+
+  const result = await window.api.login({ email, password: pass });
+  $('btn-login').disabled = false;
+  $('btn-login').textContent = 'Sign In';
+
+  if (!result.ok) { showLoginError(result.error); return; }
+  _session = result;
+  updateBadge(_session);
+  showHomeScreen(_session);
+}
+
+function showLoginError(msg) {
+  $('login-error').textContent = msg;
+  $('login-error').classList.add('vis');
+}
+
+// ════════════════════════════════════════════════════════════════
+// Home
+// ════════════════════════════════════════════════════════════════
+$('home-field').addEventListener('click', () => {
+  showScreen('field');
+  loadJobList();
+  showFieldView('jobs');
+});
+
+$('home-office').addEventListener('click', () => {
+  showScreen('office');
+  officeReset();
+});
+
+$('btn-signout').addEventListener('click', async () => {
+  await window.api.logout();
+  _session = null;
+  updateBadge(null);
+  $('home-title').textContent = 'Welcome to Lia';
+  $('home-credits').style.display = 'none';
+  if (_supabaseConfigured) showScreen('login');
+  else showHomeScreen(null);
+});
+
+// ════════════════════════════════════════════════════════════════
+// Field Mode
+// ════════════════════════════════════════════════════════════════
+
+let _currentJob = null;
+let _focusedPartsInput = null;
+let _saveTimer = null;
+let _defaultParts = ['M23','R28L','Lgh92','Lgh123WP','LGE26p','Hlm100','RC','SLS1'];
+
+function showFieldView(view) {
+  const jobsView   = $('field-jobs-view');
+  const detailView = $('field-detail');
+  if (view === 'jobs') {
+    jobsView.style.display = 'flex';
+    detailView.style.display = 'none';
+  } else {
+    jobsView.style.display = 'none';
+    detailView.style.display = 'flex';
+  }
+}
+
+$('btn-field-home').addEventListener('click', () => showScreen('home'));
+$('btn-back-jobs').addEventListener('click', () => {
+  saveJobNow();
+  showFieldView('jobs');
+  loadJobList();
+});
+
+// ── Job List ──────────────────────────────────────────────────────────────────
+async function loadJobList() {
+  const jobs = await window.api.listJobs();
+  const container = $('field-jobs');
+  // Remove existing job cards (keep the empty message)
+  [...container.querySelectorAll('.job-card')].forEach(el => el.remove());
+
+  if (jobs.length === 0) {
+    $('field-jobs-empty').style.display = 'block';
+    return;
+  }
+  $('field-jobs-empty').style.display = 'none';
+
+  jobs.forEach(job => {
+    const card = document.createElement('div');
+    card.className = 'job-card';
+    const date = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
+    card.innerHTML = `
+      <div class="job-card-info">
+        <div class="job-card-name">${esc(job.name || 'Untitled Job')}</div>
+        <div class="job-card-meta">${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${job.ladderCount} ladder${job.ladderCount !== 1 ? 's' : ''} · ${date}</div>
+      </div>
+      <button class="btn-p" data-id="${esc(job.id)}" style="font-size:12px;padding:6px 14px;">Open</button>
+      <button class="btn-g del-job" data-id="${esc(job.id)}" style="font-size:12px;padding:6px 10px;color:var(--err);border-color:rgba(231,76,60,.3);">✕</button>
+    `;
+    card.querySelector('.btn-p').addEventListener('click', async () => {
+      const full = await window.api.getJob(job.id);
+      openJobDetail(full);
+    });
+    card.querySelector('.del-job').addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${job.name || 'Untitled Job'}"?`)) return;
+      await window.api.deleteJob(job.id);
+      loadJobList();
+    });
+    container.appendChild(card);
+  });
+}
+
+$('btn-new-job').addEventListener('click', async () => {
+  const job = {
+    id: crypto.randomUUID(),
+    name: '',
+    workOrderNum: '',
+    ladders: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await window.api.saveJob(job);
+  openJobDetail(job);
+});
+
+// ── Job Detail ────────────────────────────────────────────────────────────────
+function openJobDetail(job) {
+  _currentJob = job;
+  $('field-job-name').value = job.name || '';
+  $('field-job-wo').value   = job.workOrderNum || '';
+  showFieldView('detail');
+  renderLadderRows();
+  renderQuickParts();
+  setSaveStatus('saved');
+}
+
+$('field-job-name').addEventListener('input', () => scheduleSave());
+$('field-job-wo').addEventListener('input', () => scheduleSave());
+
+function scheduleSave() {
+  setSaveStatus('saving…');
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveJobNow, 800);
+}
+
+function setSaveStatus(text) {
+  const el = $('save-status');
+  if (text === 'saved') { el.textContent = 'Saved'; el.className = 'save-status saved'; }
+  else { el.textContent = text; el.className = 'save-status'; }
+}
+
+async function saveJobNow() {
+  if (!_currentJob) return;
+  clearTimeout(_saveTimer);
+  _currentJob.name        = $('field-job-name').value.trim();
+  _currentJob.workOrderNum = $('field-job-wo').value.trim();
+  _currentJob.ladders = collectLadderRows();
+  await window.api.saveJob(_currentJob);
+  setSaveStatus('saved');
+}
+
+// ── Ladder rows ───────────────────────────────────────────────────────────────
+const BRANDS = [{v:'',l:'Brand'},{v:'LG',l:'LG'},{v:'WER',l:'WER'},{v:'LOU',l:'LOU'},{v:'FEA',l:'FEA'},{v:'OTH',l:'OTH'}];
+const TYPES  = [{v:'',l:'Type'},{v:'Ext',l:'Ext'},{v:'Com',l:'Com'},{v:'Ste',l:'Ste'}];
+
+function brandOptions(sel) {
+  return BRANDS.map(b => `<option value="${b.v}"${b.v===sel?' selected':''}>${b.l}</option>`).join('');
+}
+function typeOptions(sel) {
+  return TYPES.map(t => `<option value="${t.v}"${t.v===sel?' selected':''}>${t.l}</option>`).join('');
+}
+
+function renderLadderRows() {
+  const tbody = $('ladder-rows');
+  tbody.innerHTML = '';
+  const ladders = _currentJob.ladders || [];
+  ladders.forEach((l, i) => addLadderRow(l, i + 1));
+  updateLadderCount();
+}
+
+function addLadderRow(l = {}, rowNum) {
+  const tbody = $('ladder-rows');
+  if (!rowNum) rowNum = tbody.rows.length + 1;
+  const tr = document.createElement('tr');
+  tr.dataset.lid = l.id || crypto.randomUUID();
+  tr.innerHTML = `
+    <td class="td-num">${rowNum}</td>
+    <td class="td-sn"><input type="text" class="sn-input" value="${esc(l.serialNum||'')}" placeholder="SN"></td>
+    <td class="td-loc"><input type="text" class="loc-input" value="${esc(l.locationId||'')}" placeholder="Loc"></td>
+    <td class="td-br"><select class="br-input">${brandOptions(l.brand||'')}</select></td>
+    <td class="td-ty"><select class="ty-input">${typeOptions(l.type||'')}</select></td>
+    <td class="td-len"><input type="text" class="len-input" value="${esc(l.length||'')}" placeholder="ft"></td>
+    <td class="td-desc"><input type="text" class="desc-input" value="${esc(l.desc||'')}" placeholder="Description"></td>
+    <td><input type="text" class="parts-input" value="${esc((l.parts||[]).map(p=>p.qty>1?`(${p.qty}) ${p.name}`:p.name).join(', '))}" placeholder="M23, R28L, …"></td>
+    <td class="td-del"><button class="del-btn" title="Remove">×</button></td>
+  `;
+  tr.querySelectorAll('input, select').forEach(el => {
+    el.addEventListener('input', scheduleSave);
+    el.addEventListener('change', scheduleSave);
+  });
+  tr.querySelector('.parts-input').addEventListener('focus', e => { _focusedPartsInput = e.target; });
+  tr.querySelector('.parts-input').addEventListener('blur', () => { _focusedPartsInput = null; });
+  tr.querySelector('.del-btn').addEventListener('click', () => {
+    tr.remove();
+    renumberRows();
+    scheduleSave();
+  });
+  tbody.appendChild(tr);
+  updateLadderCount();
+  return tr;
+}
+
+function renumberRows() {
+  $('ladder-rows').querySelectorAll('tr').forEach((tr, i) => {
+    tr.querySelector('.td-num').textContent = i + 1;
+  });
+  updateLadderCount();
+}
+
+function updateLadderCount() {
+  const n = $('ladder-rows').rows.length;
+  $('ladder-count').textContent = `${n} ladder${n !== 1 ? 's' : ''}`;
+}
+
+function collectLadderRows() {
+  const ladders = [];
+  $('ladder-rows').querySelectorAll('tr').forEach(tr => {
+    const partsRaw = tr.querySelector('.parts-input').value;
+    const parts = partsRaw.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+      let m = s.match(/^\((\d+)\)\s*(.+)$/); // prefix: (2) M23
+      if (m) return { name: m[2].trim(), qty: parseInt(m[1], 10) };
+      m = s.match(/^(.+?)\s*\((\d+)\)$/);     // suffix: M23 (2)
+      if (m) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
+      return { name: s, qty: 1 };
+    });
+    ladders.push({
+      id:         tr.dataset.lid || crypto.randomUUID(),
+      serialNum:  tr.querySelector('.sn-input').value.trim(),
+      locationId: tr.querySelector('.loc-input').value.trim(),
+      brand:      tr.querySelector('.br-input').value,
+      type:       tr.querySelector('.ty-input').value,
+      length:     tr.querySelector('.len-input').value.trim(),
+      desc:       tr.querySelector('.desc-input').value.trim(),
+      parts,
+    });
+  });
+  return ladders;
+}
+
+$('btn-add-ladder').addEventListener('click', () => {
+  addLadderRow({}, null);
+  scheduleSave();
+  // Focus the new serial # input
+  const rows = $('ladder-rows').querySelectorAll('tr');
+  rows[rows.length - 1].querySelector('.sn-input').focus();
+});
+
+// ── Quick Parts ───────────────────────────────────────────────────────────────
+function getQuickParts() {
+  try {
+    const stored = localStorage.getItem('lia-quick-parts');
+    return stored ? JSON.parse(stored) : _defaultParts;
+  } catch { return _defaultParts; }
+}
+
+function setQuickParts(parts) {
+  localStorage.setItem('lia-quick-parts', JSON.stringify(parts));
+}
+
+function renderQuickParts() {
+  const parts = getQuickParts();
+  const container = $('qp-buttons');
+  container.innerHTML = '';
+  parts.forEach(part => {
+    const btn = document.createElement('button');
+    btn.className = 'qp-btn';
+    btn.textContent = part;
+    btn.addEventListener('click', () => {
+      if (!_focusedPartsInput) return;
+      const cur = _focusedPartsInput.value.trim();
+      _focusedPartsInput.value = cur ? `${cur}, ${part}` : part;
+      _focusedPartsInput.dispatchEvent(new Event('input'));
+      _focusedPartsInput.focus();
+    });
+    container.appendChild(btn);
+  });
+}
+
+$('btn-edit-qp').addEventListener('click', () => {
+  const parts = getQuickParts();
+  const answer = prompt('Edit quick-tap parts (comma-separated):', parts.join(', '));
+  if (answer === null) return;
+  const newParts = answer.split(',').map(s => s.trim()).filter(Boolean);
+  setQuickParts(newParts);
+  renderQuickParts();
+});
+
+// ── Export ────────────────────────────────────────────────────────────────────
+$('btn-export-lia').addEventListener('click', async () => {
+  await saveJobNow();
+  const result = await window.api.exportForLia(_currentJob);
+  if (!result.ok) { alert('Export failed: ' + (result.error || 'unknown error')); return; }
+  // Switch to Office Mode and auto-load the CSV
+  showScreen('office');
+  officeReset();
+  await loadCsvFile(result.path);
+  $('file-lbl').textContent = `${_currentJob.name || 'Field export'} (from Field Mode)`;
+});
+
+$('btn-export-csv').addEventListener('click', async () => {
+  await saveJobNow();
+  await window.api.exportCsvDialog(_currentJob);
+});
+
+// ════════════════════════════════════════════════════════════════
+// Office Mode
+// ════════════════════════════════════════════════════════════════
+
+$('btn-office-home').addEventListener('click', () => {
+  window.api.stopAutomation();
+  officeReset();
+  showScreen('home');
+});
+
 function setStep(n) {
-  document.querySelectorAll('.step').forEach(el => {
+  document.querySelectorAll('.step[data-s]').forEach(el => {
     const s = +el.dataset.s;
     el.className = 'step ' + (s < n ? 'done' : s === n ? 'active' : 'upcoming');
   });
 }
 
-function show(id)  { $(id).classList.add('vis'); }
-function hide(id)  { $(id).classList.remove('vis'); }
-function showEl(id){ $(id).style.display = ''; }
-function hideEl(id){ $(id).style.display = 'none'; }
+function show(id)   { $(id).classList.add('vis'); }
+function hide(id)   { $(id).classList.remove('vis'); }
+function showEl(id) { $(id).style.display = ''; }
+function hideEl(id) { $(id).style.display = 'none'; }
 
 function setPill(text, cls) {
   const p = $('status-pill');
@@ -380,7 +981,7 @@ function makeBadge(text, cls) {
   return `<span class="badge ${cls}">${esc(text)}</span>`;
 }
 
-function partBadges(parts, cls='badge-part') {
+function partBadges(parts, cls = 'badge-part') {
   if (!parts || parts.length === 0) return '<span class="no-parts">No parts</span>';
   return parts.map(p => {
     const qty = p.quantity > 1 ? ` <span class="badge-qty">×${p.quantity}</span>` : '';
@@ -388,17 +989,41 @@ function partBadges(parts, cls='badge-part') {
   }).join('');
 }
 
-// ── CSV preview ────────────────────────────────────────────────────────────────
+function officeReset() {
+  $('file-lbl').textContent = 'No file selected';
+  $('file-lbl').classList.remove('has-file');
+  $('log').innerHTML = '';
+  if ($('log-sum')) $('log-sum').textContent = '';
+  $('prev-body').innerHTML = '';
+  $('stat-grid').innerHTML = '';
+  $('sum-detail').innerHTML = '';
+  $('sum-extra').innerHTML = '';
+  $('diff-miss-list').innerHTML = '';
+  $('diff-gap-list').innerHTML = '';
+  $('diff-done-list').innerHTML = '';
+  $('err-msg').textContent = '';
+  $('work-order-input').value = '';
+  document.body.classList.remove('summary-mode');
+  $('log-collapsed').classList.remove('vis');
+  $('log-toggle').classList.remove('open');
+  $('log-toggle').querySelector('span').textContent = 'Show terminal output';
+  ['preview-card','diff-card','log-section','sum-card','err-card'].forEach(hide);
+  hideEl('run-card');
+  $('btn-analyze').style.display = 'none';
+  $('btn-boxes-only').style.display = '';
+  $('btn-stop').disabled = false;
+  setStep(1);
+}
+
+// ── CSV preview ───────────────────────────────────────────────────────────────
 function renderPreview(parsed) {
   const { records, skipped } = parsed;
-  const totalParts = records.reduce((s,r) => s + r.parts.length, 0);
+  const totalParts = records.reduce((s, r) => s + r.parts.length, 0);
   $('prev-stat').innerHTML = `<strong>${records.length}</strong> ladder${records.length!==1?'s':''} · <strong>${totalParts}</strong> part${totalParts!==1?'s':''} total`;
-
   if (skipped.length > 0) {
     $('skip-warn').style.display = 'block';
     $('skip-warn').textContent = `⚠  ${skipped.length} row${skipped.length>1?'s':''} skipped (missing Serial #): ` + skipped.map(s=>`row ${s.row}`).join(', ');
   } else { $('skip-warn').style.display = 'none'; }
-
   const tbody = $('prev-body');
   tbody.innerHTML = '';
   records.forEach(r => {
@@ -413,174 +1038,6 @@ function renderPreview(parsed) {
   });
 }
 
-// ── Diff rendering ─────────────────────────────────────────────────────────────
-function renderDiff(diff) {
-  // Missing boxes
-  $('diff-miss-cnt').textContent = `(${diff.missingBoxes.length})`;
-  const missList = $('diff-miss-list');
-  missList.innerHTML = '';
-  if (diff.missingBoxes.length === 0) {
-    missList.innerHTML = '<div class="diff-note">None — all ladders are already on the work order.</div>';
-  } else {
-    diff.missingBoxes.forEach(r => {
-      const d = document.createElement('div');
-      d.className = 'diff-row';
-      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-parts">${partBadges(r.parts, 'badge-part')}</div>`;
-      missList.appendChild(d);
-    });
-  }
-
-  // Existing with gaps
-  if (diff.existingWithGaps.length > 0) {
-    showEl('diff-gap-section');
-    $('diff-gap-cnt').textContent = `(${diff.existingWithGaps.length})`;
-    const gapList = $('diff-gap-list');
-    gapList.innerHTML = '';
-    diff.existingWithGaps.forEach(({ record: r, missingParts, presentParts }) => {
-      const d = document.createElement('div');
-      d.className = 'diff-row';
-      const presentBadges = presentParts.map(t => makeBadge(t, 'badge-ok')).join('');
-      const missBadges    = missingParts.map(p => {
-        const qty = p.quantity > 1 ? ` <span class="badge-qty">×${p.quantity}</span>` : '';
-        return `<span class="badge badge-miss">${esc(p.searchTerm)}${qty}</span>`;
-      }).join('');
-      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-parts">${presentBadges}${missBadges}</div>`;
-      gapList.appendChild(d);
-    });
-  } else { hideEl('diff-gap-section'); }
-
-  // Already complete
-  if (diff.alreadyComplete.length > 0) {
-    showEl('diff-done-section');
-    $('diff-done-cnt').textContent = `(${diff.alreadyComplete.length})`;
-    const doneList = $('diff-done-list');
-    doneList.innerHTML = '';
-    diff.alreadyComplete.forEach(r => {
-      const d = document.createElement('div');
-      d.className = 'diff-row';
-      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-note">Already complete — will be skipped.</div>`;
-      doneList.appendChild(d);
-    });
-  } else { hideEl('diff-done-section'); }
-
-  // Hide "Add Missing Boxes Only" button if there's nothing to skip
-  if (diff.existingWithGaps.length === 0) {
-    $('btn-boxes-only').style.display = 'none';
-  }
-}
-
-// ── Summary rendering ──────────────────────────────────────────────────────────
-function renderSummary(result) {
-  const s = result.summary; if (!s) return;
-  const all = s.ladderResults || [];
-
-  // ── Stat chips ──
-  const stats = [
-    {n:s.totalLadders,   l:'Ladders',     c:'stat-plain'},
-    {n:s.successLadders, l:'Complete',    c:'stat-good'},
-    {n:s.partialLadders, l:'Partial',     c:s.partialLadders?'stat-warn':'stat-plain'},
-    {n:s.errorLadders,   l:'Errors',      c:s.errorLadders?'stat-bad':'stat-plain'},
-    {n:s.totalParts,     l:'Parts Total', c:'stat-plain'},
-    {n:s.successParts,   l:'Parts Added', c:'stat-good'},
-    {n:s.failedParts,    l:'Parts Failed',c:s.failedParts?'stat-bad':'stat-plain'},
-  ];
-  $('stat-grid').innerHTML = stats.map(({n,l,c}) =>
-    `<div class="stat-box ${c}"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`
-  ).join('');
-
-  // ── Helper: build a part-detail row ──
-  function partRow(r, badPartsOnly) {
-    const parts = (r.partResults||[]).filter(p => !badPartsOnly || p.status !== 'success' && p.status !== 'skipped');
-    const tags = parts.map(p => {
-      const label = p.status==='not_found'?'not found':p.status==='error'?'error':p.status;
-      const msg = p.message ? ` — ${esc(p.message)}` : '';
-      return `<span class="part-tag tag-${p.status}">${esc(p.searchTerm)}: ${label}${msg}</span>`;
-    }).join(' ');
-    const err = r.errorMsg ? `<br><span style="color:var(--err);font-size:11px;">${esc(r.errorMsg)}</span>` : '';
-    return `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;">SN ${esc(r.serialNum)}</td>`+
-           `<td style="padding:4px 8px;font-size:12px;">${tags}${err}</td></tr>`;
-  }
-
-  function section(heading, color, rows) {
-    if (!rows.length) return '';
-    return `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:${color};">${heading}</div>`+
-           `<table style="width:100%;border-collapse:collapse;">${rows.join('')}</table>`;
-  }
-
-  // ── Section 1: All correct ──
-  const completeRows = all
-    .filter(r => (r.status==='success'||r.status==='skipped') && !(r.partResults||[]).some(p=>p.status!=='success'&&p.status!=='skipped'))
-    .map(r => `<tr><td colspan="2" style="padding:3px 8px;font-family:var(--mono);font-size:12px;color:var(--ok);">✓ SN ${esc(r.serialNum)}</td></tr>`);
-
-  // ── Section 2: Missing / partial parts ──
-  const partialRows = all
-    .filter(r => r.status==='partial' || ((r.status==='success'||r.status==='skipped') && (r.partResults||[]).some(p=>p.status==='not_found'||p.status==='error')))
-    .map(r => partRow(r, true));
-
-  // ── Section 3: Not added / errors ──
-  const errorRows = all
-    .filter(r => r.status==='error' || r.status==='duplicate')
-    .map(r => partRow(r, false));
-
-  $('sum-detail').innerHTML =
-    section('✓  COMPLETE — all parts added, nothing missing', 'var(--ok)', completeRows) +
-    section('⚠  MISSING PARTS — added to work order but some parts were not found or failed', 'var(--warn)', partialRows) +
-    section('✗  NOT ADDED — box could not be created or had a fatal error', 'var(--err)', errorRows);
-
-  // ── Section 4: Extra parts in BSI not in CSV ──
-  if (s.extraOnWorkOrder && s.extraOnWorkOrder.length > 0) {
-    const bySerial = {};
-    for (const e of s.extraOnWorkOrder) {
-      (bySerial[e.boxSerial] = bySerial[e.boxSerial]||[]).push(e.partNum);
-    }
-    const rows = Object.entries(bySerial).map(([sn, parts]) =>
-      `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--warn);">SN ${esc(sn)}</td>`+
-      `<td style="padding:4px 8px;">${parts.map(p=>`<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ')}</td></tr>`
-    );
-    $('sum-extra').innerHTML = section('⚠  EXTRA ON WORK ORDER — parts in BSI not listed in your CSV', 'var(--warn)', rows);
-  } else {
-    $('sum-extra').innerHTML = '';
-  }
-
-  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0;
-  $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
-  $('result-note').textContent = bad
-    ? '⚠  Review the sections below before submitting the work order.'
-    : '✓  All ladders and parts match the CSV. Safe to submit the work order.';
-  if (result.logPath) $('log-path').textContent = `Log: ${result.logPath}`;
-}
-
-// ── Reset ──────────────────────────────────────────────────────────────────────
-function reset() {
-  $('file-lbl').textContent = 'No file selected';
-  $('file-lbl').classList.remove('has-file');
-  $('log').innerHTML = '';
-  $('log-sum').textContent = '';
-  $('prev-body').innerHTML = '';
-  $('stat-grid').innerHTML = '';
-  $('sum-detail').innerHTML = '';
-  $('sum-extra').innerHTML = '';
-  $('diff-miss-list').innerHTML = '';
-  $('diff-gap-list').innerHTML = '';
-  $('diff-done-list').innerHTML = '';
-  $('err-msg').textContent = '';
-
-  // Exit full-page summary mode, restore sidebar
-  document.body.classList.remove('summary-mode');
-  $('log-collapsed').classList.remove('vis');
-  $('log-toggle').classList.remove('open');
-  $('log-toggle').querySelector('span').textContent = 'Show terminal output';
-
-  ['preview-card','diff-card','log-section','sum-card','err-card'].forEach(hide);
-  hideEl('run-card');
-  $('btn-analyze').style.display = 'none';
-  $('btn-boxes-only').style.display = '';
-  $('btn-stop').disabled = false;
-
-  setStep(1);
-}
-
-// ── Step 1: File picker ────────────────────────────────────────────────────────
 async function loadCsvFile(p) {
   if (!p) return;
   const parsed = await window.api.parseCsv(p);
@@ -610,7 +1067,6 @@ $('btn-choose').addEventListener('click', async () => {
     $('file-lbl').textContent = last.split('/').pop() + ' (last used)';
     $('file-lbl').classList.add('has-file');
     window._lastCsvPath = last;
-    // Show a "Use last file" prompt instead of auto-loading
     const useBtn = document.createElement('button');
     useBtn.className = 'btn-g';
     useBtn.style.cssText = 'margin-left:10px;font-size:12px;padding:5px 12px;';
@@ -620,9 +1076,7 @@ $('btn-choose').addEventListener('click', async () => {
   }
 })();
 
-$('btn-template').addEventListener('click', async () => {
-  await window.api.saveSampleCsv();
-});
+$('btn-template').addEventListener('click', async () => { await window.api.saveSampleCsv(); });
 
 $('btn-change').addEventListener('click', async () => {
   hide('preview-card');
@@ -631,17 +1085,41 @@ $('btn-change').addEventListener('click', async () => {
   if (p) await loadCsvFile(p);
 });
 
-// ── Step 2 → 3: Open browser ───────────────────────────────────────────────────
+// ── Open browser + credit check ───────────────────────────────────────────────
 $('btn-open-browser').addEventListener('click', () => {
+  const workOrderId = $('work-order-input').value.trim() || 'unknown';
+  window._workOrderId = workOrderId;
   hide('preview-card');
   showEl('run-card');
   show('log-section');
-  setPill('Waiting for work order popup', 'pill-wait dots');
+  // If supabase is configured, main process will do credit check first
+  setPill(_supabaseConfigured ? 'Checking license…' : 'Waiting for popup', 'pill-wait dots');
   setStep(3);
-  window.api.startAutomation(window._csvPath);
+  window.api.startAutomation(window._csvPath, workOrderId);
 });
 
-// ── Step 3 → 4: Analyze ───────────────────────────────────────────────────────
+window.api.onCreditOk(creditsLeft => {
+  setPill('Waiting for work order popup', 'pill-wait dots');
+  if (creditsLeft !== null && creditsLeft !== undefined) {
+    const badge = $('credit-badge');
+    badge.textContent = creditsLeft === -1 ? 'Unlimited' : `${creditsLeft} credit${creditsLeft !== 1 ? 's' : ''}`;
+    badge.style.display = '';
+    // Also update home screen credits
+    const hc = $('home-credits');
+    hc.textContent = creditsLeft === -1 ? 'Unlimited imports' : `${creditsLeft} import credit${creditsLeft !== 1 ? 's' : ''} remaining`;
+  }
+});
+
+window.api.onCreditError(msg => {
+  hideEl('run-card');
+  hide('log-section');
+  show('preview-card');
+  show('err-card');
+  $('err-msg').textContent = `Import blocked: ${msg}`;
+  setStep(2);
+});
+
+// ── Analyze ───────────────────────────────────────────────────────────────────
 $('btn-analyze').addEventListener('click', () => {
   $('btn-analyze').style.display = 'none';
   $('instr').style.display = 'none';
@@ -650,50 +1128,146 @@ $('btn-analyze').addEventListener('click', () => {
   window.api.analyzeWorkOrder();
 });
 
-// ── Step 4: Diff choices ───────────────────────────────────────────────────────
+// ── Diff ──────────────────────────────────────────────────────────────────────
+function renderDiff(diff) {
+  $('diff-miss-cnt').textContent = `(${diff.missingBoxes.length})`;
+  const missList = $('diff-miss-list');
+  missList.innerHTML = '';
+  if (diff.missingBoxes.length === 0) {
+    missList.innerHTML = '<div class="diff-note">None — all ladders are already on the work order.</div>';
+  } else {
+    diff.missingBoxes.forEach(r => {
+      const d = document.createElement('div');
+      d.className = 'diff-row';
+      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-parts">${partBadges(r.parts,'badge-part')}</div>`;
+      missList.appendChild(d);
+    });
+  }
+  if (diff.existingWithGaps.length > 0) {
+    showEl('diff-gap-section');
+    $('diff-gap-cnt').textContent = `(${diff.existingWithGaps.length})`;
+    const gapList = $('diff-gap-list');
+    gapList.innerHTML = '';
+    diff.existingWithGaps.forEach(({ record: r, missingParts, presentParts }) => {
+      const d = document.createElement('div');
+      d.className = 'diff-row';
+      const presentBadges = presentParts.map(t => makeBadge(t,'badge-ok')).join('');
+      const missBadges = missingParts.map(p => {
+        const qty = p.quantity > 1 ? ` <span class="badge-qty">×${p.quantity}</span>` : '';
+        return `<span class="badge badge-miss">${esc(p.searchTerm)}${qty}</span>`;
+      }).join('');
+      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-parts">${presentBadges}${missBadges}</div>`;
+      gapList.appendChild(d);
+    });
+  } else { hideEl('diff-gap-section'); }
+  if (diff.alreadyComplete.length > 0) {
+    showEl('diff-done-section');
+    $('diff-done-cnt').textContent = `(${diff.alreadyComplete.length})`;
+    const doneList = $('diff-done-list');
+    doneList.innerHTML = '';
+    diff.alreadyComplete.forEach(r => {
+      const d = document.createElement('div');
+      d.className = 'diff-row';
+      d.innerHTML = `<div class="diff-sn">${esc(r.serialNum)}</div><div class="diff-note">Already complete — will be skipped.</div>`;
+      doneList.appendChild(d);
+    });
+  } else { hideEl('diff-done-section'); }
+  if (diff.existingWithGaps.length === 0) $('btn-boxes-only').style.display = 'none';
+}
+
 $('btn-add-all').addEventListener('click', () => {
-  hide('diff-card');
-  hideEl('run-card');
+  hide('diff-card'); hideEl('run-card');
   setPill('Importing…', 'pill-run dots');
-  showEl('run-card');
-  setStep(5);
+  showEl('run-card'); setStep(5);
   window.api.sendChoice('all');
 });
-
 $('btn-boxes-only').addEventListener('click', () => {
-  hide('diff-card');
-  hideEl('run-card');
+  hide('diff-card'); hideEl('run-card');
   setPill('Importing missing boxes…', 'pill-run dots');
-  showEl('run-card');
-  setStep(5);
+  showEl('run-card'); setStep(5);
   window.api.sendChoice('boxes-only');
 });
-
 $('btn-cancel-diff').addEventListener('click', () => {
   window.api.sendChoice('cancel');
   window.api.stopAutomation();
-  hide('diff-card');
-  hideEl('run-card');
-  show('err-card');
-  $('err-msg').textContent = 'Import cancelled by user.';
+  hide('diff-card'); hideEl('run-card');
+  show('err-card'); $('err-msg').textContent = 'Import cancelled by user.';
   setStep(1);
 });
 
-// ── Stop ───────────────────────────────────────────────────────────────────────
 $('btn-stop').addEventListener('click', () => {
   window.api.stopAutomation();
   appendLog('\n[Stopped by user]');
-  hideEl('run-card');
-  show('err-card');
+  hideEl('run-card'); show('err-card');
   $('err-msg').textContent = 'Automation stopped by user.';
   setStep(1);
 });
 
-// ── Start over ─────────────────────────────────────────────────────────────────
-$('btn-restart').addEventListener('click', reset);
-$('btn-err-restart').addEventListener('click', reset);
+$('btn-restart').addEventListener('click', officeReset);
+$('btn-err-restart').addEventListener('click', officeReset);
 
-// ── Automation events ──────────────────────────────────────────────────────────
+// ── Summary ───────────────────────────────────────────────────────────────────
+function renderSummary(result) {
+  const s = result.summary; if (!s) return;
+  const all = s.ladderResults || [];
+  const stats = [
+    {n:s.totalLadders,   l:'Ladders',     c:'stat-plain'},
+    {n:s.successLadders, l:'Complete',    c:'stat-good'},
+    {n:s.partialLadders, l:'Partial',     c:s.partialLadders?'stat-warn':'stat-plain'},
+    {n:s.errorLadders,   l:'Errors',      c:s.errorLadders?'stat-bad':'stat-plain'},
+    {n:s.totalParts,     l:'Parts Total', c:'stat-plain'},
+    {n:s.successParts,   l:'Parts Added', c:'stat-good'},
+    {n:s.failedParts,    l:'Parts Failed',c:s.failedParts?'stat-bad':'stat-plain'},
+  ];
+  $('stat-grid').innerHTML = stats.map(({n,l,c}) =>
+    `<div class="stat-box ${c}"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`
+  ).join('');
+  function partRow(r, badOnly) {
+    const parts = (r.partResults||[]).filter(p => !badOnly || (p.status !== 'success' && p.status !== 'skipped'));
+    const tags = parts.map(p => {
+      const label = p.status==='not_found'?'not found':p.status==='error'?'error':p.status;
+      const msg = p.message ? ` — ${esc(p.message)}` : '';
+      return `<span class="part-tag tag-${p.status}">${esc(p.searchTerm)}: ${label}${msg}</span>`;
+    }).join(' ');
+    const err = r.errorMsg ? `<br><span style="color:var(--err);font-size:11px;">${esc(r.errorMsg)}</span>` : '';
+    return `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;">SN ${esc(r.serialNum)}</td><td style="padding:4px 8px;font-size:12px;">${tags}${err}</td></tr>`;
+  }
+  function section(heading, color, rows) {
+    if (!rows.length) return '';
+    return `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:${color};">${heading}</div>`+
+           `<table style="width:100%;border-collapse:collapse;">${rows.join('')}</table>`;
+  }
+  const completeRows = all
+    .filter(r => (r.status==='success'||r.status==='skipped') && !(r.partResults||[]).some(p=>p.status!=='success'&&p.status!=='skipped'))
+    .map(r => `<tr><td colspan="2" style="padding:3px 8px;font-family:var(--mono);font-size:12px;color:var(--ok);">✓ SN ${esc(r.serialNum)}</td></tr>`);
+  const partialRows = all
+    .filter(r => r.status==='partial' || ((r.status==='success'||r.status==='skipped') && (r.partResults||[]).some(p=>p.status==='not_found'||p.status==='error')))
+    .map(r => partRow(r, true));
+  const errorRows = all
+    .filter(r => r.status==='error' || r.status==='duplicate')
+    .map(r => partRow(r, false));
+  $('sum-detail').innerHTML =
+    section('✓  COMPLETE — all parts added', 'var(--ok)', completeRows) +
+    section('⚠  MISSING PARTS — some parts were not found or failed', 'var(--warn)', partialRows) +
+    section('✗  NOT ADDED — box could not be created', 'var(--err)', errorRows);
+  if (s.extraOnWorkOrder && s.extraOnWorkOrder.length > 0) {
+    const bySerial = {};
+    for (const e of s.extraOnWorkOrder) (bySerial[e.boxSerial] = bySerial[e.boxSerial]||[]).push(e.partNum);
+    const rows = Object.entries(bySerial).map(([sn, parts]) =>
+      `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--warn);">SN ${esc(sn)}</td>`+
+      `<td style="padding:4px 8px;">${parts.map(p=>`<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ')}</td></tr>`
+    );
+    $('sum-extra').innerHTML = section('⚠  EXTRA ON WORK ORDER — parts in BSI not in your CSV', 'var(--warn)', rows);
+  } else { $('sum-extra').innerHTML = ''; }
+  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0;
+  $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
+  $('result-note').textContent = bad
+    ? '⚠  Review the sections below before submitting the work order.'
+    : '✓  All ladders and parts match the CSV. Safe to submit the work order.';
+  if (result.logPath) $('log-path').textContent = `Log: ${result.logPath}`;
+}
+
+// ── Automation events ─────────────────────────────────────────────────────────
 window.api.onLog(msg => appendLog(msg));
 
 window.api.onWaitingForReady(() => {
@@ -712,22 +1286,15 @@ window.api.onDiff(diff => {
 
 window.api.onComplete(result => {
   renderSummary(result);
-
-  // Copy live log into the collapsible panel, then hide all working UI
   $('log-sum').textContent = $('log').textContent;
   ['run-card','log-section','diff-card'].forEach(id => { const el=$(id); if(el) el.classList.remove('vis'); });
-
-  // Clear the spinning status pill and disable the stop button
   setPill('Import complete', 'pill-done');
   $('btn-stop').disabled = true;
-
-  // Switch to full-page summary mode (hides sidebar, expands content)
   document.body.classList.add('summary-mode');
   show('sum-card');
   setStep(6);
 });
 
-// Collapsible log toggle
 $('log-toggle').addEventListener('click', () => {
   const tog = $('log-toggle');
   const box = $('log-collapsed');
@@ -737,16 +1304,13 @@ $('log-toggle').addEventListener('click', () => {
 });
 
 window.api.onError(msg => {
-  hideEl('run-card');
-  hide('diff-card');
-  show('err-card');
-  $('err-msg').textContent = msg;
+  hideEl('run-card'); hide('diff-card');
+  show('err-card'); $('err-msg').textContent = msg;
 });
 
 window.api.onExited(code => {
   if (code !== 0) {
-    hideEl('run-card');
-    show('err-card');
+    hideEl('run-card'); show('err-card');
     $('err-msg').textContent = `Process exited unexpectedly (code ${code}).`;
   }
 });

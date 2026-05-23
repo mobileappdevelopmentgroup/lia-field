@@ -3,23 +3,40 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  // File & CSV
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  isSupabaseConfigured: ()                 => ipcRenderer.invoke('auth:is-configured'),
+  getSession:           ()                 => ipcRenderer.invoke('auth:get-session'),
+  login:                (creds)            => ipcRenderer.invoke('auth:login', creds),
+  logout:               ()                 => ipcRenderer.invoke('auth:logout'),
+  consumeCredit:        (workOrderId)      => ipcRenderer.invoke('auth:consume-credit', workOrderId),
+
+  // ── File & CSV ───────────────────────────────────────────────────────────
   openCsv:       ()         => ipcRenderer.invoke('dialog:open-csv'),
   parseCsv:      (filePath) => ipcRenderer.invoke('csv:parse', filePath),
   saveSampleCsv: ()         => ipcRenderer.invoke('csv:save-sample'),
   getLogsDir:    ()         => ipcRenderer.invoke('app:get-logs-dir'),
 
-  // Automation lifecycle
-  startAutomation: (csvPath) => ipcRenderer.send('automation:start', csvPath),
-  analyzeWorkOrder: ()       => ipcRenderer.send('automation:analyze'),
-  sendChoice:    (value)     => ipcRenderer.send('automation:choice', value),
-  stopAutomation: ()         => ipcRenderer.send('automation:stop'),
+  // ── Automation lifecycle ─────────────────────────────────────────────────
+  startAutomation:  (csvPath, workOrderId) => ipcRenderer.send('automation:start', csvPath, workOrderId),
+  analyzeWorkOrder: ()                     => ipcRenderer.send('automation:analyze'),
+  sendChoice:       (value)               => ipcRenderer.send('automation:choice', value),
+  stopAutomation:   ()                     => ipcRenderer.send('automation:stop'),
 
-  // Events from main → renderer
+  // ── Events: main → renderer ──────────────────────────────────────────────
   onLog:             (cb) => ipcRenderer.on('automation:log',               (_e, msg)    => cb(msg)),
   onWaitingForReady: (cb) => ipcRenderer.on('automation:waiting-for-ready', ()           => cb()),
   onDiff:            (cb) => ipcRenderer.on('automation:diff',              (_e, result) => cb(result)),
   onComplete:        (cb) => ipcRenderer.on('automation:complete',          (_e, result) => cb(result)),
   onError:           (cb) => ipcRenderer.on('automation:error',             (_e, msg)    => cb(msg)),
   onExited:          (cb) => ipcRenderer.on('automation:exited',            (_e, code)   => cb(code)),
+  onCreditOk:        (cb) => ipcRenderer.on('automation:credit-ok',        (_e, left)   => cb(left)),
+  onCreditError:     (cb) => ipcRenderer.on('automation:credit-error',     (_e, msg)    => cb(msg)),
+
+  // ── Field Mode ───────────────────────────────────────────────────────────
+  listJobs:          ()          => ipcRenderer.invoke('field:list-jobs'),
+  getJob:            (id)        => ipcRenderer.invoke('field:get-job', id),
+  saveJob:           (job)       => ipcRenderer.invoke('field:save-job', job),
+  deleteJob:         (id)        => ipcRenderer.invoke('field:delete-job', id),
+  exportForLia:      (job)       => ipcRenderer.invoke('field:export-for-lia', job),
+  exportCsvDialog:   (job)       => ipcRenderer.invoke('field:export-csv-dialog', job),
 });

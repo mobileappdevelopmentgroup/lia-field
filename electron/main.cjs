@@ -2,7 +2,8 @@
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const os = require('os');
+const os   = require('os');
+const fs   = require('fs');
 const { fork } = require('child_process');
 
 let mainWindow = null;
@@ -15,17 +16,9 @@ function parsePartValue(val) {
   const v = (val ?? '').trim();
   if (!v) return null;
   let m = v.match(/^\((\d+)\)\s*(.+)$/);
-  if (m) {
-    const qty = parseInt(m[1], 10);
-    const term = m[2].trim();
-    return term ? { searchTerm: term, quantity: qty } : null;
-  }
+  if (m) { const qty = parseInt(m[1], 10); const term = m[2].trim(); return term ? { searchTerm: term, quantity: qty } : null; }
   m = v.match(/^(.+?)\s*\((\d+)\)$/);
-  if (m) {
-    const term = m[1].trim();
-    const qty = parseInt(m[2], 10);
-    return term ? { searchTerm: term, quantity: qty } : null;
-  }
+  if (m) { const term = m[1].trim(); const qty = parseInt(m[2], 10); return term ? { searchTerm: term, quantity: qty } : null; }
   return { searchTerm: v, quantity: 1 };
 }
 
@@ -44,6 +37,17 @@ function getPlaywrightBrowsersPath() {
 
 function getLogsDir() {
   return path.join(app.getPath('documents'), 'Lia Logs');
+}
+
+function getConfigPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, '..', 'config.json')
+    : path.join(__dirname, '..', 'config.json');
+}
+
+function readConfig() {
+  try { return JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8')); }
+  catch { return {}; }
 }
 
 // ── Window ───────────────────────────────────────────────────────────────────
@@ -79,6 +83,91 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// ── Supabase auth ─────────────────────────────────────────────────────────────
+
+const AUTH_FILE = () => path.join(app.getPath('userData'), 'lia-auth.json');
+
+function loadStoredSession() {
+  try { return JSON.parse(fs.readFileSync(AUTH_FILE(), 'utf-8')); }
+  catch { return null; }
+}
+
+function saveSession(session) {
+  if (session) {
+    fs.writeFileSync(AUTH_FILE(), JSON.stringify(session), 'utf-8');
+  } else {
+    try { fs.unlinkSync(AUTH_FILE()); } catch {}
+  }
+}
+
+let _supabase = null;
+
+async function getSupabase() {
+  if (_supabase) return _supabase;
+  const cfg = readConfig();
+  if (!cfg.supabase?.url || !cfg.supabase?.anonKey) {
+    throw new Error('Supabase not configured — add supabase.url and supabase.anonKey to config.json');
+  }
+  const { createClient } = await import('@supabase/supabase-js');
+  _supabase = createClient(cfg.supabase.url, cfg.supabase.anonKey, {
+    auth: { persistSession: false, autoRefreshToken: true },
+  });
+  const stored = loadStoredSession();
+  if (stored) {
+    await _supabase.auth.setSession(stored).catch(() => {});
+  }
+  _supabase.auth.onAuthStateChange((_event, session) => {
+    saveSession(session);
+  });
+  return _supabase;
+}
+
+ipcMain.handle('auth:is-configured', () => {
+  const cfg = readConfig();
+  return !!(cfg.supabase?.url && cfg.supabase?.anonKey);
+});
+
+ipcMain.handle('auth:get-session', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return null;
+    const { data: profile, error } = await sb.rpc('get_my_profile');
+    if (error) return { user: { email: session.user.email }, credits: null };
+    const p = typeof profile === 'string' ? JSON.parse(profile) : profile;
+    return { user: { email: session.user.email, name: p.name }, credits: p.credits };
+  } catch { return null; }
+});
+
+ipcMain.handle('auth:login', async (_event, { email, password }) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: error.message };
+    const { data: profile, error: pe } = await sb.rpc('get_my_profile');
+    if (pe) return { ok: true, user: { email: data.user.email }, credits: null };
+    const p = typeof profile === 'string' ? JSON.parse(profile) : profile;
+    return { ok: true, user: { email: data.user.email, name: p.name }, credits: p.credits };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('auth:logout', async () => {
+  try {
+    if (_supabase) await _supabase.auth.signOut();
+  } catch {}
+  saveSession(null);
+  return { ok: true };
+});
+
+ipcMain.handle('auth:consume-credit', async (_event, workOrderId) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, creditsLeft: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── IPC: file dialog ─────────────────────────────────────────────────────────
 
 ipcMain.handle('dialog:open-csv', async () => {
@@ -93,18 +182,12 @@ ipcMain.handle('dialog:open-csv', async () => {
 // ── IPC: CSV preview ─────────────────────────────────────────────────────────
 
 ipcMain.handle('csv:parse', (_event, filePath) => {
-  const fs = require('fs');
   const Papa = require('papaparse');
-
   let content;
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch (err) {
-    return { error: `Cannot read file: ${err.message}` };
-  }
+  try { content = fs.readFileSync(filePath, 'utf-8'); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
 
   const result = Papa.parse(content, { header: true, skipEmptyLines: true });
-
   if (result.errors.length > 0) {
     const fatal = result.errors.find((e) => e.type === 'Delimiter' || e.type === 'Quotes');
     if (fatal) return { error: `CSV parse error: ${fatal.message}` };
@@ -112,25 +195,21 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
 
   const headers = result.meta.fields ?? [];
   const partCols = headers.filter((h) => !METADATA_COLS.has(h));
-
   const records = [];
   const skipped = [];
 
   result.data.forEach((row, idx) => {
     const rowNum = idx + 2;
     const serial = (row['Serial #'] ?? '').trim();
-    if (!serial) {
-      skipped.push({ row: rowNum, serialNum: '(blank)', reason: 'Missing Serial #' });
-      return;
-    }
+    if (!serial) { skipped.push({ row: rowNum, serialNum: '(blank)', reason: 'Missing Serial #' }); return; }
     const parts = partCols.map((col) => parsePartValue(row[col])).filter(Boolean);
     records.push({
       serialNum: serial,
       truckId: (row['Location ID'] ?? '').trim(),
-      brand: (row['Brand'] ?? '').trim(),
-      type: (row['Type'] ?? '').trim(),
-      length: (row['Length'] ?? '').trim(),
-      desc: (row['Description'] ?? '').trim(),
+      brand:   (row['Brand'] ?? '').trim(),
+      type:    (row['Type']  ?? '').trim(),
+      length:  (row['Length'] ?? '').trim(),
+      desc:    (row['Description'] ?? '').trim(),
       parts,
     });
   });
@@ -140,8 +219,31 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
 
 // ── IPC: automation lifecycle ─────────────────────────────────────────────────
 
-ipcMain.on('automation:start', (_event, csvPath) => {
+ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
   if (automationChild) return;
+
+  // Consume a credit if Supabase is configured
+  const cfg = readConfig();
+  if (cfg.supabase?.url && cfg.supabase?.anonKey) {
+    try {
+      const sb = await getSupabase();
+      const { data, error } = await sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
+      if (error) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('automation:credit-error', error.message);
+        }
+        return;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('automation:credit-ok', data);
+      }
+    } catch (err) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('automation:credit-error', String(err));
+      }
+      return;
+    }
+  }
 
   automationChild = fork(getRunnerPath(), [csvPath], {
     execPath: process.execPath,
@@ -170,7 +272,6 @@ ipcMain.on('automation:start', (_event, csvPath) => {
           case 'diff':              mainWindow.webContents.send('automation:diff', event.result); break;
           case 'complete':
             mainWindow.webContents.send('automation:complete', event);
-            // Bring Lia back to the front so the user knows to check the report
             mainWindow.show();
             mainWindow.focus();
             app.focus({ steal: true });
@@ -191,18 +292,12 @@ ipcMain.on('automation:start', (_event, csvPath) => {
   });
 });
 
-// "Analyze Work Order" button — sends ready signal to child
 ipcMain.on('automation:analyze', () => {
-  if (automationChild?.stdin) {
-    automationChild.stdin.write(JSON.stringify({ type: 'ready' }) + '\n');
-  }
+  if (automationChild?.stdin) automationChild.stdin.write(JSON.stringify({ type: 'ready' }) + '\n');
 });
 
-// User chose a diff mode
 ipcMain.on('automation:choice', (_event, value) => {
-  if (automationChild?.stdin) {
-    automationChild.stdin.write(JSON.stringify({ type: 'choice', value }) + '\n');
-  }
+  if (automationChild?.stdin) automationChild.stdin.write(JSON.stringify({ type: 'choice', value }) + '\n');
 });
 
 ipcMain.on('automation:stop', () => {
@@ -220,11 +315,6 @@ const SAMPLE_CSV = [
   '3,1669497,13,LG,Ext,28,Ladder Repair,M23,R28L,,,(2) LGE26p,Hlm100,RC',
 ].join('\r\n');
 
-// Brand codes: LG=Little Giant  WER=Werner  LOU=Louisville  FEA=Featherlite  OTH=Other
-// Type codes:  Ext=Extension    Com=Combination  Ste=Step
-// Part columns: any column name works — the value is the BSI part search term
-// Quantity prefix: (2) M23 = 2 of M23.  Suffix also works: M23 (2)
-
 ipcMain.handle('csv:save-sample', async () => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Save CSV Template',
@@ -232,6 +322,100 @@ ipcMain.handle('csv:save-sample', async () => {
     filters: [{ name: 'CSV Files', extensions: ['csv'] }],
   });
   if (result.canceled || !result.filePath) return null;
-  require('fs').writeFileSync(result.filePath, SAMPLE_CSV);
+  fs.writeFileSync(result.filePath, SAMPLE_CSV);
+  return result.filePath;
+});
+
+// ── Field Mode: job storage ───────────────────────────────────────────────────
+
+function getJobsDir() { return path.join(app.getPath('userData'), 'lia-jobs'); }
+
+function ensureJobsDir() {
+  if (!fs.existsSync(getJobsDir())) fs.mkdirSync(getJobsDir(), { recursive: true });
+}
+
+ipcMain.handle('field:list-jobs', () => {
+  ensureJobsDir();
+  return fs.readdirSync(getJobsDir())
+    .filter(f => f.endsWith('.json'))
+    .map(f => {
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(getJobsDir(), f), 'utf-8'));
+        return { id: j.id, name: j.name, workOrderNum: j.workOrderNum, ladderCount: (j.ladders || []).length, updatedAt: j.updatedAt };
+      } catch { return null; }
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+});
+
+ipcMain.handle('field:get-job', (_event, id) => {
+  try { return JSON.parse(fs.readFileSync(path.join(getJobsDir(), `${id}.json`), 'utf-8')); }
+  catch { return null; }
+});
+
+ipcMain.handle('field:save-job', (_event, job) => {
+  ensureJobsDir();
+  job.updatedAt = new Date().toISOString();
+  fs.writeFileSync(path.join(getJobsDir(), `${job.id}.json`), JSON.stringify(job, null, 2), 'utf-8');
+  return { ok: true };
+});
+
+ipcMain.handle('field:delete-job', (_event, id) => {
+  try { fs.unlinkSync(path.join(getJobsDir(), `${id}.json`)); return { ok: true }; }
+  catch { return { ok: false }; }
+});
+
+function buildJobCsv(job) {
+  const ladders = job.ladders || [];
+  const maxParts = ladders.reduce((m, l) => Math.max(m, (l.parts || []).length), 0);
+  const partCols = Array.from({ length: maxParts }, (_, i) => String.fromCharCode(65 + i));
+  const headers = ['Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description', ...partCols];
+
+  const rows = ladders.map((l, idx) => {
+    const row = {
+      'Row#': idx + 1,
+      'Serial #': l.serialNum || '',
+      'Location ID': l.locationId || '',
+      'Brand': l.brand || '',
+      'Type': l.type || '',
+      'Length': l.length || '',
+      'Description': l.desc || '',
+    };
+    (l.parts || []).forEach((p, i) => {
+      const col = String.fromCharCode(65 + i);
+      row[col] = p.qty > 1 ? `(${p.qty}) ${p.name}` : (p.name || '');
+    });
+    return row;
+  });
+
+  const escape = v => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = [
+    headers.map(escape).join(','),
+    ...rows.map(r => headers.map(h => escape(r[h] ?? '')).join(',')),
+  ];
+  return lines.join('\r\n');
+}
+
+// Export job for Lia Office Mode — returns path to the generated CSV
+ipcMain.handle('field:export-for-lia', (_event, job) => {
+  try {
+    const csv = buildJobCsv(job);
+    const dest = path.join(app.getPath('userData'), 'field-export.csv');
+    fs.writeFileSync(dest, csv, 'utf-8');
+    return { ok: true, path: dest };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// Export job to a user-chosen file
+ipcMain.handle('field:export-csv-dialog', async (_event, job) => {
+  const safeName = (job.name || 'job').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'job';
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Job as CSV',
+    defaultPath: `${safeName}.csv`,
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const csv = buildJobCsv(job);
+  fs.writeFileSync(result.filePath, csv, 'utf-8');
   return result.filePath;
 });

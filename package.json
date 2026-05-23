@@ -14,6 +14,7 @@
     "electron:build:dir": "npm run build:runner && electron-builder --mac dir"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
     "@types/papaparse": "^5.3.14",
     "cli-table3": "^0.6.5",
     "papaparse": "^5.4.1",

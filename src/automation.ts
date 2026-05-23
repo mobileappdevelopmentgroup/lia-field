@@ -584,7 +584,7 @@ async function addPartsToBox(
   // Before opening the product modal, read what parts are already in this box
   // so we never add the same part number twice to the same box.
   const existingInBox = await page.locator(`${boxSel} tr`).evaluateAll((rows) =>
-    rows.map(r => r.innerText.trim()).filter(t => /^\d+\s+\S+/.test(t))
+    rows.map(r => (r as HTMLElement).innerText.trim()).filter(t => /^\d+\s+\S+/.test(t))
        .map(t => { const m = t.match(/^\d+\s+(\S+)/); return m ? m[1].toUpperCase() : ''; })
        .filter(Boolean),
   ).catch(() => [] as string[]);
