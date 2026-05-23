@@ -163,12 +163,18 @@ ipcMain.on('automation:start', (_event, csvPath) => {
       if (!line.trim()) continue;
       try {
         const event = JSON.parse(line);
-        if (!mainWindow) return;
+        if (!mainWindow || mainWindow.isDestroyed()) return;
         switch (event.type) {
           case 'log':               mainWindow.webContents.send('automation:log', event.message); break;
           case 'waiting-for-ready': mainWindow.webContents.send('automation:waiting-for-ready'); break;
           case 'diff':              mainWindow.webContents.send('automation:diff', event.result); break;
-          case 'complete':          mainWindow.webContents.send('automation:complete', event); break;
+          case 'complete':
+            mainWindow.webContents.send('automation:complete', event);
+            // Bring Lia back to the front so the user knows to check the report
+            mainWindow.show();
+            mainWindow.focus();
+            app.focus({ steal: true });
+            break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;
         }
       } catch { /* ignore non-JSON */ }
@@ -176,12 +182,12 @@ ipcMain.on('automation:start', (_event, csvPath) => {
   });
 
   automationChild.stderr.on('data', (chunk) => {
-    if (mainWindow) mainWindow.webContents.send('automation:log', '[STDERR] ' + chunk.toString());
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('automation:log', '[STDERR] ' + chunk.toString());
   });
 
   automationChild.on('exit', (code) => {
     automationChild = null;
-    if (mainWindow) mainWindow.webContents.send('automation:exited', code);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('automation:exited', code);
   });
 });
 

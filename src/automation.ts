@@ -183,45 +183,41 @@ async function keyboardSelectDropdown(
     return;
   }
 
-  // ArrowDown once to activate, then navigate to the target, then Enter to confirm.
-  // BSI requires the Enter keypress for the field to register as valid (outline turns green).
-  for (let i = 0; i < targetIndex; i++) {
-    await el.press('ArrowDown');
-    await pause(120);
-  }
-  await el.press('Enter');
+  // CDP keyboard events do NOT trigger the browser's native <select> key handling —
+  // the C++ code that changes selectedIndex and fires change never runs via Playwright key dispatch.
+  // Instead: set selectedIndex directly in JS, then fire both a native change event and a
+  // jQuery trigger (BSI uses jQuery handlers that only fire via $.trigger, not raw dispatchEvent).
+  const selectedText = await el.evaluate((selectEl: HTMLSelectElement, idx) => {
+    selectEl.selectedIndex = idx;
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    const $ = (window as any).jQuery;
+    if ($) $(selectEl).trigger('change');
+    return selectEl.options[idx]?.text ?? '(none)';
+  }, targetIndex).catch(() => '(eval error)');
+  console.log(`  [SELECT] ${selector} → "${selectedText}" (index ${targetIndex})`);
+
   await pause(delay);
 }
 
 // Fill Location ID + Brand + Type + Length + Description for a new/unknown serial.
 // Uses Tab between fields and ArrowDown inside dropdowns — the exact keyboard flow
-// BSI requires for its validation to accept (outline turns green).
+// Sets dropdowns via evaluate+jQuery (no Tab navigation needed) then fills Location ID last.
+// Location ID is filled last because BSI's validation only fires on real keyboard input/blur,
+// so we click into the field, fill it, then Tab out to trigger the green checkmark.
 async function fillNewSerialFields(
   page: Page,
   record: LadderRecord,
   opts: AutomationOptions,
 ): Promise<void> {
-  // 1. Location ID (text field)
-  await fillIfEmpty(page, 'Truck or Location ID', record.truckId, opts.actionDelay);
-
-  // Tab to Brand dropdown
-  const locField = page.getByRole('textbox', { name: 'Truck or Location ID' });
-  if (await locField.isVisible().catch(() => false)) {
-    await locField.press('Tab');
-    await pause(500);
-  }
-
-  // 2. Brand — keyboard navigate
+  // 1. Brand
   await keyboardSelectDropdown(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
-  await page.locator('#LadderBrand').press('Tab');
   await pause(400);
 
-  // 3. Type
+  // 2. Type — its change event triggers the AJAX that populates Length options
   await keyboardSelectDropdown(page, '#WoLadType', expandAbbrev(TYPE_ABBREV, record.type), opts.actionDelay);
-  await page.locator('#WoLadType').press('Tab');
   await pause(400);
 
-  // 4. Length — dropdown is populated via AJAX after type is selected; wait for it.
+  // 3. Length — wait for AJAX to populate options after Type was set
   if (record.length && record.length !== '?') {
     await page.waitForFunction(
       () => {
@@ -231,12 +227,22 @@ async function fillNewSerialFields(
       { timeout: 8_000 },
     ).catch(() => console.warn('  [WARN] #LadderLength options did not load in time'));
     await keyboardSelectDropdown(page, '#LadderLength', record.length, opts.actionDelay);
-    await page.locator('#LadderLength').press('Tab');
     await pause(400);
   }
 
-  // 5. Description — always "Ladder Repair"
+  // 4. Description — always "Ladder Repair"
   await keyboardSelectDropdown(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
+  await pause(400);
+
+  // 5. Location ID — filled last so BSI validation fires correctly.
+  // Click the field, fill, then Tab out to trigger blur/change validation.
+  const locField = page.getByRole('textbox', { name: 'Truck or Location ID' });
+  if (await locField.isVisible().catch(() => false)) {
+    await locField.click();
+    await locField.fill(record.truckId);
+    await locField.press('Tab');
+    await pause(opts.actionDelay);
+  }
 }
 
 // Find the most recently added #box-N element.
@@ -309,17 +315,29 @@ async function confirmSerial(
   return { kind: 'not_found' };
 }
 
-// Dismiss a BSI HTML error modal (the kind with a single OK button).
-// Silent no-op if no such modal is visible.
-async function dismissBsiErrorModal(page: Page, delay: number): Promise<void> {
-  try {
-    const okBtn = page.locator('.modal.show').getByRole('button', { name: /^ok$/i });
-    await okBtn.waitFor({ state: 'visible', timeout: 1_500 });
-    const msg = await page.locator('.modal.show .modal-body').innerText().catch(() => '');
-    if (msg) console.warn(`  [BSI error] ${msg.trim()}`);
-    await okBtn.click();
-    await pause(delay);
-  } catch { /* no error modal present */ }
+// Dismiss a BSI error popup — covers both Bootstrap modals (.modal.show) and
+// SweetAlert2 dialogs (.swal2-popup), which BSI uses for "Part Number Duplicated" errors.
+async function dismissBsiErrorModal(page: Page, delay: number): Promise<string> {
+  // Selectors that might contain the OK button across both dialog types
+  const candidates = [
+    '.swal2-popup .swal2-confirm',
+    '.swal2-popup button',
+    '.modal.show button',
+  ];
+  for (const sel of candidates) {
+    try {
+      const btn = page.locator(sel).filter({ hasText: /^ok$/i }).first();
+      await btn.waitFor({ state: 'visible', timeout: 1_200 });
+      // Try to grab the message text from either dialog type
+      const msg = await page.locator('.swal2-html-container, .swal2-content, .modal.show .modal-body')
+        .first().innerText().catch(() => '');
+      if (msg) console.warn(`  [BSI error] ${msg.trim()}`);
+      await btn.click();
+      await pause(delay);
+      return msg;
+    } catch { /* try next */ }
+  }
+  return '';
 }
 
 // Close the Product Selector modal and block until it disappears.
@@ -455,12 +473,22 @@ async function addPart(
 
     if (isLast) {
       await page.getByRole('button', { name: 'Add & Close' }).click();
-      await dismissBsiErrorModal(page, opts.actionDelay);
+      const errMsg = await dismissBsiErrorModal(page, opts.actionDelay);
+      if (errMsg.toLowerCase().includes('duplicat')) {
+        // BSI rejected the part — modal may already be closed; ensure clean state then bail
+        await ensureProdModalClosed(page, opts.actionDelay).catch(() => {});
+        return { searchTerm, status: 'error', message: `BSI rejected (duplicate): ${errMsg.trim()}` };
+      }
       await pause(opts.serialApiDelay);
       await waitForNetworkIdle(page, opts.serialApiDelay * 2);
     } else {
       await page.getByRole('button', { name: 'Add Another' }).click();
-      await dismissBsiErrorModal(page, opts.actionDelay);
+      const errMsg = await dismissBsiErrorModal(page, opts.actionDelay);
+      if (errMsg.toLowerCase().includes('duplicat')) {
+        // BSI rejected — ensure product modal is closed so the next part can try fresh
+        await ensureProdModalClosed(page, opts.actionDelay).catch(() => {});
+        return { searchTerm, status: 'error', message: `BSI rejected (duplicate): ${errMsg.trim()}` };
+      }
       await pause(opts.actionDelay);
     }
 
@@ -540,13 +568,54 @@ async function addPartsToBox(
   opts: AutomationOptions,
 ): Promise<PartResult[]> {
   const partResults: PartResult[] = [];
+
+  if (parts.length === 0) return partResults;
+
+  // Verify the box selector resolves to the expected serial before touching anything.
+  const boxNum = boxSel.replace('#box-', '');
+  const actualSerial = await page.locator(`#boxserialnumberh-${boxNum}`)
+    .inputValue().catch(() => '?');
+  if (actualSerial !== serialNum) {
+    console.warn(`  [BOX MISMATCH] ${boxSel} has SN="${actualSerial}" but expected "${serialNum}" — aborting part add`);
+    return parts.map(p => ({ searchTerm: p.searchTerm, status: 'error' as const, message: 'Box selector mismatch' }));
+  }
+  console.log(`  [BOX OK] ${boxSel} → SN="${actualSerial}"`);
+
+  // Before opening the product modal, read what parts are already in this box
+  // so we never add the same part number twice to the same box.
+  const existingInBox = await page.locator(`${boxSel} tr`).evaluateAll((rows) =>
+    rows.map(r => r.innerText.trim()).filter(t => /^\d+\s+\S+/.test(t))
+       .map(t => { const m = t.match(/^\d+\s+(\S+)/); return m ? m[1].toUpperCase() : ''; })
+       .filter(Boolean),
+  ).catch(() => [] as string[]);
+  const inBoxSet = new Set(existingInBox);
+  if (inBoxSet.size > 0) console.log(`  [BOX PARTS] already has: ${[...inBoxSet].join(', ')}`);
+
+  // Filter out parts already in THIS box using the same fuzzy logic as the diff:
+  // exact match OR one string contains the other (e.g. "S375" matched by "SLS375").
+  const partsToAdd = parts.filter(p => {
+    const term = p.searchTerm.toLowerCase();
+    const alreadyInBox = [...inBoxSet].some(existing => {
+      const e = existing.toLowerCase();
+      return e === term || e.includes(term) || term.includes(e);
+    });
+    if (alreadyInBox) {
+      console.log(`  [SKIP] "${p.searchTerm}" already in ${boxSel} — skipping`);
+      partResults.push({ searchTerm: p.searchTerm, status: 'skipped', message: 'Already in this box' });
+      return false;
+    }
+    return true;
+  });
+
+  if (partsToAdd.length === 0) return partResults;
+
   try {
     await page.locator(boxSel).getByRole('button', { name: 'Add Product' }).click();
     await pause(opts.actionDelay);
 
-    for (let i = 0; i < parts.length; i++) {
-      const isLast = i === parts.length - 1;
-      const result = await addPart(page, parts[i], isLast, opts);
+    for (let i = 0; i < partsToAdd.length; i++) {
+      const isLast = i === partsToAdd.length - 1;
+      const result = await addPart(page, partsToAdd[i], isLast, opts);
       partResults.push(result);
       if (result.status !== 'success') {
         console.warn(`  [WARN] Part "${result.searchTerm}" → ${result.status}: ${result.message ?? ''}`);
@@ -735,12 +804,14 @@ export function diffCsvVsWorkOrder(
     }
 
     const existingLower = existing.partNums.map((p) => p.toLowerCase());
-    const missingParts = record.parts.filter(
-      (p) => !existingLower.includes(p.searchTerm.toLowerCase()),
-    );
-    const presentParts = record.parts
-      .filter((p) => existingLower.includes(p.searchTerm.toLowerCase()))
-      .map((p) => p.searchTerm);
+    // Fuzzy match: a CSV search term is "present" if any existing part code is an exact match
+    // OR one string contains the other (e.g. CSV "S375" is matched by BSI code "SLS375").
+    const isPresent = (searchTerm: string) => {
+      const t = searchTerm.toLowerCase();
+      return existingLower.some((e) => e === t || e.includes(t) || t.includes(e));
+    };
+    const missingParts = record.parts.filter((p) => !isPresent(p.searchTerm));
+    const presentParts = record.parts.filter((p) => isPresent(p.searchTerm)).map((p) => p.searchTerm);
 
     if (missingParts.length === 0) {
       alreadyComplete.push(record);
@@ -805,6 +876,7 @@ export async function runAutomationWithDiff(
     const finalStatus: LadderResult['status'] = allOk ? 'success' : partsOk > 0 ? 'partial' : 'error';
     console.log(`  ✓ SN ${record.serialNum}: ${finalStatus} (${partsOk}/${record.parts.length} parts)`);
     results.push({ serialNum: record.serialNum, status: finalStatus, partsTotal: record.parts.length, partsOk, partResults });
+    await waitForNetworkIdle(workPage, opts.serialApiDelay);
     await pause(opts.pauseBetweenLadders);
   }
 
@@ -847,6 +919,7 @@ export async function runAutomationWithDiff(
         ...partResults,
       ],
     });
+    await waitForNetworkIdle(workPage, opts.serialApiDelay);
     await pause(opts.pauseBetweenLadders);
   }
 

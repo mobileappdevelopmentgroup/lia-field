@@ -177,6 +177,25 @@
     .note-good { background:rgba(46,204,113,.08); color:#5de89a; border:1px solid rgba(46,204,113,.2); }
     .note-bad  { background:rgba(240,165,0,.08);  color:#f5c842;  border:1px solid rgba(240,165,0,.2); }
     .log-path { font-size:11px; font-family:var(--mono); color:var(--muted); margin-top:6px; }
+    .part-tag { display:inline-block; padding:2px 7px; border-radius:4px; font-size:11px; font-family:var(--mono); margin:2px; }
+    .tag-error { background:#3b1a1a; color:#f87171; }
+    .tag-not_found { background:#2a2310; color:#fbbf24; }
+    .tag-skipped { background:#1e2330; color:#94a3b8; }
+    #sum-detail tr:nth-child(odd) td, #sum-extra tr:nth-child(odd) td { background:rgba(255,255,255,.03); }
+
+    /* full-page summary mode — hides sidebar and expands content */
+    body.summary-mode .sidebar { display:none; }
+    body.summary-mode .content { padding:32px 10%; }
+    body.summary-mode #sum-card { border:none; background:transparent; padding:0; }
+
+    /* collapsible log at bottom of summary */
+    .log-toggle { display:flex; align-items:center; gap:8px; cursor:pointer;
+                  font-size:11px; color:var(--muted); padding:8px 0; user-select:none; }
+    .log-toggle:hover { color:var(--text); }
+    .log-toggle .chevron { transition:transform .2s; font-style:normal; }
+    .log-toggle.open .chevron { transform:rotate(180deg); }
+    #log-collapsed { display:none; margin-top:6px; }
+    #log-collapsed.vis { display:block; }
 
     /* error */
     #err-card { display:none; }
@@ -294,10 +313,24 @@
     <div class="card" id="sum-card">
       <div class="card-ttl">Run Summary</div>
       <div class="stat-grid" id="stat-grid"></div>
+      <div id="sum-detail"></div>
+      <div id="sum-extra"></div>
       <div class="result-note" id="result-note"></div>
-      <div class="log-path" id="log-path"></div>
-      <div class="row" style="margin-top:14px;">
-        <button class="btn-g" id="btn-restart">Start Over</button>
+
+      <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center;">
+        <button class="btn-p" id="btn-restart">↺ Start Over</button>
+        <div class="log-path" id="log-path"></div>
+      </div>
+
+      <!-- Collapsible terminal output -->
+      <div class="log-toggle" id="log-toggle" style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">
+        <em class="chevron">▼</em>
+        <span>Show terminal output</span>
+      </div>
+      <div id="log-collapsed">
+        <pre id="log-sum" style="background:var(--log-bg);border:1px solid var(--border);border-radius:6px;
+             padding:12px 14px;font-family:var(--mono);font-size:11px;line-height:1.65;
+             color:var(--log-txt);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
       </div>
     </div>
 
@@ -439,9 +472,12 @@ function renderDiff(diff) {
 // ── Summary rendering ──────────────────────────────────────────────────────────
 function renderSummary(result) {
   const s = result.summary; if (!s) return;
+  const all = s.ladderResults || [];
+
+  // ── Stat chips ──
   const stats = [
     {n:s.totalLadders,   l:'Ladders',     c:'stat-plain'},
-    {n:s.successLadders, l:'Success',     c:'stat-good'},
+    {n:s.successLadders, l:'Complete',    c:'stat-good'},
     {n:s.partialLadders, l:'Partial',     c:s.partialLadders?'stat-warn':'stat-plain'},
     {n:s.errorLadders,   l:'Errors',      c:s.errorLadders?'stat-bad':'stat-plain'},
     {n:s.totalParts,     l:'Parts Total', c:'stat-plain'},
@@ -451,11 +487,66 @@ function renderSummary(result) {
   $('stat-grid').innerHTML = stats.map(({n,l,c}) =>
     `<div class="stat-box ${c}"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`
   ).join('');
-  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0;
+
+  // ── Helper: build a part-detail row ──
+  function partRow(r, badPartsOnly) {
+    const parts = (r.partResults||[]).filter(p => !badPartsOnly || p.status !== 'success' && p.status !== 'skipped');
+    const tags = parts.map(p => {
+      const label = p.status==='not_found'?'not found':p.status==='error'?'error':p.status;
+      const msg = p.message ? ` — ${esc(p.message)}` : '';
+      return `<span class="part-tag tag-${p.status}">${esc(p.searchTerm)}: ${label}${msg}</span>`;
+    }).join(' ');
+    const err = r.errorMsg ? `<br><span style="color:var(--err);font-size:11px;">${esc(r.errorMsg)}</span>` : '';
+    return `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;">SN ${esc(r.serialNum)}</td>`+
+           `<td style="padding:4px 8px;font-size:12px;">${tags}${err}</td></tr>`;
+  }
+
+  function section(heading, color, rows) {
+    if (!rows.length) return '';
+    return `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:${color};">${heading}</div>`+
+           `<table style="width:100%;border-collapse:collapse;">${rows.join('')}</table>`;
+  }
+
+  // ── Section 1: All correct ──
+  const completeRows = all
+    .filter(r => (r.status==='success'||r.status==='skipped') && !(r.partResults||[]).some(p=>p.status!=='success'&&p.status!=='skipped'))
+    .map(r => `<tr><td colspan="2" style="padding:3px 8px;font-family:var(--mono);font-size:12px;color:var(--ok);">✓ SN ${esc(r.serialNum)}</td></tr>`);
+
+  // ── Section 2: Missing / partial parts ──
+  const partialRows = all
+    .filter(r => r.status==='partial' || ((r.status==='success'||r.status==='skipped') && (r.partResults||[]).some(p=>p.status==='not_found'||p.status==='error')))
+    .map(r => partRow(r, true));
+
+  // ── Section 3: Not added / errors ──
+  const errorRows = all
+    .filter(r => r.status==='error' || r.status==='duplicate')
+    .map(r => partRow(r, false));
+
+  $('sum-detail').innerHTML =
+    section('✓  COMPLETE — all parts added, nothing missing', 'var(--ok)', completeRows) +
+    section('⚠  MISSING PARTS — added to work order but some parts were not found or failed', 'var(--warn)', partialRows) +
+    section('✗  NOT ADDED — box could not be created or had a fatal error', 'var(--err)', errorRows);
+
+  // ── Section 4: Extra parts in BSI not in CSV ──
+  if (s.extraOnWorkOrder && s.extraOnWorkOrder.length > 0) {
+    const bySerial = {};
+    for (const e of s.extraOnWorkOrder) {
+      (bySerial[e.boxSerial] = bySerial[e.boxSerial]||[]).push(e.partNum);
+    }
+    const rows = Object.entries(bySerial).map(([sn, parts]) =>
+      `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--warn);">SN ${esc(sn)}</td>`+
+      `<td style="padding:4px 8px;">${parts.map(p=>`<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ')}</td></tr>`
+    );
+    $('sum-extra').innerHTML = section('⚠  EXTRA ON WORK ORDER — parts in BSI not listed in your CSV', 'var(--warn)', rows);
+  } else {
+    $('sum-extra').innerHTML = '';
+  }
+
+  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0;
   $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
   $('result-note').textContent = bad
-    ? '⚠  Some items need attention — review the output above before submitting the work order.'
-    : '✓  All ladders and parts added successfully. Review the work order and submit.';
+    ? '⚠  Review the sections below before submitting the work order.'
+    : '✓  All ladders and parts match the CSV. Safe to submit the work order.';
   if (result.logPath) $('log-path').textContent = `Log: ${result.logPath}`;
 }
 
@@ -464,50 +555,80 @@ function reset() {
   $('file-lbl').textContent = 'No file selected';
   $('file-lbl').classList.remove('has-file');
   $('log').innerHTML = '';
+  $('log-sum').textContent = '';
   $('prev-body').innerHTML = '';
   $('stat-grid').innerHTML = '';
+  $('sum-detail').innerHTML = '';
+  $('sum-extra').innerHTML = '';
   $('diff-miss-list').innerHTML = '';
   $('diff-gap-list').innerHTML = '';
   $('diff-done-list').innerHTML = '';
   $('err-msg').textContent = '';
 
+  // Exit full-page summary mode, restore sidebar
+  document.body.classList.remove('summary-mode');
+  $('log-collapsed').classList.remove('vis');
+  $('log-toggle').classList.remove('open');
+  $('log-toggle').querySelector('span').textContent = 'Show terminal output';
+
   ['preview-card','diff-card','log-section','sum-card','err-card'].forEach(hide);
   hideEl('run-card');
   $('btn-analyze').style.display = 'none';
   $('btn-boxes-only').style.display = '';
+  $('btn-stop').disabled = false;
 
   setStep(1);
 }
 
 // ── Step 1: File picker ────────────────────────────────────────────────────────
-$('btn-choose').addEventListener('click', async () => {
-  const p = await window.api.openCsv();
+async function loadCsvFile(p) {
   if (!p) return;
-
-  $('file-lbl').textContent = p.split('/').pop();
-  $('file-lbl').classList.add('has-file');
-
   const parsed = await window.api.parseCsv(p);
   if (parsed.error || !parsed.records?.length) {
     show('err-card');
     $('err-msg').textContent = parsed.error || 'No valid rows found. Make sure the CSV has a "Serial #" column.';
     return;
   }
-
+  $('file-lbl').textContent = p.split('/').pop();
+  $('file-lbl').classList.add('has-file');
   window._csvPath = p;
+  localStorage.setItem('lastCsvPath', p);
   renderPreview(parsed);
   show('preview-card');
   setStep(2);
+}
+
+$('btn-choose').addEventListener('click', async () => {
+  const p = await window.api.openCsv();
+  if (p) await loadCsvFile(p);
 });
+
+// Restore last CSV on startup
+(async () => {
+  const last = localStorage.getItem('lastCsvPath');
+  if (last) {
+    $('file-lbl').textContent = last.split('/').pop() + ' (last used)';
+    $('file-lbl').classList.add('has-file');
+    window._lastCsvPath = last;
+    // Show a "Use last file" prompt instead of auto-loading
+    const useBtn = document.createElement('button');
+    useBtn.className = 'btn-g';
+    useBtn.style.cssText = 'margin-left:10px;font-size:12px;padding:5px 12px;';
+    useBtn.textContent = '↺ Use last file';
+    useBtn.onclick = async () => { useBtn.remove(); await loadCsvFile(last); };
+    $('btn-choose').parentNode.appendChild(useBtn);
+  }
+})();
 
 $('btn-template').addEventListener('click', async () => {
   await window.api.saveSampleCsv();
 });
 
-$('btn-change').addEventListener('click', () => {
+$('btn-change').addEventListener('click', async () => {
   hide('preview-card');
   setStep(1);
-  $('btn-choose').click();
+  const p = await window.api.openCsv();
+  if (p) await loadCsvFile(p);
 });
 
 // ── Step 2 → 3: Open browser ───────────────────────────────────────────────────
@@ -590,10 +711,29 @@ window.api.onDiff(diff => {
 });
 
 window.api.onComplete(result => {
-  hideEl('run-card');
   renderSummary(result);
+
+  // Copy live log into the collapsible panel, then hide all working UI
+  $('log-sum').textContent = $('log').textContent;
+  ['run-card','log-section','diff-card'].forEach(id => { const el=$(id); if(el) el.classList.remove('vis'); });
+
+  // Clear the spinning status pill and disable the stop button
+  setPill('Import complete', 'pill-done');
+  $('btn-stop').disabled = true;
+
+  // Switch to full-page summary mode (hides sidebar, expands content)
+  document.body.classList.add('summary-mode');
   show('sum-card');
   setStep(6);
+});
+
+// Collapsible log toggle
+$('log-toggle').addEventListener('click', () => {
+  const tog = $('log-toggle');
+  const box = $('log-collapsed');
+  const open = box.classList.toggle('vis');
+  tog.classList.toggle('open', open);
+  tog.querySelector('span').textContent = open ? 'Hide terminal output' : 'Show terminal output';
 });
 
 window.api.onError(msg => {
