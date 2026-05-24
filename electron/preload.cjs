@@ -32,14 +32,6 @@ contextBridge.exposeInMainWorld('api', {
   onCreditOk:        (cb) => ipcRenderer.on('automation:credit-ok',        (_e, left)   => cb(left)),
   onCreditError:     (cb) => ipcRenderer.on('automation:credit-error',     (_e, msg)    => cb(msg)),
 
-  // ── Field Mode ───────────────────────────────────────────────────────────
-  listJobs:          ()          => ipcRenderer.invoke('field:list-jobs'),
-  getJob:            (id)        => ipcRenderer.invoke('field:get-job', id),
-  saveJob:           (job)       => ipcRenderer.invoke('field:save-job', job),
-  deleteJob:         (id)        => ipcRenderer.invoke('field:delete-job', id),
-  exportForLia:      (job)       => ipcRenderer.invoke('field:export-for-lia', job),
-  exportCsvDialog:   (job)       => ipcRenderer.invoke('field:export-csv-dialog', job),
-
   // ── Inspection Log ───────────────────────────────────────────────────────
   saveInspectionSample: ()           => ipcRenderer.invoke('inspections:save-sample'),
   parseInspectionCsv:   (filePath)   => ipcRenderer.invoke('inspections:parse-csv', filePath),

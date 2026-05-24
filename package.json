@@ -1,6 +1,6 @@
 {
   "name": "lia-ladder-import-assistant",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -18,7 +18,8 @@
     "@types/papaparse": "^5.3.14",
     "cli-table3": "^0.6.5",
     "papaparse": "^5.4.1",
-    "playwright": "^1.48.0"
+    "playwright": "^1.48.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -62,12 +63,17 @@
       {
         "from": "dist/electron-runner.cjs",
         "to": "electron-runner.cjs"
+      },
+      {
+        "from": "config.json",
+        "to": "config.json"
       }
     ],
     "afterPack": "./scripts/after-pack.cjs",
     "asar": true,
     "asarUnpack": [
-      "node_modules/playwright/**"
+      "node_modules/playwright/**",
+      "node_modules/playwright-core/**"
     ]
   }
 }

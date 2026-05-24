@@ -81,8 +81,3 @@ export interface AutomationOptions {
   actionDelay: number;         // ms after every click/fill/select
   serialApiDelay: number;      // ms to wait after serial confirmation for API to populate fields
 }
-
-export interface Config {
-  username: string;
-  password: string;
-}
