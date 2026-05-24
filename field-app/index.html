@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lia Field">
+  <meta name="theme-color" content="#4f6ef7">
+  <link rel="manifest" href="manifest.json">
+  <title>Lia Field</title>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #0f0f1a;
+      --surf:   #16162a;
+      --surf2:  #1e1e36;
+      --border: #2b2b4b;
+      --accent: #4f6ef7;
+      --ok:     #2ecc71;
+      --err:    #e74c3c;
+      --text:   #dde0f0;
+      --muted:  #5e6080;
+      --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono:   'SF Mono','Fira Code','Cascadia Code',monospace;
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+    }
+    html, body { height: 100%; height: -webkit-fill-available; height: 100dvh; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text);
+           display: flex; flex-direction: column; overflow: hidden; font-size: 15px; }
+
+    /* ── Screens ── */
+    .screen { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
+    .screen.active { display: flex; }
+
+    /* ── Shared topbar ── */
+    .topbar { background: var(--surf); border-bottom: 1px solid var(--border); flex-shrink: 0;
+              padding: 0 12px; padding-top: var(--safe-t); height: calc(50px + var(--safe-t));
+              display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .topbar-title { font-size: 17px; font-weight: 800; flex: 1; letter-spacing: -.02em;
+                    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Buttons ── */
+    button { font-family: var(--font); font-size: 15px; font-weight: 600; padding: 10px 20px;
+             border-radius: 8px; border: none; cursor: pointer;
+             transition: background .15s, opacity .15s; white-space: nowrap; flex-shrink: 0; }
+    button:active:not(:disabled) { opacity: .7; }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-p  { background: var(--accent); color: #fff; }
+    .btn-ok { background: var(--ok); color: #fff; }
+    .btn-g  { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-icon { background: none; border: none; padding: 0; font-size: 20px; color: var(--muted);
+                border-radius: 8px; width: 38px; height: 38px;
+                display: flex; align-items: center; justify-content: center; }
+    .btn-icon:active { background: rgba(255,255,255,.06); color: var(--text); }
+    .back-btn { background: none; border: none; color: var(--accent); font-size: 15px;
+                font-weight: 600; cursor: pointer; padding: 8px 4px 8px 0; border-radius: 6px; flex-shrink: 0; }
+
+    /* ══════════════════════════════════════════════════════
+       JOBS SCREEN
+    ══════════════════════════════════════════════════════ */
+    #jobs-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                 padding: 14px; display: flex; flex-direction: column; gap: 10px;
+                 padding-bottom: calc(14px + var(--safe-b)); }
+    .job-card { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
+                padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+                min-width: 0; }
+    .job-card-info { flex: 1; min-width: 0; overflow: hidden; }
+    .job-card-name { font-size: 15px; font-weight: 700; white-space: nowrap;
+                     overflow: hidden; text-overflow: ellipsis; }
+    .job-card-meta { font-size: 12px; color: var(--muted); margin-top: 3px;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .job-empty { text-align: center; color: var(--muted); padding: 80px 24px;
+                 font-size: 14px; line-height: 1.7; }
+    .job-empty strong { color: var(--text); }
+
+    /* ══════════════════════════════════════════════════════
+       JOB DETAIL — fixed panel layout, no page scroll
+    ══════════════════════════════════════════════════════ */
+
+    /* ── Detail topbar ── */
+    #detail-topbar { background: var(--surf); border-bottom: 1px solid var(--border); flex-shrink: 0;
+                     padding: 0 12px; padding-top: var(--safe-t);
+                     height: calc(50px + var(--safe-t));
+                     display: flex; align-items: center; gap: 8px; }
+    #detail-name-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    input.topbar-input { background: transparent; border: none; color: var(--text); font-family: var(--font);
+                         font-size: 14px; font-weight: 700; padding: 0; width: 100%; outline: none; }
+    input.topbar-input::placeholder { color: var(--muted); font-weight: 400; }
+    input.topbar-input.wo { font-size: 11px; font-weight: 400; color: var(--muted); }
+    .save-status { font-size: 10px; color: var(--muted); flex-shrink: 0; min-width: 32px; text-align: right; }
+    .save-status.saved { color: var(--ok); }
+
+    /* ── Form panel — natural height, no cap ── */
+    #form-panel { flex-shrink: 0;
+                  padding: 7px 12px; display: flex; flex-direction: column; gap: 5px;
+                  background: var(--surf); border-bottom: 1px solid var(--border); }
+
+    /* Form row header */
+    .form-hdr { display: flex; align-items: center; justify-content: space-between;
+                flex-shrink: 0; margin-bottom: 2px; }
+    .form-hdr-label { font-size: 10px; font-weight: 700; color: var(--muted);
+                      text-transform: uppercase; letter-spacing: .08em; }
+    .clear-form-btn { background: none; border: none; font-size: 11px; color: var(--muted);
+                      cursor: pointer; padding: 0; text-decoration: underline; font-family: var(--font); }
+    .clear-form-btn:active { color: var(--err); }
+
+    /* Compact inputs */
+    .field-ig { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .field-label { font-size: 9.5px; font-weight: 700; color: var(--muted);
+                   text-transform: uppercase; letter-spacing: .06em; }
+    .field-ig-wrap { position: relative; }
+    input.field-input { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
+                        color: var(--text); font-family: var(--font); font-size: 14px;
+                        padding: 5px 26px 5px 9px; width: 100%; outline: none;
+                        -webkit-appearance: none; appearance: none; transition: border-color .12s; }
+    input.field-input:focus { border-color: var(--accent); }
+    input.field-input::placeholder { color: var(--muted); }
+    .field-clear-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+                     background: none; border: none; color: var(--muted); font-size: 18px;
+                     cursor: pointer; padding: 2px; line-height: 1; z-index: 2; }
+    .field-clear-x:active { color: var(--text); }
+
+    /* Serial + scan */
+    .sn-row { display: flex; gap: 6px; align-items: flex-end; }
+    .sn-row .field-ig { flex: 1; min-width: 0; }
+    .scan-btn { background: rgba(79,110,247,.15); border: 1px solid rgba(79,110,247,.35);
+                border-radius: 7px; color: #8fa4ff; font-size: 20px;
+                width: 40px; height: 32px; display: flex; align-items: center;
+                justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
+    .scan-btn:active { background: rgba(79,110,247,.28); }
+
+    /* 3-column row: Brand | Type | Length */
+    .meta-row-3 { display: flex; gap: 6px; }
+    .meta-row-3 .field-ig { flex: 1; min-width: 0; }
+
+    /* 2-column row: Location | Description */
+    .meta-row-2 { display: flex; gap: 6px; }
+    .meta-row-2 .field-ig { flex: 1; min-width: 0; }
+
+    /* Autocomplete */
+    .ac-wrap { position: relative; }
+    .ac-list { position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+               background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
+               z-index: 200; max-height: 180px; overflow-y: auto; display: none;
+               box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+    .ac-list.open { display: block; }
+    .ac-item { padding: 11px 12px; font-size: 14px; cursor: pointer; }
+    .ac-item:active, .ac-item.focused { background: rgba(79,110,247,.12); }
+
+    /* Custom fields injected here */
+    #custom-fields-form { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── Parts panel ── */
+    #parts-panel { flex-shrink: 0; padding: 8px 12px;
+                   border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+    .parts-selected { display: flex; flex-wrap: wrap; gap: 4px; }
+    .parts-selected:empty { display: none; }
+    .part-chip { display: inline-flex; align-items: center; gap: 4px;
+                 background: rgba(79,110,247,.14); border: 1px solid rgba(79,110,247,.28);
+                 color: #8fa4ff; border-radius: 5px; padding: 3px 8px;
+                 font-size: 12px; font-family: var(--mono); }
+    .part-chip-x { background: none; border: none; color: #8fa4ff; cursor: pointer;
+                   font-size: 15px; padding: 0; line-height: 1; opacity: .7; }
+    .part-chip-x:active { opacity: 1; }
+    .parts-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .part-btn { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
+                color: var(--text); font-family: var(--mono); font-size: 10.5px; padding: 9px 4px;
+                cursor: pointer; position: relative; text-align: center; min-height: 40px; }
+    .part-btn:active { background: rgba(79,110,247,.12); }
+    .part-btn.active { background: rgba(79,110,247,.18); border-color: var(--accent); color: #a0b4ff; }
+    .pb-count { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: var(--accent); }
+
+    /* ── Recent ladders panel ── */
+    #recent-panel { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                    padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .recent-hdr { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .recent-hdr-label { font-size: 10px; font-weight: 700; color: var(--muted);
+                        text-transform: uppercase; letter-spacing: .08em; }
+    .btn-share { background: none; border: 1px solid var(--border); border-radius: 6px;
+                 font-size: 11px; font-weight: 600; color: var(--muted);
+                 padding: 4px 10px; cursor: pointer; }
+    .btn-share:active { background: rgba(255,255,255,.05); color: var(--text); }
+
+    /* Compact ladder cards */
+    .ladder-card { background: var(--surf); border: 1px solid var(--border); border-radius: 8px;
+                   padding: 9px 12px; display: flex; align-items: flex-start; gap: 8px; }
+    .lc-body { flex: 1; min-width: 0; }
+    .lc-top { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+    .lc-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .lc-meta { font-size: 11px; color: var(--muted); }
+    .lc-parts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .lc-custom { font-size: 10px; color: var(--muted); margin-top: 3px; font-style: italic; }
+    .badge-part { display: inline-block; background: rgba(79,110,247,.12); color: #8fa4ff;
+                  border: 1px solid rgba(79,110,247,.22); border-radius: 3px;
+                  padding: 1px 6px; font-size: 10.5px; font-family: var(--mono); }
+    .no-ladders { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; font-style: italic; }
+    .lc-del { background: none; border: none; color: var(--muted); font-size: 20px;
+              cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+    .lc-del:active { color: var(--err); }
+
+    /* ── Add Ladder button panel (sticky bottom) ── */
+    #add-btn-panel { flex-shrink: 0; padding: 10px 12px 10px;
+                     background: var(--surf); border-bottom: 1px solid var(--border); }
+    .add-ladder-btn { background: var(--ok); color: #fff; border-radius: 10px; padding: 15px;
+                      font-size: 16px; font-weight: 700; width: 100%; border: none; cursor: pointer; }
+    .add-ladder-btn:active { background: #27ae60; }
+
+    /* ── Scan overlay ── */
+    .scan-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.95); z-index: 500;
+                    display: flex; flex-direction: column; align-items: center;
+                    justify-content: center; gap: 20px; padding: 24px; }
+    .scan-overlay.hidden { display: none; }
+    #scan-video { width: 100%; max-width: 480px; border-radius: 12px; background: #000;
+                  min-height: 200px; overflow: hidden; }
+    .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
+    .scan-cancel-btn { background: rgba(255,255,255,.12); color: #fff;
+                       border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
+                       padding: 14px 40px; font-size: 16px; cursor: pointer; }
+    .scan-cancel-btn:active { background: rgba(255,255,255,.22); }
+
+    /* ── Settings sheet ── */
+    .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200; }
+    .sheet-backdrop.hidden { display: none; }
+    .settings-sheet { position: fixed; bottom: 0; left: 0; right: 0; z-index: 300;
+                      background: var(--surf); border-top: 1px solid var(--border);
+                      border-radius: 20px 20px 0 0;
+                      padding: 0 20px calc(20px + var(--safe-b));
+                      display: flex; flex-direction: column; max-height: 82vh; }
+    .settings-sheet.hidden { display: none; }
+    .sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px;
+                    margin: 14px auto 18px; flex-shrink: 0; }
+    .sheet-ttl { font-size: 18px; font-weight: 800; margin-bottom: 6px; flex-shrink: 0; letter-spacing: -.02em; }
+    .sheet-desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 16px; flex-shrink: 0; }
+    .sheet-fields { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .cf-row { display: flex; align-items: center; gap: 10px; background: var(--surf2);
+              border: 1px solid var(--border); border-radius: 8px; padding: 13px 14px; }
+    .cf-name { flex: 1; font-size: 15px; }
+    .cf-del { background: none; border: none; color: var(--muted); font-size: 24px;
+              cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0; width: 36px; height: 36px;
+              display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+    .cf-del:active { color: var(--err); background: rgba(231,76,60,.08); }
+    .cf-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 24px 0; }
+    .sheet-add-row { display: flex; gap: 8px; margin-bottom: 12px; flex-shrink: 0; }
+    .sheet-add-row input { flex: 1; background: var(--surf2); border: 1px solid var(--border);
+                           border-radius: 10px; color: var(--text); font-family: var(--font);
+                           font-size: 16px; padding: 13px 14px; outline: none;
+                           -webkit-appearance: none; appearance: none; }
+    .sheet-add-row input:focus { border-color: var(--accent); }
+    .sheet-add-row input::placeholder { color: var(--muted); }
+    .sheet-done { width: 100%; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: JOBS
+══════════════════════════════════════════════════════ -->
+<div id="screen-jobs" class="screen active">
+  <div class="topbar">
+    <span class="topbar-title">Lia Field</span>
+    <button class="btn-p" id="btn-new-job" style="font-size:14px;padding:9px 18px;">+ New Job</button>
+  </div>
+  <div id="jobs-body">
+    <div class="job-empty" id="jobs-empty" style="display:none;">
+      No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: JOB DETAIL — fixed panel layout
+══════════════════════════════════════════════════════ -->
+<div id="screen-detail" class="screen">
+
+  <!-- Topbar: ← Jobs | job name / WO# | saved | ⚙ -->
+  <div id="detail-topbar">
+    <button class="back-btn" id="btn-back">← Jobs</button>
+    <div id="detail-name-wrap">
+      <input type="text" id="job-name" class="topbar-input" placeholder="Job name…" autocomplete="off">
+      <input type="text" id="job-wo"   class="topbar-input wo" placeholder="Work Order #" autocomplete="off">
+    </div>
+    <span class="save-status" id="save-status"></span>
+    <button class="btn-icon" id="btn-settings" title="Custom fields">⚙</button>
+  </div>
+
+  <!-- PANEL 1: Form (≤25dvh) -->
+  <div id="form-panel">
+
+    <div class="form-hdr">
+      <span class="form-hdr-label">New Ladder</span>
+      <button class="clear-form-btn" id="btn-clear-form">Reset</button>
+    </div>
+
+    <!-- Serial # + scan button -->
+    <div class="sn-row">
+      <div class="field-ig">
+        <div class="field-label">Serial #</div>
+        <div class="field-ig-wrap">
+          <input type="text" id="fi-serial" class="field-input"
+                 placeholder="Enter or scan" autocomplete="off" inputmode="numeric">
+          <button class="field-clear-x" data-clear="fi-serial">×</button>
+        </div>
+      </div>
+      <button class="scan-btn" id="btn-scan" style="margin-top:15px;">📷</button>
+    </div>
+
+    <!-- Brand | Type | Length on one row -->
+    <div class="meta-row-3">
+      <div class="field-ig">
+        <div class="field-label">Brand</div>
+        <div class="ac-wrap">
+          <div class="field-ig-wrap">
+            <input type="text" id="fi-brand" class="field-input" placeholder="Brand" autocomplete="off">
+            <button class="field-clear-x" data-clear="fi-brand">×</button>
+          </div>
+          <div class="ac-list" id="ac-brand-list"></div>
+        </div>
+      </div>
+      <div class="field-ig">
+        <div class="field-label">Type</div>
+        <div class="ac-wrap">
+          <div class="field-ig-wrap">
+            <input type="text" id="fi-type" class="field-input" placeholder="Type" autocomplete="off">
+            <button class="field-clear-x" data-clear="fi-type">×</button>
+          </div>
+          <div class="ac-list" id="ac-type-list"></div>
+        </div>
+      </div>
+      <div class="field-ig">
+        <div class="field-label">Length (ft)</div>
+        <div class="field-ig-wrap">
+          <input type="text" id="fi-length" class="field-input"
+                 placeholder="ft" inputmode="decimal" autocomplete="off">
+          <button class="field-clear-x" data-clear="fi-length">×</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Location | Description on one row -->
+    <div class="meta-row-2">
+      <div class="field-ig">
+        <div class="field-label">Location</div>
+        <div class="field-ig-wrap">
+          <input type="text" id="fi-loc" class="field-input" placeholder="e.g. A1" autocomplete="off">
+          <button class="field-clear-x" data-clear="fi-loc">×</button>
+        </div>
+      </div>
+      <div class="field-ig">
+        <div class="field-label">Description</div>
+        <div class="field-ig-wrap">
+          <input type="text" id="fi-desc" class="field-input" placeholder="Notes…" autocomplete="off">
+          <button class="field-clear-x" data-clear="fi-desc">×</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom fields injected dynamically -->
+    <div id="custom-fields-form"></div>
+
+  </div><!-- /form-panel -->
+
+  <!-- PANEL 2: Parts grid -->
+  <div id="parts-panel">
+    <div class="parts-selected" id="parts-selected"></div>
+    <div class="parts-grid" id="parts-grid"></div>
+  </div>
+
+  <!-- PANEL 3: Add button (above ladder list so no scrolling needed) -->
+  <div id="add-btn-panel">
+    <button class="add-ladder-btn" id="btn-add-ladder">+ Add Ladder</button>
+  </div>
+
+  <!-- PANEL 4: Recent ladders (scrollable, flex:1) -->
+  <div id="recent-panel">
+    <div class="recent-hdr">
+      <span class="recent-hdr-label" id="ladders-hdr">Ladders (0)</span>
+      <button class="btn-share" id="btn-share-csv">↑ Share CSV</button>
+    </div>
+    <div id="ladders-list"></div>
+  </div>
+
+</div><!-- /screen-detail -->
+
+<!-- Scan overlay -->
+<div class="scan-overlay hidden" id="scan-overlay">
+  <div id="scan-video"></div>
+  <div class="scan-hint">Hold barcode in view — detection is automatic</div>
+  <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
+</div>
+
+<!-- Custom Fields Settings Sheet -->
+<div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
+<div class="settings-sheet hidden" id="settings-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">Custom Fields</div>
+  <div class="sheet-desc">Add extra fields to every ladder entry. They export as additional columns in the CSV and are ignored by Lia Office.</div>
+  <div class="sheet-fields" id="cf-list"></div>
+  <div class="sheet-add-row">
+    <input type="text" id="new-cf-input" placeholder="Field name (e.g. Inspector)" autocomplete="off">
+    <button class="btn-p" id="btn-add-cf" style="font-size:14px;padding:12px 18px;">Add</button>
+  </div>
+  <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// Utilities
+// ════════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function goScreen(name) {
+  ['jobs','detail'].forEach(s => $(`screen-${s}`).classList.toggle('active', s === name));
+}
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+function loadJobs() {
+  try { return JSON.parse(localStorage.getItem('lia-field-jobs') || '{}'); }
+  catch { return {}; }
+}
+function saveJobs(all) { localStorage.setItem('lia-field-jobs', JSON.stringify(all)); }
+
+function loadCustomFields() {
+  try { return JSON.parse(localStorage.getItem('lia-custom-fields') || '[]'); }
+  catch { return []; }
+}
+function saveCustomFields(f) { localStorage.setItem('lia-custom-fields', JSON.stringify(f)); }
+
+function getQuickParts() {
+  try { const s = localStorage.getItem('lia-quick-parts'); return s ? JSON.parse(s) : DEFAULT_PARTS; }
+  catch { return DEFAULT_PARTS; }
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const BRAND_OPTIONS = [
+  'Little Giant','Werner','Louisville','Featherlite','Bauer','DeWalt',
+  'Gorilla','Cosco','Tricam','Metaltech','Xtend+Climb','Telesteps',
+  'Bathey','Davidson','Alco-Lite','Duo-Safety','Youngman','Zarges','ProMaster'
+];
+const TYPE_OPTIONS = [
+  'Extension','Step','Combination','Multi-Position','Straight',
+  'Platform','Attic','Podium','Trestle','Articulated','Rolling','Folding','Hook'
+];
+const DEFAULT_PARTS = ['M23','R28L','Lgh92','Lgh123WP','LGE26p','Hlm100','RC','SLS1','Lgh26p','SLS375'];
+
+// ════════════════════════════════════════════════════════════════
+// Jobs Screen
+// ════════════════════════════════════════════════════════════════
+function renderJobList() {
+  const all    = loadJobs();
+  const sorted = Object.values(all).sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const body   = $('jobs-body');
+  [...body.querySelectorAll('.job-card')].forEach(el => el.remove());
+  $('jobs-empty').style.display = sorted.length === 0 ? '' : 'none';
+  sorted.forEach(job => {
+    const count = (job.ladders || []).length;
+    const date  = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
+    const card  = document.createElement('div');
+    card.className = 'job-card';
+    card.innerHTML = `
+      <div class="job-card-info">
+        <div class="job-card-name">${esc(job.name || 'Untitled Job')}</div>
+        <div class="job-card-meta">${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${count} ladder${count !== 1 ? 's' : ''} · ${date}</div>
+      </div>
+      <div class="job-actions">
+        <button class="btn-p" style="font-size:13px;padding:7px 12px;" data-open="${esc(job.id)}">Open</button>
+        <button class="btn-g" style="font-size:13px;padding:7px 10px;color:var(--err);border-color:rgba(231,76,60,.3);" data-del="${esc(job.id)}">✕</button>
+      </div>
+    `;
+    card.querySelector('[data-open]').addEventListener('click', () => openJob(job.id));
+    card.querySelector('[data-del]').addEventListener('click', e => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${job.name || 'Untitled Job'}"?`)) return;
+      const all = loadJobs(); delete all[job.id]; saveJobs(all);
+      renderJobList();
+    });
+    body.appendChild(card);
+  });
+}
+
+$('btn-new-job').addEventListener('click', () => {
+  const id  = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job = { id, name: '', workOrderNum: '', ladders: [], createdAt: now, updatedAt: now };
+  const all = loadJobs(); all[id] = job; saveJobs(all);
+  openJob(id);
+});
+
+// ════════════════════════════════════════════════════════════════
+// Job Detail
+// ════════════════════════════════════════════════════════════════
+let _job          = null;
+let _saveTimer    = null;
+let _currentParts = new Map();
+
+function openJob(id) {
+  const all = loadJobs();
+  _job = all[id];
+  if (!_job) { goScreen('jobs'); return; }
+  $('job-name').value = _job.name || '';
+  $('job-wo').value   = _job.workOrderNum || '';
+  setSaveStatus('');
+  clearFormAll();
+  goScreen('detail');
+  renderLadderList();
+  renderPartButtons();
+  renderCustomFieldsForm();
+  $('fi-serial').focus();
+}
+
+$('btn-back').addEventListener('click', () => {
+  saveNow();
+  goScreen('jobs');
+  renderJobList();
+});
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+function scheduleSave() {
+  setSaveStatus('saving…');
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveNow, 800);
+}
+
+function saveNow() {
+  if (!_job) return;
+  clearTimeout(_saveTimer);
+  _job.name         = $('job-name').value.trim();
+  _job.workOrderNum = $('job-wo').value.trim();
+  _job.updatedAt    = new Date().toISOString();
+  const all = loadJobs(); all[_job.id] = _job; saveJobs(all);
+  setSaveStatus('saved');
+}
+
+function setSaveStatus(text) {
+  const el = $('save-status');
+  el.textContent = text === 'saved' ? 'Saved' : text;
+  el.className   = 'save-status' + (text === 'saved' ? ' saved' : '');
+}
+
+$('job-name').addEventListener('input', scheduleSave);
+$('job-wo').addEventListener('input',   scheduleSave);
+
+// ── Form clear ────────────────────────────────────────────────────────────────
+function clearEntryForm() {
+  ['fi-serial','fi-loc','fi-desc'].forEach(id => $(id).value = '');
+  document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
+  _currentParts = new Map();
+  renderPartButtons();
+  renderSelectedParts();
+}
+
+function clearFormAll() {
+  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc'].forEach(id => $(id).value = '');
+  document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
+  _currentParts = new Map();
+  renderPartButtons();
+  renderSelectedParts();
+}
+
+$('btn-clear-form').addEventListener('click', clearFormAll);
+
+// × clear buttons
+document.addEventListener('click', e => {
+  const x = e.target.closest('.field-clear-x[data-clear]');
+  if (!x) return;
+  const target = $(x.dataset.clear);
+  if (target) { target.value = ''; target.focus(); }
+});
+
+// ── Autocomplete ──────────────────────────────────────────────────────────────
+function setupAutocomplete(inputId, listId, options) {
+  const input = $(inputId);
+  const list  = $(listId);
+  let focusedIdx = -1;
+
+  function showList(q) {
+    const f = q.toLowerCase();
+    const matches = f ? options.filter(o => o.toLowerCase().includes(f)) : options;
+    if (!matches.length) { list.classList.remove('open'); return; }
+    list.innerHTML = ''; focusedIdx = -1;
+    matches.forEach(o => {
+      const item = document.createElement('div');
+      item.className = 'ac-item';
+      item.textContent = o;
+      item.addEventListener('mousedown', e => { e.preventDefault(); input.value = o; list.classList.remove('open'); });
+      item.addEventListener('touchstart', e => { e.preventDefault(); input.value = o; list.classList.remove('open'); }, { passive: false });
+      list.appendChild(item);
+    });
+    list.classList.add('open');
+  }
+
+  input.addEventListener('input',  () => showList(input.value));
+  input.addEventListener('focus',  () => { input.select(); showList(input.value); });
+  input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('.ac-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
+      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
+      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIdx = Math.max(focusedIdx - 1, 0);
+      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
+      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
+      e.preventDefault();
+      input.value = items[focusedIdx].textContent;
+      list.classList.remove('open');
+    } else if (e.key === 'Escape') { list.classList.remove('open'); }
+  });
+}
+
+setupAutocomplete('fi-brand', 'ac-brand-list', BRAND_OPTIONS);
+setupAutocomplete('fi-type',  'ac-type-list',  TYPE_OPTIONS);
+
+// ── Part buttons ──────────────────────────────────────────────────────────────
+function renderPartButtons() {
+  const grid = $('parts-grid');
+  grid.innerHTML = '';
+  getQuickParts().forEach(part => {
+    const qty = _currentParts.get(part) || 0;
+    const btn = document.createElement('button');
+    btn.className = 'part-btn' + (qty > 0 ? ' active' : '');
+    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(part);
+    btn.addEventListener('click', () => {
+      _currentParts.set(part, (_currentParts.get(part) || 0) + 1);
+      renderPartButtons(); renderSelectedParts();
+    });
+    grid.appendChild(btn);
+  });
+}
+
+function renderSelectedParts() {
+  const container = $('parts-selected');
+  container.innerHTML = '';
+  _currentParts.forEach((qty, name) => {
+    if (qty <= 0) return;
+    const chip = document.createElement('span');
+    chip.className = 'part-chip';
+    chip.innerHTML = `${esc(name)}${qty > 1 ? ` ×${qty}` : ''} <button class="part-chip-x" title="Remove">×</button>`;
+    chip.querySelector('.part-chip-x').addEventListener('click', () => {
+      _currentParts.delete(name); renderPartButtons(); renderSelectedParts();
+    });
+    container.appendChild(chip);
+  });
+}
+
+// ── Custom fields form ────────────────────────────────────────────────────────
+function renderCustomFieldsForm() {
+  const container = $('custom-fields-form');
+  container.innerHTML = '';
+  const fields = loadCustomFields();
+  if (!fields.length) return;
+  // Lay out custom fields two per row
+  for (let i = 0; i < fields.length; i += 2) {
+    const row = document.createElement('div');
+    row.className = 'meta-row-2';
+    [fields[i], fields[i+1]].forEach(name => {
+      if (!name) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'field-ig';
+      wrap.innerHTML = `
+        <div class="field-label">${esc(name)}</div>
+        <div class="field-ig-wrap">
+          <input type="text" class="field-input cf-input" data-cf="${esc(name)}"
+                 placeholder="${esc(name)}…" autocomplete="off">
+          <button class="field-clear-x" style="border:none;background:none;"
+                  onclick="this.previousElementSibling.value='';this.previousElementSibling.focus();">×</button>
+        </div>
+      `;
+      row.appendChild(wrap);
+    });
+    container.appendChild(row);
+  }
+}
+
+// ── Add Ladder ────────────────────────────────────────────────────────────────
+$('btn-add-ladder').addEventListener('click', addLadder);
+
+function addLadder() {
+  const serial = $('fi-serial').value.trim();
+  if (!serial) {
+    const el = $('fi-serial');
+    el.focus(); el.style.borderColor = 'var(--err)';
+    setTimeout(() => { el.style.borderColor = ''; }, 1200);
+    return;
+  }
+  const parts = [];
+  _currentParts.forEach((qty, name) => { if (qty > 0) parts.push({ name, qty }); });
+
+  const customFields = {};
+  document.querySelectorAll('.cf-input').forEach(input => {
+    const v = input.value.trim();
+    if (input.dataset.cf && v) customFields[input.dataset.cf] = v;
+  });
+
+  if (!_job.ladders) _job.ladders = [];
+  _job.ladders.unshift({
+    id:         crypto.randomUUID(),
+    serialNum:  serial,
+    brand:      $('fi-brand').value.trim(),
+    type:       $('fi-type').value.trim(),
+    length:     $('fi-length').value.trim(),
+    locationId: $('fi-loc').value.trim(),
+    desc:       $('fi-desc').value.trim(),
+    customFields,
+    parts,
+  });
+  clearEntryForm();
+  renderLadderList();
+  scheduleSave();
+  $('fi-serial').focus();
+}
+
+// ── Ladder list (shows all, newest first) ─────────────────────────────────────
+function renderLadderList() {
+  const container = $('ladders-list');
+  container.innerHTML = '';
+  const ladders = _job.ladders || [];
+  $('ladders-hdr').textContent = `Ladders (${ladders.length})`;
+  if (!ladders.length) {
+    container.innerHTML = '<div class="no-ladders">No ladders added yet</div>';
+    return;
+  }
+  ladders.forEach((l, idx) => {
+    const meta = [l.brand, l.type, l.length ? l.length + ' ft' : '', l.locationId].filter(Boolean).join(' · ');
+    const partsHtml = (l.parts || []).length
+      ? l.parts.map(p => `<span class="badge-part">${esc(p.name)}${p.qty > 1 ? ` ×${p.qty}` : ''}</span>`).join('')
+      : '<span style="color:var(--muted);font-size:10px;font-style:italic;">no parts</span>';
+    const cfPairs = Object.entries(l.customFields || {});
+    const cfHtml  = cfPairs.length ? cfPairs.map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(' · ') : '';
+    const card = document.createElement('div');
+    card.className = 'ladder-card';
+    card.innerHTML = `
+      <div class="lc-body">
+        <div class="lc-top">
+          <span class="lc-sn">${esc(l.serialNum)}</span>
+          ${meta ? `<span class="lc-meta">${esc(meta)}</span>` : ''}
+        </div>
+        <div class="lc-parts">${partsHtml}</div>
+        ${cfHtml ? `<div class="lc-custom">${cfHtml}</div>` : ''}
+      </div>
+      <button class="lc-del" title="Remove">×</button>
+    `;
+    card.querySelector('.lc-del').addEventListener('click', () => {
+      _job.ladders.splice(idx, 1);
+      renderLadderList();
+      scheduleSave();
+    });
+    container.appendChild(card);
+  });
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+function buildCsv(job) {
+  const ladders = job.ladders || [];
+  const cfSet = new Set(loadCustomFields());
+  ladders.forEach(l => Object.keys(l.customFields || {}).forEach(k => cfSet.add(k)));
+  const cfNames = [...cfSet];
+  const maxParts = ladders.reduce((m, l) => Math.max(m, (l.parts || []).length), 0);
+  const partCols = Array.from({ length: maxParts }, (_, i) => String.fromCharCode(65 + i));
+  const headers  = [
+    'Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description',
+    ...cfNames.map(n => `[Custom] ${n}`), ...partCols,
+  ];
+  const escape = v => {
+    const s = String(v ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const dataRows = ladders.map((l, idx) => {
+    const row = {
+      'Row#': idx + 1, 'Serial #': l.serialNum || '',
+      'Location ID': l.locationId || '', 'Brand': l.brand || '',
+      'Type': l.type || '', 'Length': l.length || '', 'Description': l.desc || '',
+    };
+    cfNames.forEach(n => { row[`[Custom] ${n}`] = (l.customFields || {})[n] || ''; });
+    (l.parts || []).forEach((p, i) => {
+      row[String.fromCharCode(65 + i)] = p.qty > 1 ? `(${p.qty}) ${p.name}` : (p.name || '');
+    });
+    return headers.map(h => escape(row[h] ?? '')).join(',');
+  });
+  return [headers.map(escape).join(','), ...dataRows].join('\r\n');
+}
+
+$('btn-share-csv').addEventListener('click', async () => {
+  if (!_job) return;
+  saveNow();
+  const csv      = buildCsv(_job);
+  const safeName = (_job.name || 'job').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'job';
+  const fileName = `${safeName}.csv`;
+  const blob     = new Blob([csv], { type: 'text/csv' });
+  const file     = new File([blob], fileName, { type: 'text/csv' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: fileName }); return; }
+    catch (err) { if (err.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url; a.download = fileName; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+
+// ── Barcode scanner ───────────────────────────────────────────────────────────
+let _html5Qr = null;
+
+$('btn-scan').addEventListener('click', startScan);
+$('btn-scan-cancel').addEventListener('click', stopScan);
+
+async function startScan() {
+  try {
+    $('scan-overlay').classList.remove('hidden');
+    _html5Qr = new Html5Qrcode('scan-video');
+    await _html5Qr.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 280, height: 120 } },
+      (decoded) => { $('fi-serial').value = decoded; stopScan(); },
+      () => {}
+    );
+  } catch {
+    $('scan-overlay').classList.add('hidden');
+    alert('Camera access denied or unavailable.\nType the serial number manually.');
+  }
+}
+
+async function stopScan() {
+  $('scan-overlay').classList.add('hidden');
+  if (_html5Qr) {
+    try { await _html5Qr.stop(); } catch(_) {}
+    try { _html5Qr.clear(); } catch(_) {}
+    _html5Qr = null;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Settings sheet — Custom Fields
+// ════════════════════════════════════════════════════════════════
+$('btn-settings').addEventListener('click',       openSettings);
+$('btn-close-settings').addEventListener('click', closeSettings);
+$('sheet-backdrop').addEventListener('click',     closeSettings);
+
+function openSettings() {
+  renderCfList();
+  $('settings-sheet').classList.remove('hidden');
+  $('sheet-backdrop').classList.remove('hidden');
+  $('new-cf-input').focus();
+}
+
+function closeSettings() {
+  $('settings-sheet').classList.add('hidden');
+  $('sheet-backdrop').classList.add('hidden');
+  renderCustomFieldsForm();
+}
+
+function renderCfList() {
+  const fields = loadCustomFields();
+  const list   = $('cf-list');
+  list.innerHTML = '';
+  if (fields.length === 0) {
+    list.innerHTML = '<div class="cf-empty">No custom fields yet — add one below.</div>';
+    return;
+  }
+  fields.forEach((name, idx) => {
+    const row = document.createElement('div');
+    row.className = 'cf-row';
+    row.innerHTML = `
+      <span class="cf-name">${esc(name)}</span>
+      <button class="cf-del" title="Delete field" data-idx="${idx}">×</button>
+    `;
+    row.querySelector('.cf-del').addEventListener('click', () => {
+      const f = loadCustomFields(); f.splice(idx, 1); saveCustomFields(f); renderCfList();
+    });
+    list.appendChild(row);
+  });
+}
+
+$('btn-add-cf').addEventListener('click', addCustomField);
+$('new-cf-input').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomField(); });
+
+function addCustomField() {
+  const name = $('new-cf-input').value.trim();
+  if (!name) return;
+  const fields = loadCustomFields();
+  if (!fields.includes(name)) { fields.push(name); saveCustomFields(fields); }
+  $('new-cf-input').value = '';
+  renderCfList();
+}
+
+// ── Service worker ────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+renderJobList();
+</script>
+</body>
+</html>

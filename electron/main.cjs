@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
@@ -41,7 +41,7 @@ function getLogsDir() {
 
 function getConfigPath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, '..', 'config.json')
+    ? path.join(process.resourcesPath, 'config.json')
     : path.join(__dirname, '..', 'config.json');
 }
 
@@ -72,6 +72,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -107,6 +110,10 @@ async function getSupabase() {
   const cfg = readConfig();
   if (!cfg.supabase?.url || !cfg.supabase?.anonKey) {
     throw new Error('Supabase not configured — add supabase.url and supabase.anonKey to config.json');
+  }
+  // Node.js < 22 lacks native WebSocket; provide the 'ws' package so Supabase realtime doesn't warn.
+  if (typeof globalThis.WebSocket === 'undefined') {
+    globalThis.WebSocket = require('ws');
   }
   const { createClient } = await import('@supabase/supabase-js');
   _supabase = createClient(cfg.supabase.url, cfg.supabase.anonKey, {
@@ -194,7 +201,7 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
   }
 
   const headers = result.meta.fields ?? [];
-  const partCols = headers.filter((h) => !METADATA_COLS.has(h));
+  const partCols = headers.filter((h) => !METADATA_COLS.has(h) && !h.startsWith('[Custom] '));
   const records = [];
   const skipped = [];
 
@@ -219,15 +226,68 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
 
 // ── IPC: automation lifecycle ─────────────────────────────────────────────────
 
+async function autoInsertInspections(sb, rows, workOrderId, techName) {
+  const today = new Date().toISOString().split('T')[0];
+  const nextDue = new Date();
+  nextDue.setFullYear(nextDue.getFullYear() + 1);
+  const nextDueStr = nextDue.toISOString().split('T')[0];
+  const records = rows.map(row => ({
+    serial_num:      row.serial,
+    inspection_date: today,
+    tech_name:       techName,
+    work_order_id:   workOrderId || null,
+    next_due_date:   nextDueStr,
+    notes:           null,
+    brand:           row.brand   || null,
+    type:            row.type    || null,
+    length:          row.length  || null,
+  }));
+  for (let i = 0; i < records.length; i += 100) {
+    await sb.from('inspections').upsert(records.slice(i, i + 100), {
+      onConflict: 'serial_num,inspection_date',
+      ignoreDuplicates: false,
+    });
+  }
+}
+
 ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
-  if (automationChild) return;
+  // Kill any previous run (e.g. user clicked Start Over without stopping first)
+  if (automationChild) { automationChild.kill(); automationChild = null; }
+
+  // Populated in the Supabase block; used in the 'complete' handler to auto-log inspections
+  let _sb = null, _techName = 'Lia Import', _serials = [];
 
   // Consume a credit if Supabase is configured
   const cfg = readConfig();
   if (cfg.supabase?.url && cfg.supabase?.anonKey) {
     try {
-      const sb = await getSupabase();
-      const { data, error } = await sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
+      _sb = await getSupabase();
+
+      // Get logged-in tech name for the inspection record
+      const { data: { session: _sess } } = await _sb.auth.getSession();
+      if (_sess) {
+        let _prof = null;
+        try { ({ data: _prof } = await _sb.rpc('get_my_profile')); } catch {}
+        const _p = _prof ? (typeof _prof === 'string' ? JSON.parse(_prof) : _prof) : null;
+        _techName = (_p?.name) || _sess.user.email || 'Lia Import';
+      }
+
+      // Collect rows from the CSV now (file is still present at start time)
+      try {
+        const Papa = require('papaparse');
+        const _content = fs.readFileSync(csvPath, 'utf-8');
+        const _parsed = Papa.parse(_content, { header: true, skipEmptyLines: true });
+        _serials = _parsed.data
+          .map(r => ({
+            serial: (r['Serial #'] ?? '').trim(),
+            brand:  (r['Brand']    ?? '').trim() || null,
+            type:   (r['Type']     ?? '').trim() || null,
+            length: (r['Length']   ?? '').trim() || null,
+          }))
+          .filter(r => r.serial);
+      } catch {}
+
+      const { data, error } = await _sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
       if (error) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('automation:credit-error', error.message);
@@ -245,6 +305,12 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
     }
   }
 
+  // When packaged, playwright is asarUnpacked into app.asar.unpacked/node_modules.
+  // The runner lives in Resources/ (extraResources) and can't find it via normal
+  // resolution, so we add NODE_PATH pointing to the unpacked node_modules.
+  const unpackedModules = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+  const nodePath = [unpackedModules, process.env.NODE_PATH].filter(Boolean).join(path.delimiter);
+
   automationChild = fork(getRunnerPath(), [csvPath], {
     execPath: process.execPath,
     env: {
@@ -252,6 +318,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
       ELECTRON_RUN_AS_NODE: '1',
       PLAYWRIGHT_BROWSERS_PATH: getPlaywrightBrowsersPath(),
       BATAVIA_LOGS_DIR: getLogsDir(),
+      NODE_PATH: nodePath,
     },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
@@ -275,6 +342,9 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             mainWindow.show();
             mainWindow.focus();
             app.focus({ steal: true });
+            if (_sb && _serials.length > 0) {
+              autoInsertInspections(_sb, _serials, workOrderId, _techName).catch(() => {});
+            }
             break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;
         }
@@ -326,107 +396,13 @@ ipcMain.handle('csv:save-sample', async () => {
   return result.filePath;
 });
 
-// ── Field Mode: job storage ───────────────────────────────────────────────────
-
-function getJobsDir() { return path.join(app.getPath('userData'), 'lia-jobs'); }
-
-function ensureJobsDir() {
-  if (!fs.existsSync(getJobsDir())) fs.mkdirSync(getJobsDir(), { recursive: true });
-}
-
-ipcMain.handle('field:list-jobs', () => {
-  ensureJobsDir();
-  return fs.readdirSync(getJobsDir())
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
-      try {
-        const j = JSON.parse(fs.readFileSync(path.join(getJobsDir(), f), 'utf-8'));
-        return { id: j.id, name: j.name, workOrderNum: j.workOrderNum, ladderCount: (j.ladders || []).length, updatedAt: j.updatedAt };
-      } catch { return null; }
-    })
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-});
-
-ipcMain.handle('field:get-job', (_event, id) => {
-  try { return JSON.parse(fs.readFileSync(path.join(getJobsDir(), `${id}.json`), 'utf-8')); }
-  catch { return null; }
-});
-
-ipcMain.handle('field:save-job', (_event, job) => {
-  ensureJobsDir();
-  job.updatedAt = new Date().toISOString();
-  fs.writeFileSync(path.join(getJobsDir(), `${job.id}.json`), JSON.stringify(job, null, 2), 'utf-8');
-  return { ok: true };
-});
-
-ipcMain.handle('field:delete-job', (_event, id) => {
-  try { fs.unlinkSync(path.join(getJobsDir(), `${id}.json`)); return { ok: true }; }
-  catch { return { ok: false }; }
-});
-
-function buildJobCsv(job) {
-  const ladders = job.ladders || [];
-  const maxParts = ladders.reduce((m, l) => Math.max(m, (l.parts || []).length), 0);
-  const partCols = Array.from({ length: maxParts }, (_, i) => String.fromCharCode(65 + i));
-  const headers = ['Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description', ...partCols];
-
-  const rows = ladders.map((l, idx) => {
-    const row = {
-      'Row#': idx + 1,
-      'Serial #': l.serialNum || '',
-      'Location ID': l.locationId || '',
-      'Brand': l.brand || '',
-      'Type': l.type || '',
-      'Length': l.length || '',
-      'Description': l.desc || '',
-    };
-    (l.parts || []).forEach((p, i) => {
-      const col = String.fromCharCode(65 + i);
-      row[col] = p.qty > 1 ? `(${p.qty}) ${p.name}` : (p.name || '');
-    });
-    return row;
-  });
-
-  const escape = v => { const s = String(v ?? ''); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s; };
-  const lines = [
-    headers.map(escape).join(','),
-    ...rows.map(r => headers.map(h => escape(r[h] ?? '')).join(',')),
-  ];
-  return lines.join('\r\n');
-}
-
-// Export job for Lia Office Mode — returns path to the generated CSV
-ipcMain.handle('field:export-for-lia', (_event, job) => {
-  try {
-    const csv = buildJobCsv(job);
-    const dest = path.join(app.getPath('userData'), 'field-export.csv');
-    fs.writeFileSync(dest, csv, 'utf-8');
-    return { ok: true, path: dest };
-  } catch (err) { return { ok: false, error: String(err) }; }
-});
-
-// Export job to a user-chosen file
-ipcMain.handle('field:export-csv-dialog', async (_event, job) => {
-  const safeName = (job.name || 'job').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'job';
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Export Job as CSV',
-    defaultPath: `${safeName}.csv`,
-    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
-  });
-  if (result.canceled || !result.filePath) return null;
-  const csv = buildJobCsv(job);
-  fs.writeFileSync(result.filePath, csv, 'utf-8');
-  return result.filePath;
-});
-
 // ── Inspection Log: historical import ────────────────────────────────────────
 
 const INSPECTION_SAMPLE = [
-  'Serial #,Inspection Date,Tech Name,Work Order #,Next Due Date,Notes',
-  '1509436,2026-01-15,Nathan,WO-101,2027-01-15,Annual inspection',
-  '1669421,2026-01-15,Nathan,WO-101,2027-01-15,',
-  '1669497,2026-01-15,Nathan,WO-101,,Repaired — recheck in 6 months',
+  'Serial #,Inspection Date,Tech Name,Work Order #,Next Due Date,Notes,Brand,Type,Length',
+  '1509436,2026-01-15,Nathan,WO-101,2027-01-15,Annual inspection,LG,Ext,28',
+  '1669421,2026-01-15,Nathan,WO-101,2027-01-15,,LG,Ext,28',
+  '1669497,2026-01-15,Nathan,WO-101,,Repaired — recheck in 6 months,LG,Ext,24',
 ].join('\r\n');
 
 ipcMain.handle('inspections:save-sample', async () => {
@@ -467,10 +443,13 @@ ipcMain.handle('inspections:parse-csv', (_event, filePath) => {
     records.push({
       serial_num:      serial,
       inspection_date: dateRaw || new Date().toISOString().split('T')[0],
-      tech_name:       (row['Tech Name'] || '').trim() || null,
+      tech_name:       (row['Tech Name']    || '').trim() || null,
       work_order_id:   (row['Work Order #'] || '').trim() || null,
-      next_due_date:   (row['Next Due Date'] || '').trim() || null,
-      notes:           (row['Notes'] || '').trim() || null,
+      next_due_date:   (row['Next Due Date']|| '').trim() || null,
+      notes:           (row['Notes']        || '').trim() || null,
+      brand:           (row['Brand']        || '').trim() || null,
+      type:            (row['Type']         || '').trim() || null,
+      length:          (row['Length']       || '').trim() || null,
     });
   });
   return { records, skipped };
@@ -482,11 +461,18 @@ ipcMain.handle('inspections:upload', async (_event, records) => {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { ok: false, error: 'Not logged in — sign in first to upload inspections.' };
 
-    // Insert in batches of 50
+    // Upsert in batches of 50: strip null fields so existing values are preserved on conflict
     const results = { inserted: 0, errors: [] };
     for (let i = 0; i < records.length; i += 50) {
-      const batch = records.slice(i, i + 50);
-      const { error } = await sb.from('inspections').insert(batch);
+      const batch = records.slice(i, i + 50).map(r => {
+        const clean = {};
+        for (const [k, v] of Object.entries(r)) { if (v != null && v !== '') clean[k] = v; }
+        return clean;
+      });
+      const { error } = await sb.from('inspections').upsert(batch, {
+        onConflict: 'serial_num,inspection_date',
+        ignoreDuplicates: false,
+      });
       if (error) {
         results.errors.push(`Rows ${i + 1}–${i + batch.length}: ${error.message}`);
       } else {

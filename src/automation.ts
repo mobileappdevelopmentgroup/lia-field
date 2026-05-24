@@ -657,6 +657,7 @@ export async function launchBrowser(): Promise<{
 }> {
   const browser = await chromium.launch({
     headless: false,
+    channel: 'chrome',
     args: ['--start-maximized'],
   });
   const context = await browser.newContext({

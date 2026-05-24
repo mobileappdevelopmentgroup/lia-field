@@ -2,314 +2,600 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ladder Inspection Records</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Ladder Inspection</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
-    /* ── Replace these two lines with your values before uploading to S3 ── */
-    /* SUPABASE_URL    = "https://your-project.supabase.co"                 */
-    /* SUPABASE_ANON_KEY = "sb_publishable_..."                              */
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:     #f8f9fc;
-      --white:  #ffffff;
-      --border: #e2e6ef;
-      --text:   #1a1d2e;
-      --muted:  #6b7080;
-      --accent: #2563eb;
-      --ok:     #16a34a;
-      --warn:   #d97706;
-      --err:    #dc2626;
-      --r:      8px;
-      --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      --mono:   'SF Mono', 'Fira Code', monospace;
+      --bg:      #f4f5f8;
+      --surf:    #ffffff;
+      --border:  #e2e6ef;
+      --text:    #1a1d2e;
+      --muted:   #6b7080;
+      --accent:  #2563eb;
+      --ok:      #16a34a;
+      --ok-bg:   #dcfce7;
+      --warn:    #d97706;
+      --warn-bg: #fef9c3;
+      --err:     #dc2626;
+      --err-bg:  #fee2e2;
+      --r:       10px;
+      --font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono:    'SF Mono', 'Fira Code', monospace;
+      --safe-t:  env(safe-area-inset-top,  0px);
+      --safe-b:  env(safe-area-inset-bottom, 0px);
     }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      -webkit-text-size-adjust: 100%;
+    }
 
-    /* ── Header ─────────────────────────────────────────────────────────── */
-    header { background: var(--text); color: #fff; padding: 20px 32px; display: flex;
-             align-items: center; justify-content: space-between; }
-    .logo  { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
-    .logo-sub { font-size: 12px; opacity: .55; margin-top: 2px; }
+    /* ── Header ───────────────────────────────────────────────────────────── */
+    header {
+      background: var(--text);
+      color: #fff;
+      padding: calc(14px + var(--safe-t)) 20px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -.02em; flex: 1; }
+    .logo-badge { font-size: 10px; font-weight: 600; opacity: .45; letter-spacing: .08em;
+                  text-transform: uppercase; }
 
-    /* ── Search ─────────────────────────────────────────────────────────── */
-    .search-section { max-width: 700px; margin: 40px auto; padding: 0 20px; }
-    .search-card { background: var(--white); border: 1px solid var(--border); border-radius: 12px;
-                   padding: 28px 28px 24px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
-    .search-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
-    .search-sub   { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
-    .search-row { display: flex; gap: 10px; }
-    input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid var(--border);
-                         border-radius: 6px; font-size: 14px; font-family: var(--font);
-                         color: var(--text); outline: none; transition: border-color .15s; }
-    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-    .btn-search { background: var(--accent); color: #fff; border: none; border-radius: 6px;
-                  padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
-                  font-family: var(--font); transition: background .15s; white-space: nowrap; }
-    .btn-search:hover { background: #1d4ed8; }
-    .btn-search:disabled { opacity: .5; cursor: not-allowed; }
+    /* ── Search bar ───────────────────────────────────────────────────────── */
+    .search-wrap { background: var(--surf); border-bottom: 1px solid var(--border);
+                   padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .mode-tabs   { display: flex; gap: 6px; }
+    .stab {
+      flex: 1; padding: 8px 0; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer; background: var(--bg);
+      color: var(--muted); font-family: var(--font); transition: all .15s;
+    }
+    .stab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .input-row { display: flex; gap: 8px; }
+    #search-input {
+      flex: 1; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 16px; font-family: var(--font); color: var(--text); background: var(--bg);
+      outline: none; transition: border-color .15s; min-width: 0;
+    }
+    #search-input:focus { border-color: var(--accent); background: #fff; }
+    .btn-scan {
+      width: 48px; height: 48px; border-radius: 8px; border: 1.5px solid var(--border);
+      background: var(--bg); font-size: 20px; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; transition: background .15s;
+    }
+    .btn-scan:active { background: #dde2f0; }
+    .btn-scan.hidden { display: none; }
+    .btn-go {
+      width: 48px; height: 48px; border-radius: 8px; border: none;
+      background: var(--accent); color: #fff; font-size: 20px; cursor: pointer;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .btn-go:active { background: #1d4ed8; }
+    .btn-go:disabled { opacity: .5; cursor: not-allowed; }
 
-    /* ── Status messages ─────────────────────────────────────────────────── */
-    #status { margin-top: 14px; font-size: 13px; color: var(--muted); display: none; }
-    #status.vis { display: block; }
-    #no-results { margin-top: 14px; padding: 14px 16px; background: #fef9ec;
-                  border: 1px solid #fde68a; border-radius: 6px; font-size: 13px;
-                  color: var(--warn); display: none; }
+    /* ── Feedback messages ────────────────────────────────────────────────── */
+    #msg { padding: 16px; font-size: 14px; color: var(--muted); text-align: center; display: none; }
+    #msg.vis { display: block; }
+    #no-results {
+      margin: 16px; padding: 14px 16px; background: var(--warn-bg);
+      border: 1px solid #fde68a; border-radius: var(--r);
+      font-size: 14px; color: var(--warn); display: none;
+    }
     #no-results.vis { display: block; }
+    #err-msg {
+      margin: 16px; padding: 14px 16px; background: var(--err-bg);
+      border: 1px solid #fca5a5; border-radius: var(--r);
+      font-size: 14px; color: var(--err); display: none;
+    }
+    #err-msg.vis { display: block; }
 
-    /* ── Results ─────────────────────────────────────────────────────────── */
-    #results { margin-top: 28px; display: none; }
+    /* ── Results area ─────────────────────────────────────────────────────── */
+    #results { display: none; padding: 16px; }
     #results.vis { display: block; }
-    .result-header { display: flex; align-items: flex-start; justify-content: space-between;
-                     margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
-    .sn-label { font-size: 22px; font-weight: 700; font-family: var(--mono); }
-    .sn-label small { font-size: 12px; color: var(--muted); font-family: var(--font); font-weight: 400; margin-left: 8px; }
-    .btn-print { background: transparent; border: 1px solid var(--border); border-radius: 6px;
-                 padding: 7px 16px; font-size: 13px; cursor: pointer; font-family: var(--font);
-                 transition: background .15s; }
-    .btn-print:hover { background: var(--border); }
 
-    /* Latest certificate card */
-    .cert-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r);
-                 padding: 24px 24px 20px; margin-bottom: 20px;
-                 box-shadow: 0 1px 6px rgba(0,0,0,.05); }
-    .cert-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
-                  letter-spacing: .06em; text-transform: uppercase; padding: 3px 10px;
-                  border-radius: 99px; margin-bottom: 14px; }
-    .badge-valid   { background: #dcfce7; color: var(--ok); }
-    .badge-due     { background: #fef9c3; color: var(--warn); }
-    .badge-overdue { background: #fee2e2; color: var(--err); }
-    .cert-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
-    .cert-field { display: flex; flex-direction: column; gap: 3px; }
-    .cert-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-    .cert-value { font-size: 15px; font-weight: 600; }
-    .cert-value.ok { color: var(--ok); }
-    .cert-value.warn { color: var(--warn); }
-    .cert-value.err  { color: var(--err); }
+    /* ── Certificate card ─────────────────────────────────────────────────── */
+    .cert-card {
+      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+    .cert-header {
+      display: flex; align-items: center; gap: 16px;
+      padding: 18px 18px 14px; border-bottom: 1px solid var(--border);
+    }
+    .cert-seal { flex-shrink: 0; width: 90px; height: 90px; }
+    .cert-seal svg { width: 90px; height: 90px; }
+    .cert-info { flex: 1; min-width: 0; }
+    .cert-serial {
+      font-size: 26px; font-weight: 800; font-family: var(--mono);
+      letter-spacing: .02em; line-height: 1.1; word-break: break-all;
+    }
+    .cert-serial-lbl {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .1em; color: var(--muted); margin-bottom: 4px;
+    }
+    .cert-status-text {
+      font-size: 13px; font-weight: 700; margin-top: 5px;
+    }
+    .cert-status-text.ok   { color: var(--ok); }
+    .cert-status-text.warn { color: var(--warn); }
+    .cert-status-text.err  { color: var(--err); }
+    .cert-status-text.none { color: var(--muted); }
+    .cert-count { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cert-fields { padding: 4px 0; }
+    .cert-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 11px 16px; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .cert-row:last-child { border-bottom: none; }
+    .cert-lbl { font-size: 12px; font-weight: 600; color: var(--muted);
+                text-transform: uppercase; letter-spacing: .07em; flex-shrink: 0; }
+    .cert-val { font-size: 15px; font-weight: 600; text-align: right; }
+    .cert-val.ok   { color: var(--ok); }
+    .cert-val.warn { color: var(--warn); }
+    .cert-val.err  { color: var(--err); }
+    /* Not-registered card */
+    .cert-card.unregistered { border-color: #e5e7eb; }
+    .cert-card.unregistered .cert-serial { color: var(--muted); }
 
-    /* History table */
-    .history-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r);
-                    overflow: hidden; }
-    .history-title { padding: 14px 20px 12px; font-size: 12px; font-weight: 700; letter-spacing: .06em;
-                     text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
-    table { width: 100%; border-collapse: collapse; }
-    thead th { background: #f4f5f8; font-size: 11px; font-weight: 700; text-transform: uppercase;
-               letter-spacing: .06em; color: var(--muted); padding: 10px 16px; text-align: left;
-               border-bottom: 1px solid var(--border); }
-    tbody td { padding: 11px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
-    tbody tr:last-child td { border-bottom: none; }
-    tbody tr:hover td { background: #f8f9fc; }
-    .mono { font-family: var(--mono); }
+    /* ── History (collapsible) ─────────────────────────────────────────────── */
+    .hist-card {
+      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+    }
+    .hist-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--muted);
+      cursor: pointer; border: none; background: none; width: 100%; text-align: left;
+      font-family: var(--font);
+    }
+    .hist-toggle:active { background: var(--bg); }
+    .hist-chevron { font-size: 11px; transition: transform .2s; }
+    .hist-chevron.open { transform: rotate(180deg); }
+    .hist-body { display: none; }
+    .hist-body.open { display: block; }
+    .hist-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+      border-top: 1px solid var(--border); font-size: 13px;
+    }
+    .hist-date { font-weight: 600; flex: 1; }
+    .hist-wo   { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .hist-tech { color: var(--muted); font-size: 12px; }
 
-    /* ── Print styles ────────────────────────────────────────────────────── */
-    @media print {
-      body { background: #fff; }
-      header { background: #1a1d2e !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .search-section { display: none; }
-      #results { margin: 0; padding: 20px; }
-      .result-header { page-break-after: avoid; }
-      .btn-print { display: none; }
-      .history-card { page-break-before: avoid; }
-      .cert-card { border: 2px solid #1a1d2e; }
-      .badge-valid, .badge-due, .badge-overdue { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* ── Work-order table ─────────────────────────────────────────────────── */
+    .wo-card {
+      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+      overflow: hidden; margin-bottom: 12px;
+    }
+    .wo-hdr { padding: 14px 16px 10px; font-size: 13px; font-weight: 700; color: var(--muted);
+              text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
+    .wo-row {
+      display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+      border-top: 1px solid var(--border); text-decoration: none; color: inherit;
+      transition: background .1s;
+    }
+    .wo-row:first-of-type { border-top: none; }
+    .wo-row:active { background: var(--bg); }
+    .wo-serial { font-family: var(--mono); font-size: 14px; font-weight: 700; flex: 1; color: var(--accent); }
+    .wo-date   { font-size: 12px; color: var(--muted); }
+    .badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .badge-dot.ok   { background: var(--ok); }
+    .badge-dot.warn { background: var(--warn); }
+    .badge-dot.err  { background: var(--err); }
+
+    /* ── Print button ─────────────────────────────────────────────────────── */
+    .btn-print {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 14px; border: 1.5px solid var(--border); border-radius: var(--r);
+      background: var(--surf); font-size: 14px; font-weight: 600; cursor: pointer;
+      font-family: var(--font); color: var(--text); margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .btn-print:active { background: var(--bg); }
+
+    /* ── Scan overlay ─────────────────────────────────────────────────────── */
+    .scan-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.95); z-index: 100;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 20px; padding: 24px;
+    }
+    .scan-overlay.hidden { display: none; }
+    #scan-video {
+      width: 100%; max-width: 400px; border-radius: 12px; background: #000;
+      min-height: 250px; overflow: hidden;
+    }
+    .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
+    .btn-scan-cancel {
+      background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2);
+      border-radius: 10px; padding: 14px 48px; font-size: 16px; cursor: pointer;
+      font-family: var(--font);
     }
 
-    /* ── Footer ─────────────────────────────────────────────────────────── */
-    footer { text-align: center; padding: 32px 20px 24px; font-size: 12px; color: var(--muted); }
+    /* ── Print styles ─────────────────────────────────────────────────────── */
+    @media print {
+      header, .search-wrap, .btn-print, .scan-overlay { display: none !important; }
+      body { background: #fff; }
+      #results { display: block !important; padding: 0; }
+      .cert-card, .hist-card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+      .hist-body { display: block !important; }
+      #results.vis { display: block; }
+    }
+
+    /* ── Desktop: constrain width ─────────────────────────────────────────── */
+    @media (min-width: 600px) {
+      .search-wrap, #results, #no-results, #err-msg, #msg { max-width: 560px; margin-left: auto; margin-right: auto; }
+      #no-results, #err-msg { margin-left: auto; margin-right: auto; }
+    }
   </style>
 </head>
 <body>
 
 <header>
   <div>
-    <div class="logo">Ladder Inspection Records</div>
-    <div class="logo-sub">Powered by Lia — Batavia</div>
+    <div class="logo">Ladder Inspection</div>
   </div>
 </header>
 
-<div class="search-section">
-  <div class="search-card">
-    <div class="search-title">Look Up a Ladder</div>
-    <div class="search-sub">Enter the ladder's serial number to view its inspection history and certificate.</div>
-    <div class="search-row">
-      <input type="text" id="serial-input" placeholder="e.g. 1509436" maxlength="20"
-             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      <button class="btn-search" id="btn-search">Search</button>
-    </div>
-    <div id="status"></div>
-    <div id="no-results"></div>
+<div class="search-wrap">
+  <div class="mode-tabs">
+    <button class="stab active" data-mode="serial">By Serial #</button>
+    <button class="stab" data-mode="wo">By Work Order</button>
   </div>
-
-  <div id="results">
-    <div class="result-header">
-      <div>
-        <div class="sn-label" id="res-sn"></div>
-      </div>
-      <button class="btn-print" onclick="window.print()">Print / Save PDF</button>
-    </div>
-
-    <!-- Latest inspection certificate -->
-    <div class="cert-card" id="cert-card">
-      <div class="cert-badge badge-valid" id="cert-badge">Valid</div>
-      <div class="cert-grid" id="cert-grid"></div>
-    </div>
-
-    <!-- Full history table -->
-    <div class="history-card" id="history-card" style="display:none;">
-      <div class="history-title">Inspection History</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Tech</th>
-            <th>Work Order</th>
-            <th>Next Due</th>
-            <th>Notes</th>
-          </tr>
-        </thead>
-        <tbody id="history-body"></tbody>
-      </table>
-    </div>
+  <div class="input-row">
+    <input type="text" id="search-input" placeholder="Enter serial number…"
+           maxlength="40" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false" inputmode="numeric">
+    <button class="btn-scan" id="btn-scan" title="Scan barcode">📷</button>
+    <button class="btn-go" id="btn-search" title="Search">→</button>
   </div>
 </div>
 
-<footer>
-  Inspection records are maintained by Batavia. For questions contact your supervisor.
-</footer>
+<div id="msg"></div>
+<div id="no-results"></div>
+<div id="err-msg"></div>
+
+<div id="results">
+
+  <!-- Work order results -->
+  <div id="wo-card" class="wo-card" style="display:none;">
+    <div class="wo-hdr" id="wo-hdr"></div>
+    <div id="wo-list"></div>
+  </div>
+
+  <!-- Certificate -->
+  <div id="cert-card" class="cert-card">
+    <div class="cert-header" id="cert-header" style="display:none;">
+      <div class="cert-seal" id="cert-seal"></div>
+      <div class="cert-info">
+        <div class="cert-serial-lbl">Serial #</div>
+        <div class="cert-serial" id="cert-serial-num"></div>
+        <div class="cert-status-text" id="cert-status-text"></div>
+        <div class="cert-count" id="cert-count"></div>
+      </div>
+    </div>
+    <div class="cert-fields" id="cert-fields"></div>
+  </div>
+
+  <!-- History (collapsible) -->
+  <div id="hist-card" class="hist-card" style="display:none;">
+    <button class="hist-toggle" id="hist-toggle">
+      <span id="hist-label">Inspection History</span>
+      <span class="hist-chevron" id="hist-chevron">▼</span>
+    </button>
+    <div class="hist-body" id="hist-body"></div>
+  </div>
+
+  <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+
+</div>
+
+<!-- Scan overlay -->
+<div class="scan-overlay hidden" id="scan-overlay">
+  <div id="scan-video"></div>
+  <div class="scan-hint">Hold barcode in view — detection is automatic</div>
+  <button class="btn-scan-cancel" id="btn-scan-cancel">Cancel</button>
+</div>
 
 <script>
-// ── Replace with your Supabase project values ────────────────────────────────
-const SUPABASE_URL     = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
+const SUPABASE_URL      = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
-// ─────────────────────────────────────────────────────────────────────────────
 
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function fmtDate(d) {
-  if (!d) return '—';
-  const dt = new Date(d + 'T00:00:00');
-  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+let searchMode = 'serial';
+let _html5Qr   = null;
+
+// ── DOM helpers ───────────────────────────────────────────────────────────────
+const el   = id => document.getElementById(id);
+const show = id => el(id).classList.add('vis');
+const hide = id => el(id).classList.remove('vis');
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.stab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    searchMode = btn.dataset.mode;
+    const isSn = searchMode === 'serial';
+    el('search-input').placeholder = isSn ? 'Enter serial number…' : 'Enter work order…';
+    el('search-input').inputMode   = isSn ? 'numeric' : 'text';
+    el('btn-scan').classList.toggle('hidden', !isSn);
+    el('search-input').value = '';
+    hide('results'); hide('no-results'); hide('err-msg'); hide('msg');
+  });
+});
+
+// ── Barcode scanner ───────────────────────────────────────────────────────────
+el('btn-scan').addEventListener('click', startScan);
+el('btn-scan-cancel').addEventListener('click', stopScan);
+
+async function startScan() {
+  try {
+    el('scan-overlay').classList.remove('hidden');
+    _html5Qr = new Html5Qrcode('scan-video');
+    await _html5Qr.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 280, height: 100 } },
+      (decoded) => {
+        el('search-input').value = decoded.trim();
+        stopScan();
+        doSearch();
+      },
+      () => {}
+    );
+  } catch {
+    el('scan-overlay').classList.add('hidden');
+    alert('Camera access denied or unavailable.\nType the serial number manually.');
+  }
 }
 
-function daysUntil(d) {
-  if (!d) return null;
-  const now = new Date(); now.setHours(0,0,0,0);
-  const due = new Date(d + 'T00:00:00');
-  return Math.round((due - now) / 86400000);
+async function stopScan() {
+  el('scan-overlay').classList.add('hidden');
+  if (_html5Qr) {
+    try { await _html5Qr.stop(); }   catch(_) {}
+    try { _html5Qr.clear(); }        catch(_) {}
+    _html5Qr = null;
+  }
 }
 
-function statusBadge(days) {
-  if (days === null) return { cls: 'badge-valid', text: 'No Expiry Set' };
-  if (days < 0)      return { cls: 'badge-overdue', text: `Overdue by ${Math.abs(days)} days` };
-  if (days <= 30)    return { cls: 'badge-due', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
-  return { cls: 'badge-valid', text: `Valid — ${days} days remaining` };
+// ── Search dispatcher ─────────────────────────────────────────────────────────
+el('btn-search').addEventListener('click', doSearch);
+el('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+async function doSearch() {
+  const val = el('search-input').value.trim();
+  if (!val) return;
+  el('btn-search').disabled = true;
+  el('msg').textContent = 'Searching…';
+  show('msg');
+  hide('no-results'); hide('err-msg'); hide('results');
+  if (searchMode === 'serial') await searchBySerial(val);
+  else                         await searchByWorkOrder(val);
+  el('btn-search').disabled = false;
+  hide('msg');
 }
 
-async function search() {
-  const serial = document.getElementById('serial-input').value.trim();
-  if (!serial) return;
-
-  document.getElementById('btn-search').disabled = true;
-  document.getElementById('status').textContent = 'Searching…';
-  document.getElementById('status').classList.add('vis');
-  document.getElementById('no-results').classList.remove('vis');
-  document.getElementById('results').classList.remove('vis');
-
+// ── Serial search ─────────────────────────────────────────────────────────────
+async function searchBySerial(serial) {
   const { data, error } = await db
     .from('ladder_inspections_public')
     .select('*')
     .eq('serial_num', serial)
     .order('inspection_date', { ascending: false });
 
-  document.getElementById('btn-search').disabled = false;
-  document.getElementById('status').classList.remove('vis');
-
-  if (error) {
-    document.getElementById('no-results').textContent = `Error: ${error.message}`;
-    document.getElementById('no-results').classList.add('vis');
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    document.getElementById('no-results').textContent = `No inspection records found for serial number "${serial}".`;
-    document.getElementById('no-results').classList.add('vis');
-    return;
-  }
-
-  renderResults(serial, data);
+  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
+  if (!data?.length) { renderNotRegistered(serial); return; }
+  renderCertificate(serial, data);
 }
 
-function renderResults(serial, records) {
-  const latest = records[0];
-  document.getElementById('res-sn').innerHTML = `SN ${serial} <small>${records.length} inspection${records.length !== 1 ? 's' : ''} on record</small>`;
+// ── Work order search ─────────────────────────────────────────────────────────
+async function searchByWorkOrder(wo) {
+  const { data, error } = await db
+    .from('ladder_inspections_public')
+    .select('*')
+    .eq('work_order_id', wo)
+    .order('serial_num', { ascending: true });
 
-  // Certificate
-  const days = daysUntil(latest.next_due_date);
-  const { cls, text } = statusBadge(days);
-  const badge = document.getElementById('cert-badge');
-  badge.className = `cert-badge ${cls}`;
-  badge.textContent = text;
+  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
+  if (!data?.length) {
+    el('no-results').textContent = `No inspection records found for work order "${wo}".`;
+    show('no-results'); return;
+  }
+  renderWorkOrder(wo, data);
+}
 
-  const nextDueCls = days === null ? '' : days < 0 ? ' err' : days <= 30 ? ' warn' : ' ok';
-  document.getElementById('cert-grid').innerHTML = `
-    <div class="cert-field">
-      <div class="cert-label">Serial Number</div>
-      <div class="cert-value" style="font-family:var(--mono);">${serial}</div>
+// ── Date & status helpers ─────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+function daysUntil(d) {
+  if (!d) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.round((new Date(d + 'T00:00:00') - now) / 86400000);
+}
+function statusInfo(days) {
+  if (days === null) return { cls: 'ok',   text: 'No Expiry Set' };
+  if (days < 0)      return { cls: 'err',  text: `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` };
+  if (days <= 30)    return { cls: 'warn', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
+  return               { cls: 'ok',   text: `Valid — ${days} days remaining` };
+}
+
+// ── SVG seal ──────────────────────────────────────────────────────────────────
+function sealSVG(cls) {
+  const C = {
+    ok:   { stroke:'#16a34a', fill:'#f0fdf4', text:'#15803d', label:'VALID',    icon:'✓' },
+    warn: { stroke:'#d97706', fill:'#fffbeb', text:'#b45309', label:'DUE SOON', icon:'!' },
+    err:  { stroke:'#dc2626', fill:'#fef2f2', text:'#b91c1c', label:'OVERDUE',  icon:'✕' },
+    none: { stroke:'#9ca3af', fill:'#f9fafb', text:'#6b7280', label:'NO RECORD',icon:'?' },
+  };
+  const c = C[cls] || C.none;
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="47" fill="${c.fill}" stroke="${c.stroke}" stroke-width="4.5"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="${c.stroke}" stroke-width="1" stroke-dasharray="3 2.5" opacity="0.35"/>
+    <text x="50" y="28" text-anchor="middle" font-size="7" font-weight="700"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="2.5" opacity="0.65">LADDER</text>
+    <text x="50" y="37" text-anchor="middle" font-size="6.5" font-weight="700"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="1.8" opacity="0.65">INSPECTION</text>
+    <text x="50" y="65" text-anchor="middle" dominant-baseline="middle"
+      font-size="26" font-weight="900" fill="${c.stroke}" font-family="system-ui,sans-serif">${c.icon}</text>
+    <text x="50" y="82" text-anchor="middle" font-size="7.5" font-weight="800"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="2">${c.label}</text>
+  </svg>`;
+}
+
+// ── Render: NOT REGISTERED ────────────────────────────────────────────────────
+function renderNotRegistered(serial) {
+  el('wo-card').style.display   = 'none';
+  el('hist-card').style.display = 'none';
+  el('cert-card').className     = 'cert-card unregistered';
+  el('cert-card').style.display = '';
+  el('cert-header').style.display = '';
+  el('cert-seal').innerHTML        = sealSVG('none');
+  el('cert-serial-num').textContent = serial;
+  el('cert-status-text').className  = 'cert-status-text none';
+  el('cert-status-text').textContent = 'No inspection on record';
+  el('cert-count').textContent = '';
+  el('cert-fields').innerHTML = `
+    <div class="cert-row">
+      <span class="cert-lbl">Status</span>
+      <span class="cert-val" style="color:var(--muted);">Not Registered</span>
     </div>
-    <div class="cert-field">
-      <div class="cert-label">Last Inspected</div>
-      <div class="cert-value">${fmtDate(latest.inspection_date)}</div>
+    <div class="cert-row">
+      <span class="cert-lbl">Next Due</span>
+      <span class="cert-val" style="color:var(--muted);">—</span>
     </div>
-    <div class="cert-field">
-      <div class="cert-label">Inspected By</div>
-      <div class="cert-value">${latest.tech_name || '—'}</div>
+    <div class="cert-row" style="border-bottom:none;">
+      <span style="font-size:12px;color:var(--muted);line-height:1.5;">
+        This serial number has no inspection records in the system.
+      </span>
+    </div>`;
+  show('results');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Render: certificate ───────────────────────────────────────────────────────
+function renderCertificate(serial, records) {
+  const r    = records[0];
+  const days = daysUntil(r.next_due_date);
+  const { cls, text } = statusInfo(days);
+
+  el('wo-card').style.display   = 'none';
+  el('cert-card').className     = 'cert-card';
+  el('cert-card').style.display = '';
+  el('cert-header').style.display = '';
+
+  // Seal
+  el('cert-seal').innerHTML = sealSVG(cls);
+
+  // Header info
+  el('cert-serial-num').textContent  = serial;
+  el('cert-status-text').className   = `cert-status-text ${cls}`;
+  el('cert-status-text').textContent = text;
+  el('cert-count').textContent =
+    records.length === 1 ? '1 inspection on record'
+                         : `${records.length} inspections on record`;
+
+  // Fields
+  const ladderSpec = [r.brand, r.type, r.length ? r.length + "'" : null].filter(Boolean).join(' · ');
+  el('cert-fields').innerHTML = `
+    <div class="cert-row">
+      <span class="cert-lbl">Last Inspected</span>
+      <span class="cert-val">${fmtDate(r.inspection_date)}</span>
     </div>
-    <div class="cert-field">
-      <div class="cert-label">Work Order</div>
-      <div class="cert-value">${latest.work_order_id || '—'}</div>
+    <div class="cert-row">
+      <span class="cert-lbl">Next Due</span>
+      <span class="cert-val ${cls}">${fmtDate(r.next_due_date)}</span>
     </div>
-    <div class="cert-field">
-      <div class="cert-label">Next Due</div>
-      <div class="cert-value${nextDueCls}">${fmtDate(latest.next_due_date)}</div>
+    <div class="cert-row">
+      <span class="cert-lbl">Inspector</span>
+      <span class="cert-val">${r.tech_name || '—'}</span>
     </div>
-    ${latest.notes ? `<div class="cert-field" style="grid-column:1/-1;">
-      <div class="cert-label">Notes</div>
-      <div class="cert-value" style="font-size:13px;font-weight:400;">${latest.notes}</div>
+    <div class="cert-row">
+      <span class="cert-lbl">Work Order</span>
+      <span class="cert-val">${r.work_order_id || '—'}</span>
+    </div>
+    ${ladderSpec ? `<div class="cert-row">
+      <span class="cert-lbl">Ladder</span>
+      <span class="cert-val" style="font-weight:500;">${ladderSpec}</span>
+    </div>` : ''}
+    ${r.notes ? `<div class="cert-row">
+      <span class="cert-lbl">Notes</span>
+      <span class="cert-val" style="font-weight:400;font-size:13px;color:var(--muted);">${r.notes}</span>
     </div>` : ''}
   `;
 
   // History
-  const tbody = document.getElementById('history-body');
-  tbody.innerHTML = '';
-  records.forEach(r => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${fmtDate(r.inspection_date)}</td>
-      <td>${r.tech_name || '—'}</td>
-      <td class="mono">${r.work_order_id || '—'}</td>
-      <td>${fmtDate(r.next_due_date)}</td>
-      <td style="color:#6b7080;font-size:12px;">${r.notes || ''}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+  if (records.length > 1) {
+    el('hist-body').innerHTML = records.slice(1).map(h => {
+      const hSpec = [h.brand, h.type, h.length ? h.length + "'" : null].filter(Boolean).join(' · ');
+      return `<div class="hist-row">
+        <span class="hist-date">${fmtDate(h.inspection_date)}</span>
+        <span class="hist-wo">${h.work_order_id || '—'}</span>
+        <span class="hist-tech">${h.tech_name || ''}${hSpec ? ' · ' + hSpec : ''}</span>
+      </div>`;
+    }).join('');
+    el('hist-label').textContent =
+      `${records.length - 1} prior inspection${records.length - 1 !== 1 ? 's' : ''}`;
+    el('hist-card').style.display = '';
+    el('hist-body').classList.remove('open');
+    el('hist-chevron').classList.remove('open');
+  } else {
+    el('hist-card').style.display = 'none';
+  }
 
-  document.getElementById('history-card').style.display = records.length > 1 ? '' : 'none';
-  document.getElementById('results').classList.add('vis');
-  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  show('results');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-document.getElementById('btn-search').addEventListener('click', search);
-document.getElementById('serial-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') search();
+// ── Render: work order ────────────────────────────────────────────────────────
+function renderWorkOrder(wo, records) {
+  el('cert-card').style.display = 'none';
+  el('hist-card').style.display = 'none';
+  el('wo-card').style.display   = '';
+
+  el('wo-hdr').textContent = `${wo} — ${records.length} ladder${records.length !== 1 ? 's' : ''} inspected`;
+
+  el('wo-list').innerHTML = records.map(r => {
+    const { cls } = statusInfo(daysUntil(r.next_due_date));
+    return `<a class="wo-row" href="?serial=${encodeURIComponent(r.serial_num)}">
+      <span class="badge-dot ${cls}"></span>
+      <span class="wo-serial">${r.serial_num}</span>
+      <span class="wo-date">${fmtDate(r.inspection_date)}</span>
+    </a>`;
+  }).join('');
+
+  show('results');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── History toggle ────────────────────────────────────────────────────────────
+el('hist-toggle').addEventListener('click', () => {
+  el('hist-body').classList.toggle('open');
+  el('hist-chevron').classList.toggle('open');
 });
 
-// Auto-search if serial param in URL: ?serial=1234567
-const urlSerial = new URLSearchParams(location.search).get('serial');
-if (urlSerial) {
-  document.getElementById('serial-input').value = urlSerial;
-  search();
+// ── URL params: ?serial=  or  ?wo= ───────────────────────────────────────────
+const _p = new URLSearchParams(location.search);
+if (_p.get('serial')) {
+  el('search-input').value = _p.get('serial');
+  doSearch();
+} else if (_p.get('wo')) {
+  document.querySelector('[data-mode="wo"]').click();
+  el('search-input').value = _p.get('wo');
+  doSearch();
 }
 </script>
 </body>

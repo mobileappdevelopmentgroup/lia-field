@@ -1,19 +1,24 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Lia Licensing — run this in your Supabase SQL Editor first
+-- Lia Licensing — safe to re-run; all statements are idempotent
 -- ═══════════════════════════════════════════════════════════════════
 
--- Users table (rows created by admin, NOT self-registration)
+-- ── Users table ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.users (
   id         uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email      text UNIQUE NOT NULL,
   name       text,
   plan       text NOT NULL DEFAULT 'pay-per-use',
   credits    integer NOT NULL DEFAULT 0,
-  -- credits: -1 = unlimited, 0 = no credits left, N = N imports remaining
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Usage audit log
+-- Add any columns that may be missing from an earlier schema version
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS name       text;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS plan       text NOT NULL DEFAULT 'pay-per-use';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS credits    integer NOT NULL DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+-- ── Usage audit log ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.usage_log (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        uuid NOT NULL REFERENCES public.users(id),
@@ -23,21 +28,25 @@ CREATE TABLE IF NOT EXISTS public.usage_log (
   credits_after  integer NOT NULL
 );
 
--- Enable RLS on both tables
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.usage_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usage_log ADD COLUMN IF NOT EXISTS consumed_at    timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.usage_log ADD COLUMN IF NOT EXISTS credits_before integer NOT NULL DEFAULT 0;
+ALTER TABLE public.usage_log ADD COLUMN IF NOT EXISTS credits_after  integer NOT NULL DEFAULT 0;
 
--- Users can only see their own row
+-- ── RLS ───────────────────────────────────────────────────────────────────────
+ALTER TABLE public.users      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usage_log  ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "users_select_own"     ON public.users;
 CREATE POLICY "users_select_own" ON public.users
   FOR SELECT USING (auth.uid() = id);
 
--- Users can only see their own log entries
+DROP POLICY IF EXISTS "usage_log_select_own" ON public.usage_log;
 CREATE POLICY "usage_log_select_own" ON public.usage_log
   FOR SELECT USING (auth.uid() = user_id);
 
 -- ── Admin helper: create a Lia user after they sign up in Supabase Auth ──────
--- After creating the auth user (Supabase dashboard → Auth → Users → Invite),
--- run: SELECT create_lia_user('their-auth-uuid', 'email@domain.com', 'Name', 5);
+-- After creating the auth user (dashboard → Auth → Users → Invite), run:
+-- SELECT create_lia_user('their-auth-uuid', 'email@domain.com', 'Name', 5);
 CREATE OR REPLACE FUNCTION public.create_lia_user(
   p_id      uuid,
   p_email   text,
@@ -54,8 +63,7 @@ END;
 $$;
 
 -- ── Atomic credit consumption ─────────────────────────────────────────────────
--- Called by Lia before each import: SELECT consume_credit('WO-123');
--- Returns credits_after (-1 = unlimited, 0+ = remaining balance)
+-- Called by Lia before each import. Returns credits_after.
 -- Raises exception if balance is 0 — Lia catches this and blocks the import.
 CREATE OR REPLACE FUNCTION public.consume_credit(p_work_order_id text)
 RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -78,7 +86,6 @@ BEGIN
   END IF;
 
   IF v_credits = -1 THEN
-    -- Unlimited plan: log but do not decrement
     INSERT INTO public.usage_log(user_id, work_order_id, credits_before, credits_after)
     VALUES (v_user_id, p_work_order_id, -1, -1);
     RETURN -1;
