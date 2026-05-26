@@ -3,6 +3,7 @@
 // Signals are received as JSON lines on stdin.
 
 import { run } from './runner.js';
+import { setPaused } from './automation.js';
 import type { DiffResult, DiffChoice } from './types.js';
 
 // ── stdio interception ────────────────────────────────────────────────────────
@@ -40,6 +41,16 @@ process.stdin.on('data', (chunk: string) => {
     if (!line.trim()) continue;
     try {
       const msg = JSON.parse(line) as Record<string, unknown>;
+      if (msg.type === 'pause') {
+        setPaused(true);
+        send({ type: 'paused' });
+        continue;
+      }
+      if (msg.type === 'resume') {
+        setPaused(false);
+        send({ type: 'resumed' });
+        continue;
+      }
       if (signalCallback) {
         const cb = signalCallback;
         signalCallback = null;

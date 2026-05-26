@@ -444,7 +444,8 @@
         </ul>
         <div class="row">
           <button class="btn-p" id="btn-analyze" style="display:none;">Analyze Work Order</button>
-          <button class="btn-err" id="btn-stop">Stop</button>
+          <button class="btn-warn" id="btn-pause">Pause</button>
+          <button class="btn-p" id="btn-resume" style="display:none;">Resume</button>
         </div>
       </div>
 
@@ -650,7 +651,7 @@ $('btn-signout').addEventListener('click', async () => {
 // ════════════════════════════════════════════════════════════════
 
 $('btn-office-home').addEventListener('click', () => {
-  window.api.stopAutomation();
+  window.api.stopAutomation(); // kill child + close browser when navigating away
   officeReset();
   showScreen('home');
 });
@@ -717,7 +718,8 @@ function officeReset() {
   hideEl('run-card');
   $('btn-analyze').style.display = 'none';
   $('btn-boxes-only').style.display = '';
-  $('btn-stop').disabled = false;
+  showEl('btn-pause'); $('btn-pause').disabled = false;
+  hideEl('btn-resume');
   setStep(1);
 }
 
@@ -901,16 +903,30 @@ $('btn-cancel-diff').addEventListener('click', () => {
   setStep(1);
 });
 
-$('btn-stop').addEventListener('click', () => {
-  window.api.stopAutomation();
-  appendLog('\n[Stopped by user]');
-  hideEl('run-card'); show('err-card');
-  $('err-msg').textContent = 'Automation stopped by user.';
-  setStep(1);
+$('btn-pause').addEventListener('click', () => {
+  window.api.pauseAutomation();
+});
+
+$('btn-resume').addEventListener('click', () => {
+  window.api.resumeAutomation();
 });
 
 $('btn-restart').addEventListener('click', () => { window.api.stopAutomation(); officeReset(); });
 $('btn-err-restart').addEventListener('click', () => { window.api.stopAutomation(); officeReset(); });
+
+window.api.onPaused(() => {
+  appendLog('\n[Paused — click Resume to continue]');
+  hideEl('btn-pause');
+  showEl('btn-resume');
+  setPill('Paused', 'pill-wait');
+});
+
+window.api.onResumed(() => {
+  appendLog('\n[Resumed]');
+  showEl('btn-pause');
+  hideEl('btn-resume');
+  setPill('Importing…', 'pill-run dots');
+});
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 function renderSummary(result) {
@@ -965,9 +981,30 @@ function renderSummary(result) {
     );
     $('sum-extra').innerHTML = section('⚠  EXTRA ON WORK ORDER — parts in BSI not in your CSV', 'var(--warn)', rows);
   } else { $('sum-extra').innerHTML = ''; }
-  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0;
+
+  // Cost flags
+  const flags = s.flaggedLadders || [];
+  if (flags.length > 0) {
+    const flagRows = flags.map(f => {
+      const reason = f.reason === 'pm36-high-cost'
+        ? `PM36 + repair total <strong>$${f.totalCost.toFixed(2)}</strong> — exceeds $90 threshold`
+        : `Repair total <strong>$${f.totalCost.toFixed(2)}</strong> — exceeds $250 threshold`;
+      const partTags = f.parts.map(p => `<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ');
+      return `<tr>
+        <td style="padding:6px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--err);">⚑ SN ${esc(f.serialNum)}</td>
+        <td style="padding:6px 8px;font-size:12px;">${reason}<br>${partTags}</td>
+      </tr>`;
+    });
+    $('sum-extra').innerHTML += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--err);">⚑  COST FLAGS — Review with supervisor before submitting</div>`+
+      `<table style="width:100%;border-collapse:collapse;">${flagRows.join('')}</table>`;
+  }
+
+  const hasCostFlags = flags.length > 0;
+  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0||hasCostFlags;
   $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
-  $('result-note').textContent = bad
+  $('result-note').textContent = hasCostFlags
+    ? '⚑  Cost flags require supervisor review before submitting the work order.'
+    : bad
     ? '⚠  Review the sections below before submitting the work order.'
     : '✓  All ladders and parts match the CSV. Safe to submit the work order.';
   if (result.logPath) $('log-path').textContent = `Log: ${result.logPath}`;
@@ -993,7 +1030,8 @@ window.api.onDiff(diff => {
 window.api.onComplete(result => {
   $('log-sum').textContent = $('log').textContent;
   ['run-card','log-section','diff-card'].forEach(id => { const el=$(id); if(el) el.classList.remove('vis'); });
-  $('btn-stop').disabled = true;
+  $('btn-pause').disabled = true;
+  hideEl('btn-resume');
 
   if (!result.success) {
     const msg = result.error || 'Import failed — check the terminal output for details.';
