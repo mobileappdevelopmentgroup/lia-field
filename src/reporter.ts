@@ -86,8 +86,25 @@ export function printSummary(summary: RunSummary): void {
     (r) => r.status !== 'success',
   );
 
+  // Cost flags
+  if (summary.flaggedLadders && summary.flaggedLadders.length > 0) {
+    console.log('\n╔══════════════════════════════════════════════════════════╗');
+    console.log('║  ⚑  COST FLAGS — Review these with your supervisor      ║');
+    console.log('╚══════════════════════════════════════════════════════════╝\n');
+    for (const f of summary.flaggedLadders) {
+      const reason = f.reason === 'pm36-high-cost'
+        ? `PM36 repair total $${f.totalCost.toFixed(2)} exceeds $90 threshold`
+        : `Repair total $${f.totalCost.toFixed(2)} exceeds $250 threshold`;
+      console.log(`  ⚑  SN ${f.serialNum}: ${reason}`);
+      console.log(`     Parts: ${f.parts.join(', ')}`);
+      console.log('');
+    }
+  }
+
   if (needsAttention.length === 0) {
-    console.log('\n✓  No exceptions — all ladders processed successfully.\n');
+    if (!summary.flaggedLadders?.length) {
+      console.log('\n✓  No exceptions — all ladders processed successfully.\n');
+    }
     return;
   }
 

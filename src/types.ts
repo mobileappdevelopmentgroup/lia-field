@@ -50,6 +50,7 @@ export interface RunSummary {
   ladderResults: LadderResult[];
   durationMs: number;
   extraOnWorkOrder?: ExtraPartEntry[]; // parts in BSI boxes not found in CSV
+  flaggedLadders?: FlaggedLadder[];   // high-cost or PM36+cost red flags
 }
 
 // ── Diff / idempotent re-run types ───────────────────────────────────────────
@@ -58,6 +59,16 @@ export interface WorkOrderBox {
   selector: string;    // e.g. "#box-3"
   serialNum: string;   // from #boxserialnumberh-{N} input value
   partNums: string[];  // part numbers from table rows (e.g. ["M23","R28L","RC"])
+  totalCost?: number;  // dollar total shown by BSI for this box, if scraped
+}
+
+export type FlagReason = 'pm36-high-cost' | 'high-cost';
+
+export interface FlaggedLadder {
+  serialNum: string;
+  totalCost: number;
+  reason: FlagReason;
+  parts: string[];
 }
 
 export interface DiffItemWithGaps {

@@ -347,6 +347,8 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             }
             break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;
+          case 'paused':            mainWindow.webContents.send('automation:paused');  break;
+          case 'resumed':           mainWindow.webContents.send('automation:resumed'); break;
         }
       } catch { /* ignore non-JSON */ }
     }
@@ -372,6 +374,14 @@ ipcMain.on('automation:choice', (_event, value) => {
 
 ipcMain.on('automation:stop', () => {
   if (automationChild) { automationChild.kill(); automationChild = null; }
+});
+
+ipcMain.on('automation:pause', () => {
+  if (automationChild?.stdin) automationChild.stdin.write(JSON.stringify({ type: 'pause' }) + '\n');
+});
+
+ipcMain.on('automation:resume', () => {
+  if (automationChild?.stdin) automationChild.stdin.write(JSON.stringify({ type: 'resume' }) + '\n');
 });
 
 ipcMain.handle('app:get-logs-dir', () => getLogsDir());

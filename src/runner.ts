@@ -8,7 +8,10 @@ import {
   runAutomationWithDiff,
 } from './automation.js';
 import { buildSummary, printSummary, writeJsonLog } from './reporter.js';
-import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice } from './types.js';
+import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice, FlaggedLadder } from './types.js';
+
+const PM36_FLAG_THRESHOLD = 90;   // flag if total > $90 AND box contains PM36
+const HIGH_COST_THRESHOLD  = 250;  // flag any box with total > $250
 
 const AUTOMATION_OPTS: AutomationOptions = {
   dropdownTimeout: 15_000,
@@ -166,6 +169,29 @@ export async function run(
       console.log(`\n[EXTRA] ${extra.length} part(s) on work order not in CSV:`);
       for (const e of extra) console.log(`  SN ${e.boxSerial}: ${e.partNum}`);
       summary.extraOnWorkOrder = extra;
+    }
+
+    // ── Cost flags ────────────────────────────────────────────────────────────
+    const flagged: FlaggedLadder[] = [];
+    for (const box of finalBoxes) {
+      const cost = box.totalCost;
+      if (cost == null) continue;
+      const hasPm36 = box.partNums.some(p => p.toUpperCase().includes('PM36'));
+      if (hasPm36 && cost > PM36_FLAG_THRESHOLD) {
+        flagged.push({ serialNum: box.serialNum, totalCost: cost, reason: 'pm36-high-cost', parts: box.partNums });
+      } else if (cost > HIGH_COST_THRESHOLD) {
+        flagged.push({ serialNum: box.serialNum, totalCost: cost, reason: 'high-cost', parts: box.partNums });
+      }
+    }
+    if (flagged.length > 0) {
+      summary.flaggedLadders = flagged;
+      console.log(`\n[FLAGS] ${flagged.length} ladder(s) need attention due to repair cost:`);
+      for (const f of flagged) {
+        const reason = f.reason === 'pm36-high-cost'
+          ? `PM36 + total $${f.totalCost.toFixed(2)} > $${PM36_FLAG_THRESHOLD}`
+          : `Total $${f.totalCost.toFixed(2)} > $${HIGH_COST_THRESHOLD}`;
+        console.log(`  ⚑  SN ${f.serialNum}: ${reason}`);
+      }
     }
   } catch { /* non-fatal */ }
 

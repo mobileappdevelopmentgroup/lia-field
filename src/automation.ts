@@ -72,6 +72,26 @@ function expandAbbrev(map: Record<string, string>, value: string): string {
   return map[value.trim().toLowerCase()] ?? value;
 }
 
+// ── Pause / Resume controller ─────────────────────────────────────────────────
+
+let _paused = false;
+const _pauseWaiters: Array<() => void> = [];
+
+export function setPaused(paused: boolean): void {
+  _paused = paused;
+  if (!paused && _pauseWaiters.length > 0) {
+    const resolvers = _pauseWaiters.splice(0);
+    resolvers.forEach(r => r());
+  }
+}
+
+async function checkPaused(): Promise<void> {
+  if (!_paused) return;
+  console.log('  ⏸  Import paused — waiting for resume...');
+  await new Promise<void>(resolve => _pauseWaiters.push(resolve));
+  console.log('  ▶  Resuming import...');
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -705,6 +725,7 @@ export async function runAutomation(
   const results: LadderResult[] = [];
 
   for (const record of records) {
+    await checkPaused();
     console.log(`\nProcessing SN ${record.serialNum}...`);
 
     // Step 1: add the ladder box
@@ -787,7 +808,26 @@ export async function scrapeWorkOrderBoxes(
       if (match?.[1]) partNums.push(match[1]);
     }
 
-    result.push({ selector: `#${id}`, serialNum: serial, partNums });
+    // Scrape total repair cost shown by BSI for this box.
+    // BSI renders the box total as a dollar amount in the box footer.
+    // We grab all currency values from the box text and take the last one,
+    // which is typically the grand total (parts are listed before it).
+    let totalCost: number | undefined;
+    try {
+      const boxText = await box.innerText().catch(() => '');
+      // Match "$123.45" or "123.45" patterns (BSI may or may not include the $)
+      const dollarMatches = boxText.match(/\$\s*[\d,]+\.?\d*/g);
+      if (dollarMatches && dollarMatches.length > 0) {
+        const amounts = dollarMatches.map(m => parseFloat(m.replace(/[$,\s]/g, '')));
+        const validAmounts = amounts.filter(n => !isNaN(n) && n > 0);
+        if (validAmounts.length > 0) {
+          // Last dollar amount is usually the box total
+          totalCost = validAmounts[validAmounts.length - 1];
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    result.push({ selector: `#${id}`, serialNum: serial, partNums, totalCost });
   }
 
   return result;
@@ -867,6 +907,7 @@ export async function runAutomationWithDiff(
 
   // ── Missing boxes: add in full ────────────────────────────────────────────
   for (const record of diff.missingBoxes) {
+    await checkPaused();
     console.log(`\nAdding new box — SN ${record.serialNum}...`);
     const { boxSel, status, errorMsg } = await addLadderBox(workPage, record, opts);
     if (!boxSel) {
@@ -890,6 +931,7 @@ export async function runAutomationWithDiff(
 
   // ── Existing with gaps ────────────────────────────────────────────────────
   for (const { record, boxSelector, missingParts } of diff.existingWithGaps) {
+    await checkPaused();
     if (mode === 'boxes-only') {
       // User chose to skip existing boxes
       console.log(`  - SN ${record.serialNum}: box exists — skipped (boxes-only mode)`);
