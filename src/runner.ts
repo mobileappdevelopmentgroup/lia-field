@@ -134,8 +134,10 @@ export async function run(
       ladderResults = await runAutomationWithDiff(diff, choice, workPage, AUTOMATION_OPTS);
     }
   } catch (err: unknown) {
-    await browser.close();
-    return { success: false, error: `FATAL ERROR: ${err instanceof Error ? err.message : String(err)}` };
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`\nFATAL ERROR during import: ${msg}`);
+    try { await browser.close(); } catch {}
+    return { success: false, error: `Import crashed: ${msg}` };
   }
 
   const durationMs = Date.now() - startTime;

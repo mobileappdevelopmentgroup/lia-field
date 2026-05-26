@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type {
@@ -9,7 +10,9 @@ import type {
   PartResult,
 } from './types.js';
 
-const LOGS_DIR = path.join(process.cwd(), 'logs');
+// Use BATAVIA_LOGS_DIR when set (packaged app sets this to ~/Documents/Lia Logs),
+// otherwise fall back to a writable temp directory so we never try to write to /logs.
+const LOGS_DIR = process.env['BATAVIA_LOGS_DIR'] ?? path.join(os.tmpdir(), 'lia-logs');
 
 // CSV abbreviation → BSI dropdown search term.
 // The value just needs to be a substring of the actual option text (case-insensitive).
@@ -658,7 +661,11 @@ export async function launchBrowser(): Promise<{
   const browser = await chromium.launch({
     headless: false,
     channel: 'chrome',
-    args: ['--start-maximized'],
+    args: [
+      '--start-maximized',
+      '--disable-extensions',           // prevent extensions from interfering with CDP
+      '--disable-background-networking', // reduce unnecessary background traffic
+    ],
   });
   const context = await browser.newContext({
     viewport: null, // let the OS window size dictate the viewport

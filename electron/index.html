@@ -991,11 +991,21 @@ window.api.onDiff(diff => {
 });
 
 window.api.onComplete(result => {
-  renderSummary(result);
   $('log-sum').textContent = $('log').textContent;
   ['run-card','log-section','diff-card'].forEach(id => { const el=$(id); if(el) el.classList.remove('vis'); });
-  setPill('Import complete', 'pill-done');
   $('btn-stop').disabled = true;
+
+  if (!result.success) {
+    const msg = result.error || 'Import failed — check the terminal output for details.';
+    show('err-card'); $('err-msg').textContent = msg;
+    show('log-section');
+    setPill('Import failed', 'pill-err');
+    setStep(1);
+    return;
+  }
+
+  renderSummary(result);
+  setPill('Import complete', 'pill-done');
   document.body.classList.add('summary-mode');
   show('sum-card');
   setStep(6);
