@@ -167,7 +167,7 @@
     .part-chip-x { background: none; border: none; color: #8fa4ff; cursor: pointer;
                    font-size: 15px; padding: 0; line-height: 1; opacity: .7; }
     .part-chip-x:active { opacity: 1; }
-    .parts-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .parts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
     .part-btn { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
                 color: var(--text); font-family: var(--mono); font-size: 10.5px; padding: 9px 4px;
                 cursor: pointer; position: relative; text-align: center; min-height: 40px; }
@@ -205,7 +205,7 @@
 
     /* Compact ladder cards */
     .ladder-card { background: var(--surf); border: 1px solid var(--border); border-radius: 8px;
-                   padding: 9px 12px; display: flex; align-items: flex-start; gap: 8px; }
+                   padding: 9px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
     .lc-body { flex: 1; min-width: 0; }
     .lc-top { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
     .lc-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
@@ -216,16 +216,17 @@
                   border: 1px solid rgba(79,110,247,.22); border-radius: 3px;
                   padding: 1px 6px; font-size: 10.5px; font-family: var(--mono); }
     .no-ladders { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; font-style: italic; }
-    .lc-actions { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; align-items: center; }
-    .lc-del  { background: none; border: none; color: var(--muted); font-size: 18px;
-               cursor: pointer; padding: 0 2px; line-height: 1; }
-    .lc-del:active  { color: var(--err); }
-    .lc-edit { background: none; border: none; color: var(--muted); font-size: 15px;
-               cursor: pointer; padding: 0 2px; line-height: 1; }
-    .lc-edit:active { color: var(--accent); }
-    .lc-dup  { background: none; border: none; color: var(--muted); font-size: 14px;
-               cursor: pointer; padding: 0 2px; line-height: 1; }
-    .lc-dup:active  { color: var(--ok); }
+    .lc-actions { display: flex; flex-direction: row; gap: 6px; }
+    .lc-edit, .lc-dup, .lc-del {
+      flex: 1; border-radius: 7px; border: 1px solid var(--border); cursor: pointer;
+      font-size: 12px; font-weight: 600; padding: 8px 4px; text-align: center; }
+    .lc-edit { background: rgba(79,110,247,.12); color: #8fa4ff; border-color: rgba(79,110,247,.3); }
+    .lc-edit:active { background: rgba(79,110,247,.22); }
+    .lc-dup  { background: var(--surf2); color: var(--muted); }
+    .lc-dup:active  { background: var(--surf3); color: var(--fg); }
+    .lc-del  { background: rgba(231,76,60,.08); color: #e07070; border-color: rgba(231,76,60,.25); }
+    .lc-del:active  { background: rgba(231,76,60,.18); }
+    .ladder-card.lc-editing { border-color: var(--accent); background: rgba(79,110,247,.07); }
 
     /* ── Parts library sheet rows ── */
     .part-lib-row { display: flex; align-items: center; gap: 8px; background: var(--surf2);
@@ -245,11 +246,15 @@
     .lib-qty:focus { border-color: var(--accent); }
 
     /* ── Add Ladder button panel (sticky bottom) ── */
-    #add-btn-panel { flex-shrink: 0; padding: 10px 12px 10px;
+    #add-btn-panel { flex-shrink: 0; padding: 10px 12px; display: flex; gap: 8px;
                      background: var(--surf); border-bottom: 1px solid var(--border); }
     .add-ladder-btn { background: var(--ok); color: #fff; border-radius: 10px; padding: 15px;
-                      font-size: 16px; font-weight: 700; width: 100%; border: none; cursor: pointer; }
+                      font-size: 16px; font-weight: 700; flex: 1; border: none; cursor: pointer; }
     .add-ladder-btn:active { background: #27ae60; }
+    .cancel-edit-btn { background: var(--surf2); color: var(--fg); border: 1px solid var(--border);
+                       border-radius: 10px; padding: 15px 18px; font-size: 15px; font-weight: 600;
+                       cursor: pointer; flex-shrink: 0; display: none; }
+    .cancel-edit-btn:active { background: var(--surf3); }
 
     /* ── Scan overlay ── */
     .scan-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.95); z-index: 500;
@@ -423,6 +428,7 @@
   <!-- PANEL 3: Add button (above ladder list so no scrolling needed) -->
   <div id="add-btn-panel">
     <button class="add-ladder-btn" id="btn-add-ladder">+ Add Ladder</button>
+    <button class="cancel-edit-btn" id="btn-cancel-edit">Cancel</button>
   </div>
 
   <!-- PANEL 4: Recent ladders (scrollable, flex:1) -->
@@ -628,6 +634,7 @@ $('btn-new-job').addEventListener('click', () => {
 let _job          = null;
 let _saveTimer    = null;
 let _currentParts = new Map();
+let _editingIdx   = -1;
 
 function openJob(id) {
   const all = loadJobs();
@@ -766,7 +773,7 @@ function renderPartButtons() {
     const btn = document.createElement('button');
     btn.className = 'part-btn' + (qty > 0 ? ' active' : '');
     const dLabel = defaultQty > 1 ? `<span class="pb-dqty">(${defaultQty})</span>` : '';
-    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(name) + dLabel;
+    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(name.toUpperCase()) + dLabel;
     btn.addEventListener('click', () => {
       const cur = _currentParts.get(name) || 0;
       _currentParts.set(name, cur === 0 ? defaultQty : cur + 1);
@@ -783,7 +790,7 @@ function renderSelectedParts() {
     if (qty <= 0) return;
     const chip = document.createElement('span');
     chip.className = 'part-chip';
-    chip.innerHTML = `${esc(name)}${qty > 1 ? ` ×${qty}` : ''} <button class="part-chip-x" title="Remove">×</button>`;
+    chip.innerHTML = `${esc(name.toUpperCase())}${qty > 1 ? ` ×${qty}` : ''} <button class="part-chip-x" title="Remove">×</button>`;
     chip.querySelector('.part-chip-x').addEventListener('click', () => {
       _currentParts.delete(name); renderPartButtons(); renderSelectedParts();
     });
@@ -820,8 +827,35 @@ function renderCustomFieldsForm() {
   }
 }
 
-// ── Add Ladder ────────────────────────────────────────────────────────────────
-$('btn-add-ladder').addEventListener('click', addLadder);
+// ── Add Ladder / Save Edits ───────────────────────────────────────────────────
+$('btn-add-ladder').addEventListener('click', () => { if (_editingIdx >= 0) saveEdits(); else addLadder(); });
+$('btn-cancel-edit').addEventListener('click', cancelEdit);
+
+function setEditMode(editing) {
+  $('btn-add-ladder').textContent = editing ? 'Save Edits' : '+ Add Ladder';
+  $('btn-cancel-edit').style.display = editing ? 'block' : 'none';
+}
+
+function buildLadderFromForm(existingId) {
+  const parts = [];
+  _currentParts.forEach((qty, name) => { if (qty > 0) parts.push({ name, qty }); });
+  const customFields = {};
+  document.querySelectorAll('.cf-input').forEach(input => {
+    const v = input.value.trim();
+    if (input.dataset.cf && v) customFields[input.dataset.cf] = v;
+  });
+  return {
+    id:         existingId || crypto.randomUUID(),
+    serialNum:  $('fi-serial').value.trim(),
+    brand:      $('fi-brand').value.trim(),
+    type:       $('fi-type').value.trim(),
+    length:     $('fi-length').value.trim(),
+    locationId: $('fi-loc').value.trim(),
+    desc:       $('fi-desc').value.trim(),
+    customFields,
+    parts,
+  };
+}
 
 function addLadder() {
   const serial = $('fi-serial').value.trim();
@@ -831,30 +865,37 @@ function addLadder() {
     setTimeout(() => { el.style.borderColor = ''; }, 1200);
     return;
   }
-  const parts = [];
-  _currentParts.forEach((qty, name) => { if (qty > 0) parts.push({ name, qty }); });
-
-  const customFields = {};
-  document.querySelectorAll('.cf-input').forEach(input => {
-    const v = input.value.trim();
-    if (input.dataset.cf && v) customFields[input.dataset.cf] = v;
-  });
-
   if (!_job.ladders) _job.ladders = [];
-  _job.ladders.unshift({
-    id:         crypto.randomUUID(),
-    serialNum:  serial,
-    brand:      $('fi-brand').value.trim(),
-    type:       $('fi-type').value.trim(),
-    length:     $('fi-length').value.trim(),
-    locationId: $('fi-loc').value.trim(),
-    desc:       $('fi-desc').value.trim(),
-    customFields,
-    parts,
-  });
+  _job.ladders.unshift(buildLadderFromForm());
   clearEntryForm();
   renderLadderList();
   scheduleSave();
+  $('fi-serial').focus();
+}
+
+function saveEdits() {
+  const serial = $('fi-serial').value.trim();
+  if (!serial) {
+    const el = $('fi-serial');
+    el.focus(); el.style.borderColor = 'var(--err)';
+    setTimeout(() => { el.style.borderColor = ''; }, 1200);
+    return;
+  }
+  const existingId = _job.ladders[_editingIdx]?.id;
+  _job.ladders[_editingIdx] = buildLadderFromForm(existingId);
+  _editingIdx = -1;
+  setEditMode(false);
+  clearEntryForm();
+  renderLadderList();
+  scheduleSave();
+  $('fi-serial').focus();
+}
+
+function cancelEdit() {
+  _editingIdx = -1;
+  setEditMode(false);
+  clearEntryForm();
+  renderLadderList();
   $('fi-serial').focus();
 }
 
@@ -871,12 +912,12 @@ function renderLadderList() {
   ladders.forEach((l, idx) => {
     const meta = [l.brand, l.type, l.length ? l.length + ' ft' : '', l.locationId].filter(Boolean).join(' · ');
     const partsHtml = (l.parts || []).length
-      ? l.parts.map(p => `<span class="badge-part">${esc(p.name)}${p.qty > 1 ? ` ×${p.qty}` : ''}</span>`).join('')
+      ? l.parts.map(p => `<span class="badge-part">${esc(p.name.toUpperCase())}${p.qty > 1 ? ` ×${p.qty}` : ''}</span>`).join('')
       : '<span style="color:var(--muted);font-size:10px;font-style:italic;">no parts</span>';
     const cfPairs = Object.entries(l.customFields || {});
     const cfHtml  = cfPairs.length ? cfPairs.map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(' · ') : '';
     const card = document.createElement('div');
-    card.className = 'ladder-card';
+    card.className = 'ladder-card' + (idx === _editingIdx ? ' lc-editing' : '');
     card.innerHTML = `
       <div class="lc-body">
         <div class="lc-top">
@@ -887,9 +928,9 @@ function renderLadderList() {
         ${cfHtml ? `<div class="lc-custom">${cfHtml}</div>` : ''}
       </div>
       <div class="lc-actions">
-        <button class="lc-edit" title="Edit">✎</button>
-        <button class="lc-dup"  title="Duplicate (clear serial)">⧉</button>
-        <button class="lc-del"  title="Remove">×</button>
+        <button class="lc-edit">Edit</button>
+        <button class="lc-dup">Duplicate</button>
+        <button class="lc-del">Delete</button>
       </div>
     `;
     card.querySelector('.lc-edit').addEventListener('click', () => editLadder(idx));
@@ -1058,9 +1099,10 @@ function fillForm(l, includeSerial) {
 function editLadder(idx) {
   const l = _job.ladders[idx];
   if (!l) return;
-  _job.ladders.splice(idx, 1);
-  renderLadderList(); scheduleSave();
+  _editingIdx = idx;
+  setEditMode(true);
   fillForm(l, true);
+  renderLadderList(); // re-render to show editing highlight
 }
 
 function duplicateLadder(idx) {
@@ -1185,6 +1227,54 @@ function addLibPart() {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
+
+// ── Demo job seed (first launch only) ────────────────────────────────────────
+(function seedDemoJob() {
+  if (localStorage.getItem('lia-demo-seeded')) return;
+  localStorage.setItem('lia-demo-seeded', '1');
+  const now = new Date().toISOString();
+  const id  = 'demo-' + Date.now();
+  const job = {
+    id, name: 'Demo Job — Comcast Northern Tier', workOrderNum: 'WO-12345',
+    createdAt: now, updatedAt: now,
+    ladders: [
+      {
+        id: crypto.randomUUID(), serialNum: '1509167', brand: 'LG', type: 'Ext',
+        length: '28', locationId: '10', desc: 'Needs leveler swap too',
+        customFields: {},
+        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'Hom200', qty: 1 },
+                { name: 'Lgh92', qty: 1 }, { name: 'Levelers', qty: 1 }],
+      },
+      {
+        id: crypto.randomUUID(), serialNum: '1460300', brand: 'LG', type: 'Ext',
+        length: '28', locationId: '27', desc: '',
+        customFields: {},
+        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'LGE55', qty: 1 },
+                { name: 'PTS', qty: 1 }],
+      },
+      {
+        id: crypto.randomUUID(), serialNum: '1358340', brand: 'LG', type: 'Ext',
+        length: '28', locationId: '34', desc: 'Levels swap — confirm with supervisor',
+        customFields: {},
+        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'Lge36b', qty: 1 },
+                { name: 'Lge123', qty: 1 }, { name: 'Lge43', qty: 1 }, { name: 'SLS', qty: 2 }],
+      },
+      {
+        id: crypto.randomUUID(), serialNum: '1553138', brand: 'Blue Bird', type: 'Comp',
+        length: '8', locationId: '14', desc: '',
+        customFields: {},
+        parts: [{ name: 'M16', qty: 1 }, { name: 'SLS', qty: 1 }],
+      },
+      {
+        id: crypto.randomUUID(), serialNum: '1626146', brand: 'Blue Bird', type: 'Ext',
+        length: '28', locationId: '9', desc: '',
+        customFields: {},
+        parts: [{ name: 'M23', qty: 1 }, { name: 'R28L', qty: 1 }, { name: 'B92', qty: 1 }],
+      },
+    ],
+  };
+  const all = loadJobs(); all[id] = job; saveJobs(all);
+})();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderJobList();
