@@ -174,6 +174,23 @@
     .part-btn:active { background: rgba(79,110,247,.12); }
     .part-btn.active { background: rgba(79,110,247,.18); border-color: var(--accent); color: #a0b4ff; }
     .pb-count { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: var(--accent); }
+    .pb-dqty  { font-size: 8px; font-weight: 700; color: var(--accent); margin-left: 1px; vertical-align: super; }
+    .parts-empty-msg { font-size: 11px; color: var(--muted); text-align: center;
+                       padding: 6px 0; font-style: italic; }
+
+    /* ── Manual part input row ── */
+    .parts-manual-row { display: flex; gap: 5px; align-items: center; }
+    .parts-manual-row .ac-wrap { flex: 1; min-width: 0; position: relative; }
+    .parts-add-btn { background: rgba(46,204,113,.12); border: 1px solid rgba(46,204,113,.28);
+                     border-radius: 7px; color: #60d998; font-size: 20px; font-weight: 700;
+                     width: 32px; height: 32px; display: flex; align-items: center;
+                     justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
+    .parts-add-btn:active { background: rgba(46,204,113,.22); }
+    .lib-open-btn { background: none; border: 1px solid var(--border); border-radius: 7px;
+                    color: var(--muted); font-size: 15px; height: 32px; width: 32px;
+                    display: flex; align-items: center; justify-content: center;
+                    cursor: pointer; flex-shrink: 0; padding: 0; }
+    .lib-open-btn:active { background: rgba(255,255,255,.06); color: var(--text); }
 
     /* ── Recent ladders panel ── */
     #recent-panel { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -199,9 +216,33 @@
                   border: 1px solid rgba(79,110,247,.22); border-radius: 3px;
                   padding: 1px 6px; font-size: 10.5px; font-family: var(--mono); }
     .no-ladders { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; font-style: italic; }
-    .lc-del { background: none; border: none; color: var(--muted); font-size: 20px;
-              cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0; }
-    .lc-del:active { color: var(--err); }
+    .lc-actions { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; align-items: center; }
+    .lc-del  { background: none; border: none; color: var(--muted); font-size: 18px;
+               cursor: pointer; padding: 0 2px; line-height: 1; }
+    .lc-del:active  { color: var(--err); }
+    .lc-edit { background: none; border: none; color: var(--muted); font-size: 15px;
+               cursor: pointer; padding: 0 2px; line-height: 1; }
+    .lc-edit:active { color: var(--accent); }
+    .lc-dup  { background: none; border: none; color: var(--muted); font-size: 14px;
+               cursor: pointer; padding: 0 2px; line-height: 1; }
+    .lc-dup:active  { color: var(--ok); }
+
+    /* ── Parts library sheet rows ── */
+    .part-lib-row { display: flex; align-items: center; gap: 8px; background: var(--surf2);
+                    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+    .star-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 0;
+                line-height: 1; color: var(--muted); flex-shrink: 0; }
+    .star-btn.starred { color: #f0c040; }
+    .star-btn:active { opacity: .6; }
+    .part-lib-name { flex: 1; font-family: var(--mono); font-size: 14px;
+                     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lib-qty-wrap { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+    .lib-qty-label { font-size: 10px; color: var(--muted); }
+    .lib-qty { width: 38px; background: var(--surf); border: 1px solid var(--border);
+               border-radius: 5px; color: var(--text); font-family: var(--mono);
+               font-size: 13px; padding: 3px 4px; text-align: center; outline: none;
+               -webkit-appearance: none; appearance: none; }
+    .lib-qty:focus { border-color: var(--accent); }
 
     /* ── Add Ladder button panel (sticky bottom) ── */
     #add-btn-panel { flex-shrink: 0; padding: 10px 12px 10px;
@@ -353,7 +394,7 @@
       <div class="field-ig">
         <div class="field-label">Description</div>
         <div class="field-ig-wrap">
-          <input type="text" id="fi-desc" class="field-input" placeholder="Notes…" autocomplete="off">
+          <input type="text" id="fi-desc" class="field-input" placeholder="Personal notes…" autocomplete="off">
           <button class="field-clear-x" data-clear="fi-desc">×</button>
         </div>
       </div>
@@ -364,10 +405,19 @@
 
   </div><!-- /form-panel -->
 
-  <!-- PANEL 2: Parts grid -->
+  <!-- PANEL 2: Parts grid + manual input -->
   <div id="parts-panel">
     <div class="parts-selected" id="parts-selected"></div>
     <div class="parts-grid" id="parts-grid"></div>
+    <div class="parts-manual-row">
+      <div class="ac-wrap">
+        <input type="text" id="fi-part-manual" class="field-input"
+               placeholder="Other part #…" autocomplete="off">
+        <div class="ac-list" id="ac-part-list"></div>
+      </div>
+      <button class="parts-add-btn" id="btn-add-part-manual" title="Add to ladder">+</button>
+      <button class="lib-open-btn" id="btn-open-library" title="Parts library">☰</button>
+    </div>
   </div>
 
   <!-- PANEL 3: Add button (above ladder list so no scrolling needed) -->
@@ -407,6 +457,20 @@
   <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
 </div>
 
+<!-- Parts Library Sheet -->
+<div class="sheet-backdrop hidden" id="lib-backdrop"></div>
+<div class="settings-sheet hidden" id="lib-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">Parts Library</div>
+  <div class="sheet-desc">★ Starred parts appear as quick-tap buttons. The × column sets the starting quantity per tap — subsequent taps always add 1.</div>
+  <div class="sheet-fields" id="lib-list"></div>
+  <div class="sheet-add-row">
+    <input type="text" id="new-lib-input" placeholder="New part # (e.g. Lgh123WP)" autocomplete="off">
+    <button class="btn-p" id="btn-add-lib-part" style="font-size:14px;padding:12px 18px;">Add</button>
+  </div>
+  <button class="btn-ok sheet-done" id="btn-close-library">Done</button>
+</div>
+
 <script>
 // ════════════════════════════════════════════════════════════════
 // Utilities
@@ -431,9 +495,37 @@ function loadCustomFields() {
 }
 function saveCustomFields(f) { localStorage.setItem('lia-custom-fields', JSON.stringify(f)); }
 
-function getQuickParts() {
-  try { const s = localStorage.getItem('lia-quick-parts'); return s ? JSON.parse(s) : DEFAULT_PARTS; }
-  catch { return DEFAULT_PARTS; }
+// ── Parts library ─────────────────────────────────────────────────────────────
+function loadPartsLibrary() {
+  try { const s = localStorage.getItem('lia-parts-library'); return s ? JSON.parse(s) : null; }
+  catch { return null; }
+}
+function savePartsLibrary(lib) { localStorage.setItem('lia-parts-library', JSON.stringify(lib)); }
+
+function getLibrary() {
+  let lib = loadPartsLibrary();
+  if (lib) return lib;
+  lib = PARTS_SEED.map(p => ({ ...p }));
+  // Migrate old lia-quick-parts if present
+  try {
+    const old = JSON.parse(localStorage.getItem('lia-quick-parts') || 'null');
+    if (Array.isArray(old)) {
+      const existing = new Set(lib.map(p => p.name.toLowerCase()));
+      for (const n of old) if (!existing.has(n.toLowerCase())) lib.push({ name: n, favorited: true, defaultQty: 1 });
+    }
+  } catch {}
+  savePartsLibrary(lib);
+  return lib;
+}
+
+function getFavoritedParts() { return getLibrary().filter(p => p.favorited); }
+
+function ensureInLibrary(name) {
+  const lib = getLibrary();
+  if (!lib.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    lib.push({ name, favorited: false, defaultQty: 1 });
+    savePartsLibrary(lib);
+  }
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -446,7 +538,29 @@ const TYPE_OPTIONS = [
   'Extension','Step','Combination','Multi-Position','Straight',
   'Platform','Attic','Podium','Trestle','Articulated','Rolling','Folding','Hook'
 ];
-const DEFAULT_PARTS = ['M23','R28L','Lgh92','Lgh123WP','LGE26p','Hlm100','RC','SLS1','Lgh26p','SLS375'];
+// ── Parts library seed (from Batavia work-order data) ─────────────────────────
+// favorited = shown as a quick-tap button; defaultQty = first-tap quantity
+const PARTS_SEED = [
+  { name: 'M23',      favorited: true,  defaultQty: 1 },
+  { name: 'M16',      favorited: true,  defaultQty: 1 },
+  { name: 'RC',       favorited: true,  defaultQty: 1 },
+  { name: 'R28L',     favorited: true,  defaultQty: 1 },
+  { name: 'Hlm100',   favorited: true,  defaultQty: 1 },
+  { name: 'Lgh123WP', favorited: true,  defaultQty: 1 },
+  { name: 'LGE26p',   favorited: true,  defaultQty: 1 },
+  { name: 'Lgh92',    favorited: true,  defaultQty: 1 },
+  { name: 'B74',      favorited: true,  defaultQty: 1 },
+  { name: 'SLS',      favorited: true,  defaultQty: 2 },
+  { name: 'S375',     favorited: true,  defaultQty: 1 },
+  { name: 'M13',      favorited: false, defaultQty: 1 },
+  { name: 'M200',     favorited: false, defaultQty: 1 },
+  { name: 'R28',      favorited: false, defaultQty: 1 },
+  { name: 'Lgh123c',  favorited: false, defaultQty: 1 },
+  { name: 'Lgh26p',   favorited: false, defaultQty: 1 },
+  { name: 'Lge26p',   favorited: false, defaultQty: 1 },
+  { name: 'Lgh36b',   favorited: false, defaultQty: 1 },
+  { name: 'PTS',      favorited: false, defaultQty: 1 },
+];
 
 // ════════════════════════════════════════════════════════════════
 // Jobs Screen
@@ -547,7 +661,7 @@ $('job-wo').addEventListener('input',   scheduleSave);
 
 // ── Form clear ────────────────────────────────────────────────────────────────
 function clearEntryForm() {
-  ['fi-serial','fi-loc','fi-desc'].forEach(id => $(id).value = '');
+  ['fi-serial','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   _currentParts = new Map();
   renderPartButtons();
@@ -555,7 +669,7 @@ function clearEntryForm() {
 }
 
 function clearFormAll() {
-  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc'].forEach(id => $(id).value = '');
+  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   _currentParts = new Map();
   renderPartButtons();
@@ -625,13 +739,20 @@ setupAutocomplete('fi-type',  'ac-type-list',  TYPE_OPTIONS);
 function renderPartButtons() {
   const grid = $('parts-grid');
   grid.innerHTML = '';
-  getQuickParts().forEach(part => {
-    const qty = _currentParts.get(part) || 0;
+  const favs = getFavoritedParts();
+  if (!favs.length) {
+    grid.innerHTML = '<div class="parts-empty-msg">No favorites — tap ★ in the library (☰) to pin parts here.</div>';
+    return;
+  }
+  favs.forEach(({ name, defaultQty = 1 }) => {
+    const qty = _currentParts.get(name) || 0;
     const btn = document.createElement('button');
     btn.className = 'part-btn' + (qty > 0 ? ' active' : '');
-    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(part);
+    const dLabel = defaultQty > 1 ? `<span class="pb-dqty">(${defaultQty})</span>` : '';
+    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(name) + dLabel;
     btn.addEventListener('click', () => {
-      _currentParts.set(part, (_currentParts.get(part) || 0) + 1);
+      const cur = _currentParts.get(name) || 0;
+      _currentParts.set(name, cur === 0 ? defaultQty : cur + 1);
       renderPartButtons(); renderSelectedParts();
     });
     grid.appendChild(btn);
@@ -748,8 +869,14 @@ function renderLadderList() {
         <div class="lc-parts">${partsHtml}</div>
         ${cfHtml ? `<div class="lc-custom">${cfHtml}</div>` : ''}
       </div>
-      <button class="lc-del" title="Remove">×</button>
+      <div class="lc-actions">
+        <button class="lc-edit" title="Edit">✎</button>
+        <button class="lc-dup"  title="Duplicate (clear serial)">⧉</button>
+        <button class="lc-del"  title="Remove">×</button>
+      </div>
     `;
+    card.querySelector('.lc-edit').addEventListener('click', () => editLadder(idx));
+    card.querySelector('.lc-dup').addEventListener('click',  () => duplicateLadder(idx));
     card.querySelector('.lc-del').addEventListener('click', () => {
       _job.ladders.splice(idx, 1);
       renderLadderList();
@@ -779,7 +906,7 @@ function buildCsv(job) {
     const row = {
       'Row#': idx + 1, 'Serial #': l.serialNum || '',
       'Location ID': l.locationId || '', 'Brand': l.brand || '',
-      'Type': l.type || '', 'Length': l.length || '', 'Description': l.desc || '',
+      'Type': l.type || '', 'Length': l.length || '', 'Description': 'Ladder Repair',
     };
     cfNames.forEach(n => { row[`[Custom] ${n}`] = (l.customFields || {})[n] || ''; });
     (l.parts || []).forEach((p, i) => {
@@ -891,6 +1018,150 @@ function addCustomField() {
   if (!fields.includes(name)) { fields.push(name); saveCustomFields(fields); }
   $('new-cf-input').value = '';
   renderCfList();
+}
+
+// ── Edit / Duplicate ladder ───────────────────────────────────────────────────
+function fillForm(l, includeSerial) {
+  $('fi-serial').value = includeSerial ? (l.serialNum || '') : '';
+  $('fi-brand').value  = l.brand      || '';
+  $('fi-type').value   = l.type       || '';
+  $('fi-length').value = l.length     || '';
+  $('fi-loc').value    = l.locationId || '';
+  $('fi-desc').value   = l.desc       || '';
+  const pm = $('fi-part-manual'); if (pm) pm.value = '';
+  _currentParts = new Map();
+  (l.parts || []).forEach(p => _currentParts.set(p.name, p.qty));
+  document.querySelectorAll('.cf-input').forEach(input => {
+    input.value = (input.dataset.cf && l.customFields && l.customFields[input.dataset.cf]) || '';
+  });
+  renderPartButtons(); renderSelectedParts();
+  $('fi-serial').focus();
+}
+
+function editLadder(idx) {
+  const l = _job.ladders[idx];
+  if (!l) return;
+  _job.ladders.splice(idx, 1);
+  renderLadderList(); scheduleSave();
+  fillForm(l, true);
+}
+
+function duplicateLadder(idx) {
+  const l = _job.ladders[idx];
+  if (!l) return;
+  fillForm(l, false); // serial left blank
+}
+
+// ── Manual part input + autocomplete ─────────────────────────────────────────
+function addManualPart() {
+  const input = $('fi-part-manual');
+  const raw = input.value.trim();
+  if (!raw) return;
+  const lib = getLibrary();
+  const found = lib.find(p => p.name.toLowerCase() === raw.toLowerCase());
+  const partName = found ? found.name : raw;
+  const dqty = found ? (found.defaultQty || 1) : 1;
+  const cur = _currentParts.get(partName) || 0;
+  _currentParts.set(partName, cur === 0 ? dqty : cur + 1);
+  if (!found) ensureInLibrary(raw);
+  input.value = '';
+  $('ac-part-list').classList.remove('open');
+  renderPartButtons(); renderSelectedParts();
+  input.focus();
+}
+
+$('btn-add-part-manual').addEventListener('click', addManualPart);
+$('fi-part-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
+
+(function setupPartAutocomplete() {
+  const input = $('fi-part-manual');
+  const list  = $('ac-part-list');
+  input.addEventListener('input', () => {
+    const q = input.value.toLowerCase().trim();
+    if (!q) { list.classList.remove('open'); return; }
+    const matches = getLibrary().filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+    if (!matches.length) { list.classList.remove('open'); return; }
+    list.innerHTML = '';
+    matches.forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'ac-item';
+      item.textContent = p.name;
+      item.addEventListener('mousedown', e => { e.preventDefault(); input.value = p.name; list.classList.remove('open'); });
+      item.addEventListener('touchstart', e => { e.preventDefault(); input.value = p.name; list.classList.remove('open'); }, { passive: false });
+      list.appendChild(item);
+    });
+    list.classList.add('open');
+  });
+  input.addEventListener('blur', () => setTimeout(() => list.classList.remove('open'), 200));
+})();
+
+// ── Parts library sheet ───────────────────────────────────────────────────────
+$('btn-open-library').addEventListener('click',  openLibrary);
+$('btn-close-library').addEventListener('click', closeLibrary);
+$('lib-backdrop').addEventListener('click',      closeLibrary);
+
+function openLibrary()  { renderLibList(); $('lib-sheet').classList.remove('hidden'); $('lib-backdrop').classList.remove('hidden'); }
+function closeLibrary() { $('lib-sheet').classList.add('hidden'); $('lib-backdrop').classList.add('hidden'); }
+
+function renderLibList() {
+  const lib = getLibrary();
+  const list = $('lib-list');
+  list.innerHTML = '';
+  if (!lib.length) { list.innerHTML = '<div class="cf-empty">No parts yet — add one below.</div>'; return; }
+  // Favorites first, then alphabetical within each group
+  const sorted = [...lib].sort((a, b) => {
+    if (a.favorited !== b.favorited) return a.favorited ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
+  sorted.forEach(p => {
+    const dqty = p.defaultQty || 1;
+    const row = document.createElement('div');
+    row.className = 'part-lib-row';
+    row.innerHTML = `
+      <button class="star-btn${p.favorited ? ' starred' : ''}" title="${p.favorited ? 'Unfavorite' : 'Favorite'}">${p.favorited ? '★' : '☆'}</button>
+      <span class="part-lib-name">${esc(p.name)}</span>
+      <div class="lib-qty-wrap">
+        <span class="lib-qty-label">×</span>
+        <input class="lib-qty" type="number" min="1" max="99" value="${dqty}" title="Default qty per first tap">
+      </div>
+      <button class="cf-del" title="Remove from library">×</button>
+    `;
+    row.querySelector('.star-btn').addEventListener('click', () => {
+      const libData = getLibrary();
+      const item = libData.find(x => x.name === p.name);
+      if (item) { item.favorited = !item.favorited; savePartsLibrary(libData); }
+      renderLibList(); renderPartButtons();
+    });
+    const qtyEl = row.querySelector('.lib-qty');
+    qtyEl.addEventListener('change', () => {
+      const v = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+      qtyEl.value = v;
+      const libData = getLibrary();
+      const item = libData.find(x => x.name === p.name);
+      if (item) { item.defaultQty = v; savePartsLibrary(libData); }
+      renderPartButtons();
+    });
+    row.querySelector('.cf-del').addEventListener('click', () => {
+      savePartsLibrary(getLibrary().filter(x => x.name !== p.name));
+      renderLibList(); renderPartButtons();
+    });
+    list.appendChild(row);
+  });
+}
+
+$('btn-add-lib-part').addEventListener('click', addLibPart);
+$('new-lib-input').addEventListener('keydown', e => { if (e.key === 'Enter') addLibPart(); });
+
+function addLibPart() {
+  const name = $('new-lib-input').value.trim();
+  if (!name) return;
+  const lib = getLibrary();
+  if (!lib.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    lib.push({ name, favorited: false, defaultQty: 1 });
+    savePartsLibrary(lib);
+  }
+  $('new-lib-input').value = '';
+  renderLibList();
 }
 
 // ── Service worker ────────────────────────────────────────────────────────────
