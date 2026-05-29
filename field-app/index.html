@@ -148,6 +148,7 @@
                background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
                z-index: 200; max-height: 180px; overflow-y: auto; display: none;
                box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+    .ac-list.drop-up { top: auto; bottom: calc(100% + 2px); }
     .ac-list.open { display: block; }
     .ac-item { padding: 11px 12px; font-size: 14px; cursor: pointer; }
     .ac-item:active, .ac-item.focused { background: rgba(79,110,247,.12); }
@@ -244,6 +245,13 @@
                font-size: 13px; padding: 3px 4px; text-align: center; outline: none;
                -webkit-appearance: none; appearance: none; }
     .lib-qty:focus { border-color: var(--accent); }
+    .lib-pos-wrap { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+    .lib-pos-label { font-size: 10px; color: var(--accent); font-weight: 700; letter-spacing: .04em; }
+    .lib-pos { width: 32px; background: var(--surf); border: 1px solid rgba(79,110,247,.35);
+               border-radius: 5px; color: var(--accent); font-family: var(--mono);
+               font-size: 13px; font-weight: 700; padding: 3px 4px; text-align: center;
+               outline: none; -webkit-appearance: none; appearance: none; }
+    .lib-pos:focus { border-color: var(--accent); }
 
     /* ── Add Ladder button panel (sticky bottom) ── */
     #add-btn-panel { flex-shrink: 0; padding: 10px 12px; display: flex; gap: 8px;
@@ -418,7 +426,7 @@
       <div class="ac-wrap">
         <input type="text" id="fi-part-manual" class="field-input"
                placeholder="Other part #…" autocomplete="off">
-        <div class="ac-list" id="ac-part-list"></div>
+        <div class="ac-list drop-up" id="ac-part-list"></div>
       </div>
       <button class="parts-add-btn" id="btn-add-part-manual" title="Add to ladder">+</button>
       <button class="lib-open-btn" id="btn-open-library" title="Parts library">☰</button>
@@ -510,7 +518,23 @@ function savePartsLibrary(lib) { localStorage.setItem('lia-parts-library', JSON.
 
 function getLibrary() {
   let lib = loadPartsLibrary();
-  if (lib) return lib;
+  if (lib) {
+    let dirty = false;
+    // Migration: backfill L33 for existing installs
+    if (!lib.some(p => p.name.toLowerCase() === 'l33')) {
+      lib.push({ name: 'L33', favorited: false, defaultQty: 2 });
+      dirty = true;
+    }
+    // Migration: assign slot order to favorited parts that don't have one
+    const favs = lib.filter(p => p.favorited);
+    if (favs.some(p => p.order == null)) {
+      [...favs].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+               .forEach((p, i) => { p.order = i + 1; });
+      dirty = true;
+    }
+    if (dirty) savePartsLibrary(lib);
+    return lib;
+  }
   lib = PARTS_SEED.map(p => ({ ...p }));
   // Migrate old lia-quick-parts if present
   try {
@@ -524,7 +548,15 @@ function getLibrary() {
   return lib;
 }
 
-function getFavoritedParts() { return getLibrary().filter(p => p.favorited); }
+function getFavoritedParts() {
+  return getLibrary().filter(p => p.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+}
+
+function normalizeOrders(lib) {
+  lib.filter(p => p.favorited)
+     .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+     .forEach((p, i) => { p.order = i + 1; });
+}
 
 function ensureInLibrary(name) {
   const lib = getLibrary();
@@ -583,6 +615,7 @@ const PARTS_SEED = [
   { name: 'B92',     favorited: false, defaultQty: 1 },
   { name: 'B72',     favorited: false, defaultQty: 1 },
   { name: 'Lge70r',  favorited: false, defaultQty: 1 },
+  { name: 'L33',     favorited: false, defaultQty: 2 },
 ];
 
 // ════════════════════════════════════════════════════════════════
@@ -1135,23 +1168,54 @@ $('fi-part-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { 
 (function setupPartAutocomplete() {
   const input = $('fi-part-manual');
   const list  = $('ac-part-list');
-  input.addEventListener('input', () => {
-    const q = input.value.toLowerCase().trim();
-    if (!q) { list.classList.remove('open'); return; }
-    const matches = getLibrary().filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+  let focusedIdx = -1;
+
+  function showList(q) {
+    const lib = getLibrary();
+    const matches = q
+      ? lib.filter(p => p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 10)
+      : lib.slice(0, 10);
     if (!matches.length) { list.classList.remove('open'); return; }
-    list.innerHTML = '';
+    list.innerHTML = ''; focusedIdx = -1;
     matches.forEach(p => {
       const item = document.createElement('div');
       item.className = 'ac-item';
       item.textContent = p.name;
-      item.addEventListener('mousedown', e => { e.preventDefault(); input.value = p.name; list.classList.remove('open'); });
-      item.addEventListener('touchstart', e => { e.preventDefault(); input.value = p.name; list.classList.remove('open'); }, { passive: false });
+      function pickPart(name) {
+        input.value = name;
+        list.classList.remove('open');
+        addManualPart();
+      }
+      item.addEventListener('mousedown', e => { e.preventDefault(); pickPart(p.name); });
+      item.addEventListener('touchstart', e => { e.preventDefault(); pickPart(p.name); }, { passive: false });
       list.appendChild(item);
     });
     list.classList.add('open');
+  }
+
+  input.addEventListener('input',  () => showList(input.value.trim()));
+  input.addEventListener('focus',  () => { input.select(); showList(input.value.trim()); });
+  input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('.ac-item');
+    if (e.key === 'Enter' && !items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
+      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
+      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIdx = Math.max(focusedIdx - 1, 0);
+      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
+      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
+      e.preventDefault();
+      input.value = items[focusedIdx].textContent;
+      list.classList.remove('open');
+      addManualPart();
+    } else if (e.key === 'Escape') { list.classList.remove('open'); }
   });
-  input.addEventListener('blur', () => setTimeout(() => list.classList.remove('open'), 200));
 })();
 
 // ── Parts library sheet ───────────────────────────────────────────────────────
@@ -1167,9 +1231,10 @@ function renderLibList() {
   const list = $('lib-list');
   list.innerHTML = '';
   if (!lib.length) { list.innerHTML = '<div class="cf-empty">No parts yet — add one below.</div>'; return; }
-  // Favorites first, then alphabetical within each group
+  const favCount = lib.filter(p => p.favorited).length;
   const sorted = [...lib].sort((a, b) => {
     if (a.favorited !== b.favorited) return a.favorited ? -1 : 1;
+    if (a.favorited && b.favorited) return (a.order ?? 999) - (b.order ?? 999);
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
   sorted.forEach(p => {
@@ -1179,6 +1244,10 @@ function renderLibList() {
     row.innerHTML = `
       <button class="star-btn${p.favorited ? ' starred' : ''}" title="${p.favorited ? 'Unfavorite' : 'Favorite'}">${p.favorited ? '★' : '☆'}</button>
       <span class="part-lib-name">${esc(p.name)}</span>
+      ${p.favorited ? `<div class="lib-pos-wrap">
+        <span class="lib-pos-label">Slot</span>
+        <input class="lib-pos" type="number" min="1" max="${favCount}" value="${p.order ?? 1}" title="Button grid position (1 = first slot)">
+      </div>` : ''}
       <div class="lib-qty-wrap">
         <span class="lib-qty-label">×</span>
         <input class="lib-qty" type="number" min="1" max="99" value="${dqty}" title="Default qty per first tap">
@@ -1188,9 +1257,34 @@ function renderLibList() {
     row.querySelector('.star-btn').addEventListener('click', () => {
       const libData = getLibrary();
       const item = libData.find(x => x.name === p.name);
-      if (item) { item.favorited = !item.favorited; savePartsLibrary(libData); }
+      if (!item) return;
+      item.favorited = !item.favorited;
+      if (item.favorited) {
+        const maxOrder = libData.filter(x => x.favorited).reduce((m, x) => Math.max(m, x.order ?? 0), 0);
+        item.order = maxOrder + 1;
+      } else {
+        delete item.order;
+        normalizeOrders(libData);
+      }
+      savePartsLibrary(libData);
       renderLibList(); renderPartButtons();
     });
+    if (p.favorited) {
+      const posEl = row.querySelector('.lib-pos');
+      posEl.addEventListener('change', () => {
+        const libData = getLibrary();
+        const item = libData.find(x => x.name === p.name);
+        if (!item) return;
+        const favs = libData.filter(x => x.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        const newPos = Math.max(1, Math.min(favs.length, parseInt(posEl.value, 10) || 1));
+        const idx = favs.indexOf(item);
+        favs.splice(idx, 1);
+        favs.splice(newPos - 1, 0, item);
+        favs.forEach((p, i) => { p.order = i + 1; });
+        savePartsLibrary(libData);
+        renderLibList(); renderPartButtons();
+      });
+    }
     const qtyEl = row.querySelector('.lib-qty');
     qtyEl.addEventListener('change', () => {
       const v = Math.max(1, parseInt(qtyEl.value, 10) || 1);
@@ -1201,7 +1295,9 @@ function renderLibList() {
       renderPartButtons();
     });
     row.querySelector('.cf-del').addEventListener('click', () => {
-      savePartsLibrary(getLibrary().filter(x => x.name !== p.name));
+      const libData = getLibrary().filter(x => x.name !== p.name);
+      normalizeOrders(libData);
+      savePartsLibrary(libData);
       renderLibList(); renderPartButtons();
     });
     list.appendChild(row);
