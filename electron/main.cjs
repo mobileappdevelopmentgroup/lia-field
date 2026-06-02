@@ -492,3 +492,51 @@ ipcMain.handle('inspections:upload', async (_event, records) => {
     return { ok: true, ...results };
   } catch (err) { return { ok: false, error: String(err) }; }
 });
+
+ipcMain.handle('history:load', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, error: 'Not signed in.' };
+
+    // All work orders this user has processed (newest first)
+    const { data: usage, error: uErr } = await sb
+      .from('usage_log')
+      .select('work_order_id, consumed_at')
+      .order('consumed_at', { ascending: false });
+    if (uErr) return { ok: false, error: uErr.message };
+    if (!usage?.length) return { ok: true, groups: [] };
+
+    // De-duplicate WO IDs (same WO can appear if credits were retried)
+    const seen = new Set();
+    const orderedWOs = [];
+    for (const u of usage) {
+      if (!seen.has(u.work_order_id)) {
+        seen.add(u.work_order_id);
+        orderedWOs.push(u);
+      }
+    }
+
+    const woIds = orderedWOs.map(u => u.work_order_id);
+    const { data: ladders, error: lErr } = await sb
+      .from('inspections')
+      .select('serial_num, inspection_date, brand, type, length, work_order_id, next_due_date, tech_name')
+      .in('work_order_id', woIds)
+      .order('serial_num');
+    if (lErr) return { ok: false, error: lErr.message };
+
+    const laddersByWO = {};
+    for (const l of ladders || []) {
+      if (!laddersByWO[l.work_order_id]) laddersByWO[l.work_order_id] = [];
+      laddersByWO[l.work_order_id].push(l);
+    }
+
+    const groups = orderedWOs.map(u => ({
+      work_order_id: u.work_order_id,
+      consumed_at:   u.consumed_at,
+      ladders:       laddersByWO[u.work_order_id] || [],
+    }));
+
+    return { ok: true, groups };
+  } catch (e) { return { ok: false, error: String(e) }; }
+});

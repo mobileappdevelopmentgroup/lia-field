@@ -40,4 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   saveInspectionSample: ()           => ipcRenderer.invoke('inspections:save-sample'),
   parseInspectionCsv:   (filePath)   => ipcRenderer.invoke('inspections:parse-csv', filePath),
   uploadInspections:    (records)    => ipcRenderer.invoke('inspections:upload', records),
+
+  // ── Work History ─────────────────────────────────────────────────────────
+  loadHistory: () => ipcRenderer.invoke('history:load'),
 });
