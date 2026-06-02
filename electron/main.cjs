@@ -499,18 +499,21 @@ ipcMain.handle('history:load', async () => {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { ok: false, error: 'Not signed in.' };
 
-    // All work orders this user has processed (newest first)
+    // Resolve user's display name for the manual-upload fallback
+    const { data: profile } = await sb
+      .from('users').select('name').eq('id', session.user.id).single();
+    const techName = profile?.name || null;
+
+    // ── PRIMARY: work orders tracked via usage_log (Office Mode) ─────────────
     const { data: usage, error: uErr } = await sb
       .from('usage_log')
       .select('work_order_id, consumed_at')
       .order('consumed_at', { ascending: false });
     if (uErr) return { ok: false, error: uErr.message };
-    if (!usage?.length) return { ok: true, groups: [] };
 
-    // De-duplicate WO IDs (same WO can appear if credits were retried)
     const seen = new Set();
     const orderedWOs = [];
-    for (const u of usage) {
+    for (const u of usage || []) {
       if (!seen.has(u.work_order_id)) {
         seen.add(u.work_order_id);
         orderedWOs.push(u);
@@ -518,15 +521,19 @@ ipcMain.handle('history:load', async () => {
     }
 
     const woIds = orderedWOs.map(u => u.work_order_id);
-    const { data: ladders, error: lErr } = await sb
-      .from('inspections')
-      .select('serial_num, inspection_date, brand, type, length, work_order_id, next_due_date, tech_name')
-      .in('work_order_id', woIds)
-      .order('serial_num');
-    if (lErr) return { ok: false, error: lErr.message };
+    let primaryLadders = [];
+    if (woIds.length) {
+      const { data: ladders, error: lErr } = await sb
+        .from('inspections')
+        .select('serial_num, inspection_date, brand, type, length, work_order_id, next_due_date, tech_name')
+        .in('work_order_id', woIds)
+        .order('serial_num');
+      if (lErr) return { ok: false, error: lErr.message };
+      primaryLadders = ladders || [];
+    }
 
     const laddersByWO = {};
-    for (const l of ladders || []) {
+    for (const l of primaryLadders) {
       if (!laddersByWO[l.work_order_id]) laddersByWO[l.work_order_id] = [];
       laddersByWO[l.work_order_id].push(l);
     }
@@ -534,8 +541,37 @@ ipcMain.handle('history:load', async () => {
     const groups = orderedWOs.map(u => ({
       work_order_id: u.work_order_id,
       consumed_at:   u.consumed_at,
+      source:        'office',
       ladders:       laddersByWO[u.work_order_id] || [],
     }));
+
+    // ── FALLBACK: manually uploaded via Log Inspections (matched by tech_name) ─
+    if (techName) {
+      const { data: manual } = await sb
+        .from('inspections')
+        .select('serial_num, inspection_date, brand, type, length, work_order_id, next_due_date, tech_name')
+        .eq('tech_name', techName)
+        .order('inspection_date', { ascending: false });
+
+      // Keep only rows not already covered by the usage_log query
+      const extras = (manual || []).filter(l => !woIds.includes(l.work_order_id));
+
+      // Group by work_order_id when present, otherwise bucket by inspection_date
+      const manualGroups = {};
+      for (const l of extras) {
+        const key = l.work_order_id || `__date_${l.inspection_date}`;
+        if (!manualGroups[key]) {
+          manualGroups[key] = {
+            work_order_id: l.work_order_id || null,
+            consumed_at:   l.inspection_date,
+            source:        'manual',
+            ladders:       [],
+          };
+        }
+        manualGroups[key].ladders.push(l);
+      }
+      groups.push(...Object.values(manualGroups));
+    }
 
     return { ok: true, groups };
   } catch (e) { return { ok: false, error: String(e) }; }

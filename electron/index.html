@@ -1295,6 +1295,12 @@ async function loadHistory() {
     const div = document.createElement('div');
     div.className = 'hist-group';
 
+    const isManual = group.source === 'manual';
+    const woLabel  = group.work_order_id || (isManual ? 'Manual Upload' : 'No WO#');
+    const srcBadge = isManual
+      ? `<span style="font-size:10px;font-weight:600;color:var(--warn);background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.25);border-radius:99px;padding:1px 8px;margin-left:8px;">Log Inspections</span>`
+      : '';
+
     const ladderRows = group.ladders.map(l => {
       const meta = [l.brand, l.type, l.length ? l.length + ' ft' : ''].filter(Boolean).join(' · ');
       return `<tr class="hist-row">
@@ -1307,7 +1313,7 @@ async function loadHistory() {
     div.innerHTML = `
       <div class="hist-hdr">
         <div>
-          <div class="hist-wo">${esc(group.work_order_id || 'No WO#')}</div>
+          <div class="hist-wo">${esc(woLabel)}${srcBadge}</div>
           <div class="hist-date">${fmtDate(group.consumed_at)}</div>
         </div>
         <div class="hist-count">${group.ladders.length} ladder${group.ladders.length !== 1 ? 's' : ''}</div>
