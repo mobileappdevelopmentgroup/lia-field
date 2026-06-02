@@ -248,21 +248,27 @@
 
     /* Compact ladder cards */
     .ladder-card { background: var(--surf); border: 1px solid var(--border); border-radius: 8px;
-                   padding: 7px 10px 6px; display: flex; flex-direction: column; gap: 4px; }
+                   padding: 9px 12px 8px; display: flex; flex-direction: column;
+                   cursor: pointer; user-select: none; -webkit-user-select: none; }
+    .ladder-card:active { opacity: .75; }
     .lc-body { flex: 1; min-width: 0; }
     .lc-top { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
     .lc-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
     .lc-meta { font-size: 11px; color: var(--muted); }
-    .lc-parts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+    .lc-parts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
     .lc-custom { font-size: 10px; color: var(--muted); margin-top: 2px; font-style: italic; }
     .badge-part { display: inline-block; background: rgba(var(--accent-rgb),.12); color: var(--accent-fg);
                   border: 1px solid rgba(var(--accent-rgb),.22); border-radius: 3px;
                   padding: 1px 6px; font-size: 10.5px; font-family: var(--mono); }
     .no-ladders { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; font-style: italic; }
-    .lc-actions { display: flex; flex-direction: row; gap: 4px; }
+    .lc-actions { display: flex; flex-direction: row; gap: 5px;
+                  max-height: 0; overflow: hidden;
+                  transition: max-height .2s ease, margin-top .2s ease;
+                  margin-top: 0; }
+    .ladder-card.expanded .lc-actions { max-height: 44px; margin-top: 7px; }
     .lc-edit, .lc-dup, .lc-del {
-      flex: 1; border-radius: 6px; border: 1px solid var(--border); cursor: pointer;
-      font-size: 11px; font-weight: 600; padding: 3px 4px; text-align: center; }
+      flex: 1; border-radius: 7px; border: 1px solid var(--border); cursor: pointer;
+      font-size: 12px; font-weight: 600; padding: 7px 4px; text-align: center; }
     .lc-edit { background: rgba(var(--accent-rgb),.12); color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.3); }
     .lc-edit:active { background: rgba(var(--accent-rgb),.22); }
     .lc-dup  { background: var(--surf2); color: var(--muted); }
@@ -1124,7 +1130,8 @@ function renderLadderList() {
     const cfPairs = Object.entries(l.customFields || {});
     const cfHtml  = cfPairs.length ? cfPairs.map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(' · ') : '';
     const card = document.createElement('div');
-    card.className = 'ladder-card' + (idx === _editingIdx ? ' lc-editing' : '');
+    const isEditing = idx === _editingIdx;
+    card.className = 'ladder-card' + (isEditing ? ' lc-editing expanded' : '');
     card.innerHTML = `
       <div class="lc-body">
         <div class="lc-top">
@@ -1140,9 +1147,17 @@ function renderLadderList() {
         <button class="lc-del">Delete</button>
       </div>
     `;
-    card.querySelector('.lc-edit').addEventListener('click', () => editLadder(idx));
-    card.querySelector('.lc-dup').addEventListener('click',  () => duplicateLadder(idx));
-    card.querySelector('.lc-del').addEventListener('click', () => {
+    // Tap card body to expand/collapse; action buttons don't propagate
+    card.addEventListener('click', e => {
+      if (e.target.closest('.lc-actions')) return;
+      const opening = !card.classList.contains('expanded');
+      container.querySelectorAll('.ladder-card.expanded').forEach(c => c.classList.remove('expanded'));
+      if (opening) card.classList.add('expanded');
+    });
+    card.querySelector('.lc-edit').addEventListener('click', e => { e.stopPropagation(); editLadder(idx); });
+    card.querySelector('.lc-dup').addEventListener('click',  e => { e.stopPropagation(); duplicateLadder(idx); });
+    card.querySelector('.lc-del').addEventListener('click',  e => {
+      e.stopPropagation();
       _job.ladders.splice(idx, 1);
       renderLadderList();
       scheduleSave();
