@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -14,19 +14,42 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:     #0f0f1a;
-      --surf:   #16162a;
-      --surf2:  #1e1e36;
-      --border: #2b2b4b;
-      --accent: #4f6ef7;
-      --ok:     #2ecc71;
-      --err:    #e74c3c;
-      --text:   #dde0f0;
-      --muted:  #5e6080;
+      --bg:         #0f0f1a;
+      --surf:       #16162a;
+      --surf2:      #1e1e36;
+      --border:     #2b2b4b;
+      --accent:     #4f6ef7;
+      --ok:         #2ecc71;
+      --err:        #e74c3c;
+      --text:       #dde0f0;
+      --muted:      #5e6080;
+      --accent-fg:  #8fa4ff;
+      --ok-fg:      #60d998;
+      --err-fg:     #e07070;
+      --accent-rgb: 79,110,247;
+      --ok-rgb:     46,204,113;
+      --err-rgb:    231,76,60;
       --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --mono:   'SF Mono','Fira Code','Cascadia Code',monospace;
       --safe-t: env(safe-area-inset-top, 0px);
       --safe-b: env(safe-area-inset-bottom, 0px);
+    }
+    [data-theme="light"] {
+      --bg:         #f5f5f5;
+      --surf:       #ffffff;
+      --surf2:      #ebebeb;
+      --border:     #d1d1d6;
+      --accent:     #0071e3;
+      --ok:         #25a244;
+      --err:        #d93025;
+      --text:       #1c1c1e;
+      --muted:      #8e8e93;
+      --accent-fg:  #0071e3;
+      --ok-fg:      #25a244;
+      --err-fg:     #d93025;
+      --accent-rgb: 0,113,227;
+      --ok-rgb:     37,162,68;
+      --err-rgb:    217,48,37;
     }
     html, body { height: 100%; height: -webkit-fill-available; height: 100dvh; }
     body { font-family: var(--font); background: var(--bg); color: var(--text);
@@ -46,7 +69,9 @@
     /* ── Buttons ── */
     button { font-family: var(--font); font-size: 15px; font-weight: 600; padding: 10px 20px;
              border-radius: 8px; border: none; cursor: pointer;
-             transition: background .15s, opacity .15s; white-space: nowrap; flex-shrink: 0; }
+             transition: background .15s, opacity .15s; white-space: nowrap; flex-shrink: 0;
+             touch-action: manipulation; }
+    .ac-item, .job-card, .part-lib-row { touch-action: manipulation; }
     button:active:not(:disabled) { opacity: .7; }
     button:disabled { opacity: .35; cursor: not-allowed; }
     .btn-p  { background: var(--accent); color: #fff; }
@@ -128,11 +153,11 @@
     /* Serial + scan */
     .sn-row { display: flex; gap: 6px; align-items: flex-end; }
     .sn-row .field-ig { flex: 1; min-width: 0; }
-    .scan-btn { background: rgba(79,110,247,.15); border: 1px solid rgba(79,110,247,.35);
-                border-radius: 7px; color: #8fa4ff; font-size: 20px;
+    .scan-btn { background: rgba(var(--accent-rgb),.15); border: 1px solid rgba(var(--accent-rgb),.35);
+                border-radius: 7px; color: var(--accent-fg); font-size: 20px;
                 width: 40px; height: 32px; display: flex; align-items: center;
                 justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
-    .scan-btn:active { background: rgba(79,110,247,.28); }
+    .scan-btn:active { background: rgba(var(--accent-rgb),.28); }
 
     /* 3-column row: Brand | Type | Length */
     .meta-row-3 { display: flex; gap: 6px; }
@@ -151,7 +176,7 @@
     .ac-list.drop-up { top: auto; bottom: calc(100% + 2px); }
     .ac-list.open { display: block; }
     .ac-item { padding: 11px 12px; font-size: 14px; cursor: pointer; }
-    .ac-item:active, .ac-item.focused { background: rgba(79,110,247,.12); }
+    .ac-item:active, .ac-item.focused { background: rgba(var(--accent-rgb),.12); }
 
     /* Custom fields injected here */
     #custom-fields-form { display: flex; flex-direction: column; gap: 6px; }
@@ -162,18 +187,18 @@
     .parts-selected { display: flex; flex-wrap: wrap; gap: 4px; }
     .parts-selected:empty { display: none; }
     .part-chip { display: inline-flex; align-items: center; gap: 4px;
-                 background: rgba(79,110,247,.14); border: 1px solid rgba(79,110,247,.28);
-                 color: #8fa4ff; border-radius: 5px; padding: 3px 8px;
+                 background: rgba(var(--accent-rgb),.14); border: 1px solid rgba(var(--accent-rgb),.28);
+                 color: var(--accent-fg); border-radius: 5px; padding: 3px 8px;
                  font-size: 12px; font-family: var(--mono); }
-    .part-chip-x { background: none; border: none; color: #8fa4ff; cursor: pointer;
+    .part-chip-x { background: none; border: none; color: var(--accent-fg); cursor: pointer;
                    font-size: 15px; padding: 0; line-height: 1; opacity: .7; }
     .part-chip-x:active { opacity: 1; }
     .parts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
     .part-btn { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
                 color: var(--text); font-family: var(--mono); font-size: 10.5px; padding: 9px 4px;
                 cursor: pointer; position: relative; text-align: center; min-height: 40px; }
-    .part-btn:active { background: rgba(79,110,247,.12); }
-    .part-btn.active { background: rgba(79,110,247,.18); border-color: var(--accent); color: #a0b4ff; }
+    .part-btn:active { background: rgba(var(--accent-rgb),.12); }
+    .part-btn.active { background: rgba(var(--accent-rgb),.18); border-color: var(--accent); color: var(--accent-fg); }
     .pb-count { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: var(--accent); }
     .pb-dqty  { font-size: 8px; font-weight: 700; color: var(--accent); margin-left: 1px; vertical-align: super; }
     .parts-empty-msg { font-size: 11px; color: var(--muted); text-align: center;
@@ -182,20 +207,37 @@
     /* ── Manual part input row ── */
     .parts-manual-row { display: flex; gap: 5px; align-items: center; }
     .parts-manual-row .ac-wrap { flex: 1; min-width: 0; position: relative; }
-    .parts-add-btn { background: rgba(46,204,113,.12); border: 1px solid rgba(46,204,113,.28);
-                     border-radius: 7px; color: #60d998; font-size: 20px; font-weight: 700;
+    .parts-add-btn { background: rgba(var(--ok-rgb),.12); border: 1px solid rgba(var(--ok-rgb),.28);
+                     border-radius: 7px; color: var(--ok-fg); font-size: 20px; font-weight: 700;
                      width: 32px; height: 32px; display: flex; align-items: center;
                      justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; }
-    .parts-add-btn:active { background: rgba(46,204,113,.22); }
+    .parts-add-btn:active { background: rgba(var(--ok-rgb),.22); }
     .lib-open-btn { background: none; border: 1px solid var(--border); border-radius: 7px;
                     color: var(--muted); font-size: 15px; height: 32px; width: 32px;
                     display: flex; align-items: center; justify-content: center;
                     cursor: pointer; flex-shrink: 0; padding: 0; }
     .lib-open-btn:active { background: rgba(255,255,255,.06); color: var(--text); }
 
+    /* ── Qty input (manual part row) ── */
+    #fi-part-qty { width: 42px; background: var(--surf2); border: 1px solid var(--border);
+                   border-radius: 7px; color: var(--text); font-family: var(--mono);
+                   font-size: 14px; padding: 5px 4px; text-align: center; outline: none;
+                   -webkit-appearance: none; appearance: none; flex-shrink: 0; height: 34px; }
+    #fi-part-qty:focus { border-color: var(--accent); }
+
     /* ── Recent ladders panel ── */
     #recent-panel { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-                    padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+                    padding: 8px 12px calc(8px + var(--safe-b)); display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── Compact layout for short screens (iPhone X and below) ── */
+    @media (max-height: 840px) {
+      #form-panel   { padding: 5px 12px; gap: 3px; }
+      #parts-panel  { padding: 5px 12px; gap: 4px; }
+      .parts-grid   { gap: 4px; }
+      .part-btn     { min-height: 36px; padding: 6px 4px; }
+      #add-btn-panel { padding: 8px 12px; }
+      .add-ladder-btn { padding: 12px; font-size: 15px; }
+    }
     .recent-hdr { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     .recent-hdr-label { font-size: 10px; font-weight: 700; color: var(--muted);
                         text-transform: uppercase; letter-spacing: .08em; }
@@ -213,21 +255,21 @@
     .lc-meta { font-size: 11px; color: var(--muted); }
     .lc-parts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
     .lc-custom { font-size: 10px; color: var(--muted); margin-top: 3px; font-style: italic; }
-    .badge-part { display: inline-block; background: rgba(79,110,247,.12); color: #8fa4ff;
-                  border: 1px solid rgba(79,110,247,.22); border-radius: 3px;
+    .badge-part { display: inline-block; background: rgba(var(--accent-rgb),.12); color: var(--accent-fg);
+                  border: 1px solid rgba(var(--accent-rgb),.22); border-radius: 3px;
                   padding: 1px 6px; font-size: 10.5px; font-family: var(--mono); }
     .no-ladders { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; font-style: italic; }
     .lc-actions { display: flex; flex-direction: row; gap: 6px; }
     .lc-edit, .lc-dup, .lc-del {
       flex: 1; border-radius: 7px; border: 1px solid var(--border); cursor: pointer;
       font-size: 12px; font-weight: 600; padding: 8px 4px; text-align: center; }
-    .lc-edit { background: rgba(79,110,247,.12); color: #8fa4ff; border-color: rgba(79,110,247,.3); }
-    .lc-edit:active { background: rgba(79,110,247,.22); }
+    .lc-edit { background: rgba(var(--accent-rgb),.12); color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.3); }
+    .lc-edit:active { background: rgba(var(--accent-rgb),.22); }
     .lc-dup  { background: var(--surf2); color: var(--muted); }
     .lc-dup:active  { background: var(--surf3); color: var(--fg); }
-    .lc-del  { background: rgba(231,76,60,.08); color: #e07070; border-color: rgba(231,76,60,.25); }
-    .lc-del:active  { background: rgba(231,76,60,.18); }
-    .ladder-card.lc-editing { border-color: var(--accent); background: rgba(79,110,247,.07); }
+    .lc-del  { background: rgba(var(--err-rgb),.08); color: var(--err-fg); border-color: rgba(var(--err-rgb),.25); }
+    .lc-del:active  { background: rgba(var(--err-rgb),.18); }
+    .ladder-card.lc-editing { border-color: var(--accent); background: rgba(var(--accent-rgb),.07); }
 
     /* ── Parts library sheet rows ── */
     .part-lib-row { display: flex; align-items: center; gap: 8px; background: var(--surf2);
@@ -247,7 +289,7 @@
     .lib-qty:focus { border-color: var(--accent); }
     .lib-pos-wrap { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
     .lib-pos-label { font-size: 10px; color: var(--accent); font-weight: 700; letter-spacing: .04em; }
-    .lib-pos { width: 32px; background: var(--surf); border: 1px solid rgba(79,110,247,.35);
+    .lib-pos { width: 32px; background: var(--surf); border: 1px solid rgba(var(--accent-rgb),.35);
                border-radius: 5px; color: var(--accent); font-family: var(--mono);
                font-size: 13px; font-weight: 700; padding: 3px 4px; text-align: center;
                outline: none; -webkit-appearance: none; appearance: none; }
@@ -277,6 +319,28 @@
                        padding: 14px 40px; font-size: 16px; cursor: pointer; }
     .scan-cancel-btn:active { background: rgba(255,255,255,.22); }
 
+    /* ── Settings section headers + sound/theme rows ── */
+    .settings-section-hdr { font-size: 10px; font-weight: 700; color: var(--muted);
+                             text-transform: uppercase; letter-spacing: .08em;
+                             margin-top: 14px; margin-bottom: 6px; flex-shrink: 0; }
+    .settings-section-hdr:first-child { margin-top: 4px; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between;
+                    gap: 10px; padding: 8px 0; }
+    .settings-row-label { font-size: 14px; color: var(--text); }
+    .sound-select { background: var(--surf2); border: 1px solid var(--border);
+                    border-radius: 7px; color: var(--text); font-family: var(--font);
+                    font-size: 13px; padding: 6px 8px; outline: none; cursor: pointer;
+                    -webkit-appearance: none; appearance: none;
+                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+                    background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; }
+    .sound-select:focus { border-color: var(--accent); }
+    .theme-toggle { display: flex; background: var(--surf2); border: 1px solid var(--border);
+                    border-radius: 8px; overflow: hidden; }
+    .theme-opt { flex: 1; background: none; border: none; color: var(--muted); font-size: 12px;
+                 padding: 6px 10px; cursor: pointer; border-radius: 0; font-weight: 600;
+                 font-family: var(--font); white-space: nowrap; }
+    .theme-opt.active { background: var(--accent); color: #fff; }
+
     /* ── Settings sheet ── */
     .sheet-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200; }
     .sheet-backdrop.hidden { display: none; }
@@ -297,7 +361,7 @@
     .cf-del { background: none; border: none; color: var(--muted); font-size: 24px;
               cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0; width: 36px; height: 36px;
               display: flex; align-items: center; justify-content: center; border-radius: 6px; }
-    .cf-del:active { color: var(--err); background: rgba(231,76,60,.08); }
+    .cf-del:active { color: var(--err); background: rgba(var(--err-rgb),.08); }
     .cf-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 24px 0; }
     .sheet-add-row { display: flex; gap: 8px; margin-bottom: 12px; flex-shrink: 0; }
     .sheet-add-row input { flex: 1; background: var(--surf2); border: 1px solid var(--border);
@@ -372,7 +436,7 @@
             <input type="text" id="fi-brand" class="field-input" placeholder="Brand" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-brand">×</button>
           </div>
-          <div class="ac-list" id="ac-brand-list"></div>
+          <div class="ac-list drop-up" id="ac-brand-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -382,7 +446,7 @@
             <input type="text" id="fi-type" class="field-input" placeholder="Type" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-type">×</button>
           </div>
-          <div class="ac-list" id="ac-type-list"></div>
+          <div class="ac-list drop-up" id="ac-type-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -428,6 +492,7 @@
                placeholder="Other part #…" autocomplete="off">
         <div class="ac-list drop-up" id="ac-part-list"></div>
       </div>
+      <input type="number" id="fi-part-qty" value="1" min="1" max="99" inputmode="numeric">
       <button class="parts-add-btn" id="btn-add-part-manual" title="Add to ladder">+</button>
       <button class="lib-open-btn" id="btn-open-library" title="Parts library">☰</button>
     </div>
@@ -457,16 +522,52 @@
   <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
 </div>
 
-<!-- Custom Fields Settings Sheet -->
+<!-- Settings Sheet -->
 <div class="sheet-backdrop hidden" id="sheet-backdrop"></div>
 <div class="settings-sheet hidden" id="settings-sheet">
   <div class="sheet-handle"></div>
-  <div class="sheet-ttl">Custom Fields</div>
-  <div class="sheet-desc">Add extra fields to every ladder entry. They export as additional columns in the CSV and are ignored by Lia Office.</div>
-  <div class="sheet-fields" id="cf-list"></div>
-  <div class="sheet-add-row">
-    <input type="text" id="new-cf-input" placeholder="Field name (e.g. Inspector)" autocomplete="off">
-    <button class="btn-p" id="btn-add-cf" style="font-size:14px;padding:12px 18px;">Add</button>
+  <div class="sheet-ttl">Settings</div>
+  <div class="sheet-fields" id="settings-scroll">
+
+    <div class="settings-section-hdr">Theme</div>
+    <div class="settings-row">
+      <span class="settings-row-label">Display</span>
+      <div class="theme-toggle">
+        <button class="theme-opt" id="theme-opt-light" data-t="light">☀ Light</button>
+        <button class="theme-opt" id="theme-opt-dark"  data-t="dark">◑ Dark</button>
+      </div>
+    </div>
+
+    <div class="settings-section-hdr">Sounds</div>
+    <div class="settings-row">
+      <span class="settings-row-label">Scan success</span>
+      <select class="sound-select" id="sound-scan-select">
+        <option value="none">None</option>
+        <option value="ding">Ding</option>
+        <option value="beep" selected>Beep</option>
+        <option value="double">Double beep</option>
+        <option value="chime">Chime</option>
+      </select>
+    </div>
+    <div class="settings-row">
+      <span class="settings-row-label">Add Ladder</span>
+      <select class="sound-select" id="sound-ladder-select">
+        <option value="none">None</option>
+        <option value="ding">Ding</option>
+        <option value="beep">Beep</option>
+        <option value="double">Double beep</option>
+        <option value="chime" selected>Chime</option>
+      </select>
+    </div>
+
+    <div class="settings-section-hdr">Custom Fields</div>
+    <div class="sheet-desc" style="margin-bottom:8px;flex-shrink:0;">Add extra columns to every ladder entry. They export in the CSV and are ignored by Lia Office.</div>
+    <div id="cf-list"></div>
+    <div class="sheet-add-row" style="margin-top:8px;">
+      <input type="text" id="new-cf-input" placeholder="Field name (e.g. Inspector)" autocomplete="off">
+      <button class="btn-p" id="btn-add-cf" style="font-size:14px;padding:12px 18px;">Add</button>
+    </div>
+
   </div>
   <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
 </div>
@@ -508,6 +609,76 @@ function loadCustomFields() {
   catch { return []; }
 }
 function saveCustomFields(f) { localStorage.setItem('lia-custom-fields', JSON.stringify(f)); }
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function loadTheme() { return localStorage.getItem('lia-theme') || 'light'; }
+function saveTheme(t) { localStorage.setItem('lia-theme', t); }
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  const mc = document.querySelector('meta[name="theme-color"]');
+  if (mc) mc.content = t === 'light' ? '#ffffff' : '#4f6ef7';
+}
+applyTheme(loadTheme());
+
+// ── Sound system ──────────────────────────────────────────────────────────────
+function loadSounds() {
+  try { return JSON.parse(localStorage.getItem('lia-sounds') || '{}'); } catch { return {}; }
+}
+function saveSounds(s) { localStorage.setItem('lia-sounds', JSON.stringify(s)); }
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+const _soundDefs = {
+  ding: ctx => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.3, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+    o.start(); o.stop(ctx.currentTime + 0.45);
+  },
+  beep: ctx => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'square'; o.frequency.value = 1200;
+    g.gain.setValueAtTime(0.12, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    o.start(); o.stop(ctx.currentTime + 0.1);
+  },
+  double: ctx => {
+    [0, 0.14].forEach(d => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'square'; o.frequency.value = 1200;
+      g.gain.setValueAtTime(0, ctx.currentTime + d);
+      g.gain.linearRampToValueAtTime(0.12, ctx.currentTime + d + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.1);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.12);
+    });
+  },
+  chime: ctx => {
+    [[880,0],[1100,0.12],[1320,0.24]].forEach(([f,d]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.18, ctx.currentTime + d);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.35);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.36);
+    });
+  }
+};
+function playSound(event) {
+  const prefs = loadSounds();
+  const choice = prefs[event] ?? (event === 'ladder' ? 'chime' : 'beep');
+  if (choice === 'none') return;
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume().then(() => _soundDefs[choice]?.(ctx));
+    else _soundDefs[choice]?.(ctx);
+  } catch(_) {}
+}
 
 // ── Parts library ─────────────────────────────────────────────────────────────
 function loadPartsLibrary() {
@@ -639,7 +810,7 @@ function renderJobList() {
       </div>
       <div class="job-actions">
         <button class="btn-p" style="font-size:13px;padding:7px 12px;" data-open="${esc(job.id)}">Open</button>
-        <button class="btn-g" style="font-size:13px;padding:7px 10px;color:var(--err);border-color:rgba(231,76,60,.3);" data-del="${esc(job.id)}">✕</button>
+        <button class="btn-g" style="font-size:13px;padding:7px 10px;color:var(--err);border-color:rgba(var(--err-rgb),.3);" data-del="${esc(job.id)}">✕</button>
       </div>
     `;
     card.querySelector('[data-open]').addEventListener('click', () => openJob(job.id));
@@ -719,6 +890,7 @@ $('job-wo').addEventListener('input',   scheduleSave);
 // ── Form clear ────────────────────────────────────────────────────────────────
 function clearEntryForm() {
   ['fi-serial','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  const qty = $('fi-part-qty'); if (qty) qty.value = '1';
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   _currentParts = new Map();
   renderPartButtons();
@@ -727,6 +899,7 @@ function clearEntryForm() {
 
 function clearFormAll() {
   ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  const qty = $('fi-part-qty'); if (qty) qty.value = '1';
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   _currentParts = new Map();
   renderPartButtons();
@@ -903,6 +1076,7 @@ function addLadder() {
   clearEntryForm();
   renderLadderList();
   scheduleSave();
+  playSound('ladder');
   $('fi-serial').focus();
 }
 
@@ -1027,22 +1201,33 @@ $('btn-share-csv').addEventListener('click', async () => {
 });
 
 // ── Barcode scanner ───────────────────────────────────────────────────────────
-let _html5Qr = null;
+let _html5Qr     = null;
+let _scanHandled = false;
 
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
 
 async function startScan() {
+  if (_html5Qr) return;                  // already running
+  _scanHandled = false;
+  $('scan-video').innerHTML = '';        // clear any leftover DOM from prior session
   try {
     $('scan-overlay').classList.remove('hidden');
     _html5Qr = new Html5Qrcode('scan-video');
     await _html5Qr.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 280, height: 120 } },
-      (decoded) => { $('fi-serial').value = decoded; stopScan(); },
+      (decoded) => {
+        if (_scanHandled) return;        // library fires repeatedly until stop() resolves
+        _scanHandled = true;
+        $('fi-serial').value = decoded;
+        playSound('scan');
+        stopScan();
+      },
       () => {}
     );
   } catch {
+    _html5Qr = null;
     $('scan-overlay').classList.add('hidden');
     alert('Camera access denied or unavailable.\nType the serial number manually.');
   }
@@ -1050,25 +1235,56 @@ async function startScan() {
 
 async function stopScan() {
   $('scan-overlay').classList.add('hidden');
-  if (_html5Qr) {
-    try { await _html5Qr.stop(); } catch(_) {}
-    try { _html5Qr.clear(); } catch(_) {}
-    _html5Qr = null;
+  const scanner = _html5Qr;
+  _html5Qr = null;                       // null first so re-entry is blocked immediately
+  if (scanner) {
+    try { await scanner.stop(); } catch(_) {}
+    try { scanner.clear(); } catch(_) {}
   }
+  // Force-release any lingering camera tracks (important on iOS)
+  $('scan-video').querySelectorAll('video').forEach(v => {
+    try { v.srcObject?.getTracks().forEach(t => t.stop()); v.srcObject = null; } catch(_) {}
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
-// Settings sheet — Custom Fields
+// Settings sheet
 // ════════════════════════════════════════════════════════════════
 $('btn-settings').addEventListener('click',       openSettings);
 $('btn-close-settings').addEventListener('click', closeSettings);
 $('sheet-backdrop').addEventListener('click',     closeSettings);
 
+// Theme toggle
+document.querySelectorAll('.theme-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = btn.dataset.t;
+    applyTheme(t); saveTheme(t);
+    document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.t === t));
+  });
+});
+
+// Sound selects — save on change
+['sound-scan-select','sound-ladder-select'].forEach(id => {
+  $(id)?.addEventListener('change', () => {
+    const prefs = loadSounds();
+    prefs.scan   = $('sound-scan-select').value;
+    prefs.ladder = $('sound-ladder-select').value;
+    saveSounds(prefs);
+  });
+});
+
 function openSettings() {
+  // Apply current theme selection
+  const curTheme = loadTheme();
+  document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.t === curTheme));
+  // Apply current sound selections
+  const prefs = loadSounds();
+  $('sound-scan-select').value   = prefs.scan   ?? 'beep';
+  $('sound-ladder-select').value = prefs.ladder  ?? 'chime';
   renderCfList();
   $('settings-sheet').classList.remove('hidden');
   $('sheet-backdrop').classList.remove('hidden');
-  $('new-cf-input').focus();
+  $('settings-scroll').scrollTop = 0;
 }
 
 function closeSettings() {
@@ -1149,14 +1365,16 @@ function addManualPart() {
   const input = $('fi-part-manual');
   const raw = input.value.trim();
   if (!raw) return;
+  const qtyInput = $('fi-part-qty');
+  const qty = Math.max(1, parseInt(qtyInput?.value, 10) || 1);
   const lib = getLibrary();
   const found = lib.find(p => p.name.toLowerCase() === raw.toLowerCase());
   const partName = found ? found.name : raw;
-  const dqty = found ? (found.defaultQty || 1) : 1;
   const cur = _currentParts.get(partName) || 0;
-  _currentParts.set(partName, cur === 0 ? dqty : cur + 1);
+  _currentParts.set(partName, cur + qty);
   if (!found) ensureInLibrary(raw);
   input.value = '';
+  if (qtyInput) qtyInput.value = '1';
   $('ac-part-list').classList.remove('open');
   renderPartButtons(); renderSelectedParts();
   input.focus();
@@ -1164,6 +1382,11 @@ function addManualPart() {
 
 $('btn-add-part-manual').addEventListener('click', addManualPart);
 $('fi-part-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
+
+// Qty input: clear on focus, restore 1 if left empty
+$('fi-part-qty').addEventListener('focus', function() { this.value = ''; });
+$('fi-part-qty').addEventListener('blur',  function() { if (!this.value || parseInt(this.value) < 1) this.value = '1'; });
+$('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
 
 (function setupPartAutocomplete() {
   const input = $('fi-part-manual');
