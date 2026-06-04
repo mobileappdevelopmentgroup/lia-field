@@ -318,7 +318,7 @@
                     justify-content: center; gap: 20px; padding: 24px; }
     .scan-overlay.hidden { display: none; }
     #scan-video { width: 100%; max-width: 480px; border-radius: 12px; background: #000;
-                  min-height: 200px; overflow: hidden; }
+                  min-height: 200px; overflow: hidden; position: relative; }
     .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
     .scan-cancel-btn { background: rgba(255,255,255,.12); color: #fff;
                        border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
@@ -524,7 +524,7 @@
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
   <div id="scan-video"></div>
-  <div class="scan-hint">Hold barcode in view — detection is automatic</div>
+  <div class="scan-hint" id="scan-hint">Hold barcode in view — detection is automatic</div>
   <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
 </div>
 
@@ -1216,24 +1216,120 @@ $('btn-share-csv').addEventListener('click', async () => {
 });
 
 // ── Barcode scanner ───────────────────────────────────────────────────────────
-let _html5Qr     = null;
-let _scanHandled = false;
+let _html5Qr        = null;
+let _scanHandled    = false;
+let _nativeScanOn   = false;
+let _nativeStream   = null;
 
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
 
 async function startScan() {
-  if (_html5Qr) return;                  // already running
+  if (_html5Qr || _nativeScanOn) return;
   _scanHandled = false;
-  $('scan-video').innerHTML = '';        // clear any leftover DOM from prior session
+  $('scan-video').innerHTML = '';
+  $('scan-overlay').classList.remove('hidden');
+
+  if ('BarcodeDetector' in window) {
+    await _startNativeScan();
+  } else {
+    await _startHtml5QrScan();
+  }
+}
+
+// Primary path: native BarcodeDetector (iOS 17+, Chrome).
+// Runs at requestAnimationFrame rate (~60fps), full-frame — no qrbox restriction.
+async function _startNativeScan() {
+  _nativeScanOn = true;
+
+  let stream;
   try {
-    $('scan-overlay').classList.remove('hidden');
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+  } catch (_) {
+    _nativeScanOn = false;
+    await _startHtml5QrScan();
+    return;
+  }
+  _nativeStream = stream;
+
+  // Build fullscreen video inside the scan-video container
+  const scanDiv = $('scan-video');
+  scanDiv.style.height = '260px';
+  const video = document.createElement('video');
+  video.setAttribute('playsinline', '');
+  video.muted = true;
+  video.srcObject = stream;
+  video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:12px;';
+  scanDiv.appendChild(video);
+
+  // Corner + blue-line targeting guide
+  scanDiv.insertAdjacentHTML('beforeend', `
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
+      <div style="width:85%;height:80px;position:relative;">
+        <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
+        <div style="position:absolute;top:0;left:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:4px 0 0 0;"></div>
+        <div style="position:absolute;top:0;right:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 4px 0 0;"></div>
+        <div style="position:absolute;bottom:0;left:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:0 0 0 4px;"></div>
+        <div style="position:absolute;bottom:0;right:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 0 4px 0;"></div>
+      </div>
+    </div>
+  `);
+
+  $('scan-hint').textContent = 'Center barcode on the blue line';
+  await video.play().catch(() => {});
+
+  // Limit to formats relevant to ladder tags (+ QR as bonus).
+  // Filtering to the shortest useful list speeds up detection significantly.
+  const supported = await BarcodeDetector.getSupportedFormats().catch(() => []);
+  const want = ['code_128', 'code_39', 'code_93', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'];
+  const formats = want.filter(f => !supported.length || supported.includes(f));
+  const detector = new BarcodeDetector({ formats: formats.length ? formats : ['code_128', 'qr_code'] });
+
+  const tick = async () => {
+    if (!_nativeScanOn || _scanHandled) return;
+    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+      try {
+        const hits = await detector.detect(video);
+        if (hits.length > 0 && !_scanHandled) {
+          _scanHandled = true;
+          $('fi-serial').value = hits[0].rawValue.trim();
+          playSound('scan');
+          stopScan();
+          return;
+        }
+      } catch (_) {}
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// Fallback path: html5-qrcode with tighter format set and higher fps.
+// Used on iOS < 17 or any browser lacking BarcodeDetector.
+async function _startHtml5QrScan() {
+  $('scan-video').style.height = '';
+  $('scan-hint').textContent = 'Hold barcode in view — detection is automatic';
+  const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined')
+    ? [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODE_93,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+      ]
+    : undefined;
+  try {
     _html5Qr = new Html5Qrcode('scan-video');
+    const config = { fps: 30, qrbox: { width: 300, height: 100 } };
+    if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 280, height: 120 } },
+      config,
       (decoded) => {
-        if (_scanHandled) return;        // library fires repeatedly until stop() resolves
+        if (_scanHandled) return;
         _scanHandled = true;
         $('fi-serial').value = decoded;
         playSound('scan');
@@ -1250,16 +1346,25 @@ async function startScan() {
 
 async function stopScan() {
   $('scan-overlay').classList.add('hidden');
+
+  // Stop native path
+  _nativeScanOn = false;
+  if (_nativeStream) { _nativeStream.getTracks().forEach(t => t.stop()); _nativeStream = null; }
+
+  // Stop html5-qrcode path
   const scanner = _html5Qr;
-  _html5Qr = null;                       // null first so re-entry is blocked immediately
+  _html5Qr = null;
   if (scanner) {
-    try { await scanner.stop(); } catch(_) {}
-    try { scanner.clear(); } catch(_) {}
+    try { await scanner.stop(); } catch (_) {}
+    try { scanner.clear(); } catch (_) {}
   }
+
   // Force-release any lingering camera tracks (important on iOS)
   $('scan-video').querySelectorAll('video').forEach(v => {
-    try { v.srcObject?.getTracks().forEach(t => t.stop()); v.srcObject = null; } catch(_) {}
+    try { v.srcObject?.getTracks().forEach(t => t.stop()); v.srcObject = null; } catch (_) {}
   });
+  $('scan-video').innerHTML = '';
+  $('scan-video').style.height = '';
 }
 
 // ════════════════════════════════════════════════════════════════
