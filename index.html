@@ -1309,8 +1309,8 @@ async function _startNativeScan() {
 // Fallback path: html5-qrcode with tighter format set and higher fps.
 // Used on iOS < 17 or any browser lacking BarcodeDetector.
 async function _startHtml5QrScan() {
-  $('scan-video').style.height = '';
-  $('scan-hint').textContent = 'Hold barcode in view — detection is automatic';
+  $('scan-video').style.height = '260px';
+  $('scan-hint').textContent = 'Center barcode on the blue line';
   const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined')
     ? [
         Html5QrcodeSupportedFormats.CODE_128,
@@ -1323,7 +1323,7 @@ async function _startHtml5QrScan() {
     : undefined;
   try {
     _html5Qr = new Html5Qrcode('scan-video');
-    const config = { fps: 30, qrbox: { width: 300, height: 100 } };
+    const config = { fps: 30 };
     if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
       { facingMode: 'environment' },
@@ -1337,6 +1337,17 @@ async function _startHtml5QrScan() {
       },
       () => {}
     );
+    $('scan-video').insertAdjacentHTML('beforeend', `
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
+        <div style="width:85%;height:80px;position:relative;">
+          <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
+          <div style="position:absolute;top:0;left:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:4px 0 0 0;"></div>
+          <div style="position:absolute;top:0;right:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 4px 0 0;"></div>
+          <div style="position:absolute;bottom:0;left:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:0 0 0 4px;"></div>
+          <div style="position:absolute;bottom:0;right:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 0 4px 0;"></div>
+        </div>
+      </div>
+    `);
   } catch {
     _html5Qr = null;
     $('scan-overlay').classList.add('hidden');
