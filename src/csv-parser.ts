@@ -74,7 +74,7 @@ export function parseCsv(filePath: string): ParseResult {
 
     records.push({
       serialNum: serial,
-      truckId: row['Location ID']?.trim() ?? '',
+      truckId: row['Location ID']?.trim() || '1',
       brand,
       type,
       length,
