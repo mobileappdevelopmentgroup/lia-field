@@ -1336,7 +1336,7 @@ async function _startHtml5QrScan() {
     const config = { fps: 30 };
     if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
-      { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      { facingMode: 'environment' },
       config,
       (decoded) => {
         if (_scanHandled) return;
