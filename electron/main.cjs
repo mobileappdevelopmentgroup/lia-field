@@ -212,7 +212,7 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
     const parts = partCols.map((col) => parsePartValue(row[col])).filter(Boolean);
     records.push({
       serialNum: serial,
-      truckId: (row['Location ID'] ?? '').trim(),
+      truckId: (row['Location ID'] ?? '').trim() || '1',
       brand:   (row['Brand'] ?? '').trim(),
       type:    (row['Type']  ?? '').trim(),
       length:  (row['Length'] ?? '').trim(),
