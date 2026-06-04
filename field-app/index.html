@@ -1277,18 +1277,35 @@ async function _startNativeScan() {
   // Corner + blue-line targeting guide
   scanDiv.insertAdjacentHTML('beforeend', `
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-      <div style="width:85%;height:80px;position:relative;">
+      <div style="width:42%;height:40px;position:relative;">
         <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
-        <div style="position:absolute;top:0;left:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:4px 0 0 0;"></div>
-        <div style="position:absolute;top:0;right:0;width:22px;height:22px;border-top:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 4px 0 0;"></div>
-        <div style="position:absolute;bottom:0;left:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-left:3px solid rgba(255,255,255,.85);border-radius:0 0 0 4px;"></div>
-        <div style="position:absolute;bottom:0;right:0;width:22px;height:22px;border-bottom:3px solid rgba(255,255,255,.85);border-right:3px solid rgba(255,255,255,.85);border-radius:0 0 4px 0;"></div>
+        <div style="position:absolute;top:0;left:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
+        <div style="position:absolute;top:0;right:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
+        <div style="position:absolute;bottom:0;left:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:0 0 0 3px;"></div>
+        <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 0 3px 0;"></div>
       </div>
     </div>
   `);
 
   $('scan-hint').textContent = 'Center barcode on the blue line';
   await video.play().catch(() => {});
+
+  // Wait for first decoded frame so videoWidth/Height are available
+  await new Promise(r => { const f = () => { if (video.videoWidth) { r(); } else { requestAnimationFrame(f); } }; f(); });
+
+  // Compute the guide region in source video pixels (matches the 42%-wide / 40px-tall overlay).
+  // object-fit:cover means the video is scaled up; we invert that to find the crop coordinates.
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const cw = scanDiv.offsetWidth, ch = 260;
+  const coverScale = Math.max(cw / vw, ch / vh);
+  const ox = (cw - vw * coverScale) / 2, oy = (ch - vh * coverScale) / 2;
+  const cropX = Math.round((cw * 0.29 - ox) / coverScale);
+  const cropY = Math.round((ch / 2 - 20  - oy) / coverScale);
+  const cropW = Math.round(cw * 0.42 / coverScale);
+  const cropH = Math.round(40        / coverScale);
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = cropW; cropCanvas.height = cropH;
+  const cropCtx = cropCanvas.getContext('2d');
 
   // Limit to formats relevant to ladder tags (+ QR as bonus).
   // Filtering to the shortest useful list speeds up detection significantly.
@@ -1301,7 +1318,8 @@ async function _startNativeScan() {
     if (!_nativeScanOn || _scanHandled) return;
     if (video.readyState >= video.HAVE_ENOUGH_DATA) {
       try {
-        const hits = await detector.detect(video);
+        cropCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        const hits = await detector.detect(cropCanvas);
         if (hits.length > 0 && !_scanHandled) {
           _scanHandled = true;
           $('fi-serial').value = hits[0].rawValue.trim();
@@ -1333,7 +1351,8 @@ async function _startHtml5QrScan() {
     : undefined;
   try {
     _html5Qr = new Html5Qrcode('scan-video');
-    const config = { fps: 30 };
+    const qbW = Math.round($('scan-video').offsetWidth * 0.42);
+    const config = { fps: 30, qrbox: { width: qbW, height: 40 } };
     if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
       { facingMode: 'environment' },
@@ -1347,6 +1366,9 @@ async function _startHtml5QrScan() {
       },
       () => {}
     );
+    // Hide the shaded region html5-qrcode renders — our overlay replaces it
+    const shaded = document.getElementById('qr-shaded-region');
+    if (shaded) shaded.style.display = 'none';
     $('scan-video').insertAdjacentHTML('beforeend', `
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
         <div style="width:42%;height:40px;position:relative;">
