@@ -1245,7 +1245,7 @@ async function _startNativeScan() {
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
     });
   } catch (_) {
     _nativeScanOn = false;
@@ -1253,6 +1253,16 @@ async function _startNativeScan() {
     return;
   }
   _nativeStream = stream;
+
+  // Apply zoom if the camera supports it — makes barcodes readable from arm's length
+  try {
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities?.();
+    if (caps?.zoom) {
+      const zoom = Math.min(2, caps.zoom.max);
+      await track.applyConstraints({ advanced: [{ zoom }] });
+    }
+  } catch (_) {}
 
   // Build fullscreen video inside the scan-video container
   const scanDiv = $('scan-video');
@@ -1326,7 +1336,7 @@ async function _startHtml5QrScan() {
     const config = { fps: 30 };
     if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
-      { facingMode: 'environment' },
+      { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
       config,
       (decoded) => {
         if (_scanHandled) return;
