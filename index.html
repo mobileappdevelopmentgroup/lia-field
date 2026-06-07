@@ -1259,7 +1259,10 @@ async function _startNativeScan() {
     const track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities?.();
     if (caps?.zoom) {
-      const zoom = Math.min(2, caps.zoom.max);
+      // Paired with the smaller guide box below: a smaller on-screen target pushes
+      // the user to a comfortable (in-focus) working distance, and extra zoom
+      // magnifies the now-farther barcode back to a decodable pixel size.
+      const zoom = Math.min(3, caps.zoom.max);
       await track.applyConstraints({ advanced: [{ zoom }] });
     }
   } catch (_) {}
@@ -1277,7 +1280,7 @@ async function _startNativeScan() {
   // Corner + blue-line targeting guide
   scanDiv.insertAdjacentHTML('beforeend', `
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-      <div style="width:42%;height:40px;position:relative;">
+      <div style="width:28%;height:26px;position:relative;">
         <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
         <div style="position:absolute;top:0;left:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
         <div style="position:absolute;top:0;right:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
@@ -1293,16 +1296,16 @@ async function _startNativeScan() {
   // Wait for first decoded frame so videoWidth/Height are available
   await new Promise(r => { const f = () => { if (video.videoWidth) { r(); } else { requestAnimationFrame(f); } }; f(); });
 
-  // Compute the guide region in source video pixels (matches the 42%-wide / 40px-tall overlay).
+  // Compute the guide region in source video pixels (matches the 28%-wide / 26px-tall overlay).
   // object-fit:cover means the video is scaled up; we invert that to find the crop coordinates.
   const vw = video.videoWidth, vh = video.videoHeight;
   const cw = scanDiv.offsetWidth, ch = 260;
   const coverScale = Math.max(cw / vw, ch / vh);
   const ox = (cw - vw * coverScale) / 2, oy = (ch - vh * coverScale) / 2;
-  const cropX = Math.round((cw * 0.29 - ox) / coverScale);
-  const cropY = Math.round((ch / 2 - 20  - oy) / coverScale);
-  const cropW = Math.round(cw * 0.42 / coverScale);
-  const cropH = Math.round(40        / coverScale);
+  const cropX = Math.round((cw * 0.36 - ox) / coverScale);
+  const cropY = Math.round((ch / 2 - 13  - oy) / coverScale);
+  const cropW = Math.round(cw * 0.28 / coverScale);
+  const cropH = Math.round(26        / coverScale);
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = cropW; cropCanvas.height = cropH;
   const cropCtx = cropCanvas.getContext('2d');
@@ -1351,8 +1354,8 @@ async function _startHtml5QrScan() {
     : undefined;
   try {
     _html5Qr = new Html5Qrcode('scan-video');
-    const qbW = Math.round($('scan-video').offsetWidth * 0.42);
-    const config = { fps: 30, qrbox: { width: qbW, height: 40 } };
+    const qbW = Math.round($('scan-video').offsetWidth * 0.28);
+    const config = { fps: 30, qrbox: { width: qbW, height: 26 } };
     if (formats) config.formatsToSupport = formats;
     await _html5Qr.start(
       { facingMode: 'environment' },
@@ -1371,7 +1374,7 @@ async function _startHtml5QrScan() {
     if (shaded) shaded.style.display = 'none';
     $('scan-video').insertAdjacentHTML('beforeend', `
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-        <div style="width:42%;height:40px;position:relative;">
+        <div style="width:28%;height:26px;position:relative;">
           <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
           <div style="position:absolute;top:0;left:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
           <div style="position:absolute;top:0;right:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
