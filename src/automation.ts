@@ -263,6 +263,7 @@ async function fillNewSerialFields(
   if (await locField.isVisible().catch(() => false)) {
     await locField.click();
     await locField.fill(record.truckId);
+    await locField.press('Enter');
     await locField.press('Tab');
     await pause(opts.actionDelay);
   }

@@ -2,6 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Security TODOs
+
+### 🔴 HIGH — do first
+- [ ] **Rotate Supabase anon key immediately** — key `sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj` is committed in git history on a public repo; go to Supabase dashboard → Project Settings → API → regenerate anon key, then update `config.json`
+- [ ] Fix `inspections` table RLS — remove `GRANT SELECT ON public.inspections TO anon` in `supabase/02_inspections.sql`; grant SELECT only on the `ladder_inspections_public` view instead
+- [ ] `config.json` is bundled as plaintext in the DMG (`extraResources`) — consider storing the anon key in macOS Keychain via `keytar` or prompting on first launch
+
+### 🟡 MEDIUM
+- [ ] Add path validation to `csv:parse` and `inspections:parse-csv` IPC handlers in `electron/main.cjs` — currently accept any file path from the renderer; validate extension and constrain to expected directories
+- [ ] Fix IPC listener accumulation — use `ipcRenderer.once()` for one-shot events (`onComplete`, `onExited`) in `electron/preload.cjs`
+- [ ] Escape `res.error` before inserting into `innerHTML` at `electron/index.html:1282` — use the existing `esc()` helper already defined in the file
+
+### 🔵 LOW
+- [ ] Add Content Security Policy to the Electron renderer window (`session.defaultSession.webRequest` or `<meta>` tag in `electron/index.html`)
+- [ ] Add SRI hashes to CDN scripts in `field-app/index.html` and `inspection-site/index.html` (`integrity="sha384-..."`)
+- [ ] Consider storing JWT session (`~/Library/Application Support/Lia/lia-auth.json`) in macOS Keychain via `keytar` instead of plaintext JSON
+- [ ] Add max-length check on `workOrderId` in `automation:start` IPC handler before DB storage
+
 ## Commands
 
 ```bash
