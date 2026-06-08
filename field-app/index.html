@@ -318,6 +318,7 @@
                     justify-content: center; gap: 20px; padding: 24px; }
     .scan-overlay.hidden { display: none; }
     .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
+    .scan-hint.warn { color: #ff6b6b; font-weight: 600; }
     .scan-cancel-btn { background: rgba(255,255,255,.12); color: #fff;
                        border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
                        padding: 14px 40px; font-size: 16px; cursor: pointer; }
@@ -671,11 +672,24 @@ const _soundDefs = {
       g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.35);
       o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.36);
     });
+  },
+  buzz: ctx => {
+    // Low descending buzz — deliberately the opposite character of the
+    // bright success tones, so a failed scan is unmistakable by ear alone.
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(320, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.3);
+    g.gain.setValueAtTime(0.16, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.34);
+    o.start(); o.stop(ctx.currentTime + 0.34);
   }
 };
 function playSound(event) {
   const prefs = loadSounds();
-  const choice = prefs[event] ?? (event === 'ladder' ? 'chime' : 'beep');
+  const defaults = { ladder: 'chime', scanFail: 'buzz' };
+  const choice = prefs[event] ?? defaults[event] ?? 'beep';
   if (choice === 'none') return;
   try {
     const ctx = getAudioCtx();
@@ -1238,6 +1252,7 @@ async function _onPhotoCaptured(e) {
   if (!file) return; // user backed out of the camera — nothing to show
 
   $('scan-hint').textContent = 'Reading photo…';
+  $('scan-hint').classList.remove('warn');
   $('scan-overlay').classList.remove('hidden');
 
   const code = await _decodeImageFile(file);
@@ -1246,6 +1261,14 @@ async function _onPhotoCaptured(e) {
     playSound('scan');
     stopScan();
   } else {
+    // Clear any stale value — an empty field can't be mistaken for a fresh
+    // read, whereas a leftover number silently looks like a successful scan.
+    $('fi-serial').value = '';
+    playSound('scanFail');
+    $('scan-hint').textContent = "Couldn't read the barcode — try again";
+    $('scan-hint').classList.add('warn');
+    await new Promise(r => setTimeout(r, 1100)); // let the message register
+    $('scan-hint').classList.remove('warn');
     stopScan();
     $('scan-photo-input').click();
   }
