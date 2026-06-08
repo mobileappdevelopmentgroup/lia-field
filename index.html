@@ -317,8 +317,6 @@
                     display: flex; flex-direction: column; align-items: center;
                     justify-content: center; gap: 20px; padding: 24px; }
     .scan-overlay.hidden { display: none; }
-    #scan-video { width: 100%; max-width: 480px; border-radius: 12px; background: #000;
-                  min-height: 200px; overflow: hidden; position: relative; }
     .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
     .scan-cancel-btn { background: rgba(255,255,255,.12); color: #fff;
                        border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
@@ -523,8 +521,7 @@
 
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
-  <div id="scan-video"></div>
-  <div class="scan-hint" id="scan-hint">Take a photo of the barcode</div>
+  <div class="scan-hint" id="scan-hint">Reading photo…</div>
   <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
   <input type="file" accept="image/*" capture="environment" id="scan-photo-input" style="display:none">
 </div>
@@ -1225,52 +1222,31 @@ $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
 $('scan-photo-input').addEventListener('change', _onPhotoCaptured);
 
-async function startScan() {
-  $('scan-video').innerHTML = '';
-  $('scan-video').style.height = '180px';
-  _renderScanGuide();
-  $('scan-hint').textContent = 'Opening camera…';
-  $('scan-overlay').classList.remove('hidden');
+function startScan() {
+  // Go straight to the camera — there's no overlay we can draw on top of the
+  // system camera UI, so showing one first (even briefly) is just a flash.
   $('scan-photo-input').click();
 }
 
 function stopScan() {
   $('scan-overlay').classList.add('hidden');
-  $('scan-video').innerHTML = '';
-  $('scan-video').style.height = '';
-}
-
-// Corner + blue-line framing guide — a visual reference for how to align the
-// barcode in the shot. Sized 25% larger than the old live-scan guide (which
-// had to stay small to match a tight crop region; a still photo has no such
-// constraint, and a bigger target is easier to line up).
-function _renderScanGuide() {
-  $('scan-video').insertAdjacentHTML('beforeend', `
-    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-      <div style="width:35%;height:33px;position:relative;">
-        <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
-        <div style="position:absolute;top:0;left:0;width:15px;height:15px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
-        <div style="position:absolute;top:0;right:0;width:15px;height:15px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
-        <div style="position:absolute;bottom:0;left:0;width:15px;height:15px;border-bottom:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:0 0 0 3px;"></div>
-        <div style="position:absolute;bottom:0;right:0;width:15px;height:15px;border-bottom:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 0 3px 0;"></div>
-      </div>
-    </div>
-  `);
 }
 
 async function _onPhotoCaptured(e) {
   const file = e.target.files?.[0];
   e.target.value = ''; // allow re-selecting the same file on retry
-  if (!file) { stopScan(); return; } // user backed out of the camera
+  if (!file) return; // user backed out of the camera — nothing to show
 
   $('scan-hint').textContent = 'Reading photo…';
+  $('scan-overlay').classList.remove('hidden');
+
   const code = await _decodeImageFile(file);
   if (code) {
     $('fi-serial').value = code;
     playSound('scan');
     stopScan();
   } else {
-    $('scan-hint').textContent = 'No code found — opening camera again…';
+    stopScan();
     $('scan-photo-input').click();
   }
 }
