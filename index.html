@@ -324,10 +324,6 @@
                        border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
                        padding: 14px 40px; font-size: 16px; cursor: pointer; }
     .scan-cancel-btn:active { background: rgba(255,255,255,.22); }
-    .scan-photo-btn { background: rgba(var(--accent-rgb),.22); color: #fff;
-                      border: 1px solid rgba(var(--accent-rgb),.45); border-radius: 10px;
-                      padding: 14px 20px; font-size: 16px; cursor: pointer; }
-    .scan-photo-btn:active { background: rgba(var(--accent-rgb),.34); }
 
     /* ── Settings section headers + sound/theme rows ── */
     .settings-section-hdr { font-size: 10px; font-weight: 700; color: var(--muted);
@@ -528,11 +524,8 @@
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
   <div id="scan-video"></div>
-  <div class="scan-hint" id="scan-hint">Hold barcode in view — detection is automatic</div>
-  <div style="display:flex;gap:12px;">
-    <button class="scan-photo-btn" id="btn-scan-photo">📷 Take Photo Instead</button>
-    <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
-  </div>
+  <div class="scan-hint" id="scan-hint">Take a photo of the barcode</div>
+  <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
   <input type="file" accept="image/*" capture="environment" id="scan-photo-input" style="display:none">
 </div>
 
@@ -1224,217 +1217,51 @@ $('btn-share-csv').addEventListener('click', async () => {
 });
 
 // ── Barcode scanner ───────────────────────────────────────────────────────────
-let _html5Qr        = null;
-let _scanHandled    = false;
-let _nativeScanOn   = false;
-let _nativeStream   = null;
-
+// Captures a full-resolution photo via the OS camera — proper autofocus and
+// no motion blur from a hunting live-video feed — then decodes it directly.
+// Far more dependable than live frame-by-frame detection for the small,
+// dense Code 128 tags on ladders.
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
-$('btn-scan-photo').addEventListener('click', () => {
-  _scanHandled = true; // pause the live decode loop — we're committing to the photo path
-  $('scan-photo-input').click();
-});
 $('scan-photo-input').addEventListener('change', _onPhotoCaptured);
 
 async function startScan() {
-  if (_html5Qr || _nativeScanOn) return;
-  _scanHandled = false;
   $('scan-video').innerHTML = '';
+  $('scan-video').style.height = '180px';
+  _renderScanGuide();
+  $('scan-hint').textContent = 'Opening camera…';
   $('scan-overlay').classList.remove('hidden');
-
-  if ('BarcodeDetector' in window) {
-    await _startNativeScan();
-  } else {
-    await _startHtml5QrScan();
-  }
+  $('scan-photo-input').click();
 }
 
-// Primary path: native BarcodeDetector (iOS 17+, Chrome).
-// Runs at requestAnimationFrame rate (~60fps), full-frame — no qrbox restriction.
-async function _startNativeScan() {
-  _nativeScanOn = true;
-
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-    });
-  } catch (_) {
-    _nativeScanOn = false;
-    await _startHtml5QrScan();
-    return;
-  }
-  _nativeStream = stream;
-
-  // Apply zoom if the camera supports it — makes barcodes readable from arm's length
-  try {
-    const track = stream.getVideoTracks()[0];
-    const caps = track.getCapabilities?.();
-    if (caps?.zoom) {
-      // Paired with the smaller guide box below: a smaller on-screen target pushes
-      // the user to a comfortable (in-focus) working distance, and extra zoom
-      // magnifies the now-farther barcode back to a decodable pixel size.
-      const zoom = Math.min(3, caps.zoom.max);
-      await track.applyConstraints({ advanced: [{ zoom }] });
-    }
-  } catch (_) {}
-
-  // Build fullscreen video inside the scan-video container
-  const scanDiv = $('scan-video');
-  scanDiv.style.height = '260px';
-  const video = document.createElement('video');
-  video.setAttribute('playsinline', '');
-  video.muted = true;
-  video.srcObject = stream;
-  video.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:12px;';
-  scanDiv.appendChild(video);
-
-  // Corner + blue-line targeting guide
-  scanDiv.insertAdjacentHTML('beforeend', `
-    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-      <div style="width:28%;height:26px;position:relative;">
-        <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
-        <div style="position:absolute;top:0;left:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
-        <div style="position:absolute;top:0;right:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
-        <div style="position:absolute;bottom:0;left:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:0 0 0 3px;"></div>
-        <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 0 3px 0;"></div>
-      </div>
-    </div>
-  `);
-
-  $('scan-hint').textContent = 'Center barcode on the blue line';
-  await video.play().catch(() => {});
-
-  // Wait for first decoded frame so videoWidth/Height are available
-  await new Promise(r => { const f = () => { if (video.videoWidth) { r(); } else { requestAnimationFrame(f); } }; f(); });
-
-  // Compute the guide region in source video pixels (matches the 28%-wide / 26px-tall overlay).
-  // object-fit:cover means the video is scaled up; we invert that to find the crop coordinates.
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const cw = scanDiv.offsetWidth, ch = 260;
-  const coverScale = Math.max(cw / vw, ch / vh);
-  const ox = (cw - vw * coverScale) / 2, oy = (ch - vh * coverScale) / 2;
-  const cropX = Math.round((cw * 0.36 - ox) / coverScale);
-  const cropY = Math.round((ch / 2 - 13  - oy) / coverScale);
-  const cropW = Math.round(cw * 0.28 / coverScale);
-  const cropH = Math.round(26        / coverScale);
-  const cropCanvas = document.createElement('canvas');
-  cropCanvas.width = cropW; cropCanvas.height = cropH;
-  const cropCtx = cropCanvas.getContext('2d');
-
-  // Limit to formats relevant to ladder tags (+ QR as bonus).
-  // Filtering to the shortest useful list speeds up detection significantly.
-  const supported = await BarcodeDetector.getSupportedFormats().catch(() => []);
-  const want = ['code_128', 'code_39', 'code_93', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'];
-  const formats = want.filter(f => !supported.length || supported.includes(f));
-  const detector = new BarcodeDetector({ formats: formats.length ? formats : ['code_128', 'qr_code'] });
-
-  const tick = async () => {
-    if (!_nativeScanOn || _scanHandled) return;
-    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
-      try {
-        cropCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-        const hits = await detector.detect(cropCanvas);
-        if (hits.length > 0 && !_scanHandled) {
-          _scanHandled = true;
-          $('fi-serial').value = hits[0].rawValue.trim();
-          playSound('scan');
-          stopScan();
-          return;
-        }
-      } catch (_) {}
-    }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-// Fallback path: html5-qrcode with tighter format set and higher fps.
-// Used on iOS < 17 or any browser lacking BarcodeDetector.
-async function _startHtml5QrScan() {
-  $('scan-video').style.height = '260px';
-  $('scan-hint').textContent = 'Center barcode on the blue line';
-  const formats = (typeof Html5QrcodeSupportedFormats !== 'undefined')
-    ? [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.CODE_93,
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-      ]
-    : undefined;
-  try {
-    _html5Qr = new Html5Qrcode('scan-video');
-    const qbW = Math.round($('scan-video').offsetWidth * 0.28);
-    const config = { fps: 30, qrbox: { width: qbW, height: 26 } };
-    if (formats) config.formatsToSupport = formats;
-    await _html5Qr.start(
-      { facingMode: 'environment' },
-      config,
-      (decoded) => {
-        if (_scanHandled) return;
-        _scanHandled = true;
-        $('fi-serial').value = decoded;
-        playSound('scan');
-        stopScan();
-      },
-      () => {}
-    );
-    // Hide the shaded region html5-qrcode renders — our overlay replaces it
-    const shaded = document.getElementById('qr-shaded-region');
-    if (shaded) shaded.style.display = 'none';
-    $('scan-video').insertAdjacentHTML('beforeend', `
-      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
-        <div style="width:28%;height:26px;position:relative;">
-          <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
-          <div style="position:absolute;top:0;left:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
-          <div style="position:absolute;top:0;right:0;width:12px;height:12px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
-          <div style="position:absolute;bottom:0;left:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:0 0 0 3px;"></div>
-          <div style="position:absolute;bottom:0;right:0;width:12px;height:12px;border-bottom:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 0 3px 0;"></div>
-        </div>
-      </div>
-    `);
-  } catch {
-    _html5Qr = null;
-    $('scan-overlay').classList.add('hidden');
-    alert('Camera access denied or unavailable.\nType the serial number manually.');
-  }
-}
-
-async function stopScan() {
+function stopScan() {
   $('scan-overlay').classList.add('hidden');
-
-  // Stop native path
-  _nativeScanOn = false;
-  if (_nativeStream) { _nativeStream.getTracks().forEach(t => t.stop()); _nativeStream = null; }
-
-  // Stop html5-qrcode path
-  const scanner = _html5Qr;
-  _html5Qr = null;
-  if (scanner) {
-    try { await scanner.stop(); } catch (_) {}
-    try { scanner.clear(); } catch (_) {}
-  }
-
-  // Force-release any lingering camera tracks (important on iOS)
-  $('scan-video').querySelectorAll('video').forEach(v => {
-    try { v.srcObject?.getTracks().forEach(t => t.stop()); v.srcObject = null; } catch (_) {}
-  });
   $('scan-video').innerHTML = '';
   $('scan-video').style.height = '';
 }
 
-// ── "Take Photo" alternative path (A/B prototype) ─────────────────────────
-// Live video frames are small, often motion-blurred, and fight a hunting
-// autofocus. Routing through the OS camera app instead lets autofocus settle
-// before the shutter fires and hands the decoder a full-resolution still —
-// likely more dependable for small/dense Code 128 ladder tags.
+// Corner + blue-line framing guide — a visual reference for how to align the
+// barcode in the shot. Sized 25% larger than the old live-scan guide (which
+// had to stay small to match a tight crop region; a still photo has no such
+// constraint, and a bigger target is easier to line up).
+function _renderScanGuide() {
+  $('scan-video').insertAdjacentHTML('beforeend', `
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;border-radius:12px;overflow:hidden;">
+      <div style="width:35%;height:33px;position:relative;">
+        <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(79,110,247,.9);transform:translateY(-50%);box-shadow:0 0 8px rgba(79,110,247,.7);"></div>
+        <div style="position:absolute;top:0;left:0;width:15px;height:15px;border-top:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:3px 0 0 0;"></div>
+        <div style="position:absolute;top:0;right:0;width:15px;height:15px;border-top:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 3px 0 0;"></div>
+        <div style="position:absolute;bottom:0;left:0;width:15px;height:15px;border-bottom:2px solid rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.85);border-radius:0 0 0 3px;"></div>
+        <div style="position:absolute;bottom:0;right:0;width:15px;height:15px;border-bottom:2px solid rgba(255,255,255,.85);border-right:2px solid rgba(255,255,255,.85);border-radius:0 0 3px 0;"></div>
+      </div>
+    </div>
+  `);
+}
+
 async function _onPhotoCaptured(e) {
   const file = e.target.files?.[0];
   e.target.value = ''; // allow re-selecting the same file on retry
-  if (!file) return;
+  if (!file) { stopScan(); return; } // user backed out of the camera
 
   $('scan-hint').textContent = 'Reading photo…';
   const code = await _decodeImageFile(file);
@@ -1443,7 +1270,8 @@ async function _onPhotoCaptured(e) {
     playSound('scan');
     stopScan();
   } else {
-    $('scan-hint').textContent = 'No code found in photo — try "Take Photo Instead" again or type manually';
+    $('scan-hint').textContent = 'No code found — opening camera again…';
+    $('scan-photo-input').click();
   }
 }
 
