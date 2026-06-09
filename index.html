@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#4f6ef7">
   <link rel="manifest" href="manifest.json">
   <title>Lia Field</title>
-  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -522,9 +522,17 @@
 
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
-  <div class="scan-hint" id="scan-hint">Reading photo…</div>
-  <button class="scan-cancel-btn" id="btn-scan-cancel">Cancel</button>
-  <input type="file" accept="image/*" capture="environment" id="scan-photo-input" style="display:none">
+  <video id="scan-video" autoplay playsinline muted
+         style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;"></video>
+  <canvas id="scan-canvas" style="display:none;"></canvas>
+  <div class="scan-hint" id="scan-hint"
+       style="position:relative;z-index:1;background:rgba(0,0,0,.6);border-radius:8px;padding:6px 14px;">
+    Aim at barcode — tap if it doesn't auto-read
+  </div>
+  <button class="scan-cancel-btn" id="btn-scan-cancel"
+          style="position:relative;z-index:1;">Cancel</button>
+  <input type="file" accept="image/*" capture="environment"
+         id="scan-photo-input-fallback" style="display:none">
 </div>
 
 <!-- Settings Sheet -->
@@ -1228,79 +1236,187 @@ $('btn-share-csv').addEventListener('click', async () => {
 });
 
 // ── Barcode scanner ───────────────────────────────────────────────────────────
-// Captures a full-resolution photo via the OS camera — proper autofocus and
-// no motion blur from a hunting live-video feed — then decodes it directly.
-// Far more dependable than live frame-by-frame detection for the small,
-// dense Code 128 tags on ladders.
+// In-app live viewfinder — getUserMedia, auto-decode every 400 ms, tap for
+// immediate attempt. BarcodeDetector (Android Chrome) → ZXing (iOS + others).
+// Falls back to OS camera photo if getUserMedia is denied.
+
+let _scanStream = null, _scanInterval = null, _scanDecoding = false, _scanFailCount = 0;
+let _zxingReader = null;
+
+function _getZxingReader() {
+  if (!_zxingReader) {
+    _zxingReader = new ZXingBrowser.MultiFormatReader();
+    try {
+      _zxingReader.setHints(new Map([
+        [ZXingBrowser.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXingBrowser.BarcodeFormat.CODE_128, ZXingBrowser.BarcodeFormat.CODE_39,
+          ZXingBrowser.BarcodeFormat.QR_CODE,  ZXingBrowser.BarcodeFormat.EAN_13,
+        ]],
+      ]));
+    } catch (_) {}
+  }
+  return _zxingReader;
+}
+
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
-$('scan-photo-input').addEventListener('change', _onPhotoCaptured);
+$('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
 
-function startScan() {
-  // Go straight to the camera — there's no overlay we can draw on top of the
-  // system camera UI, so showing one first (even briefly) is just a flash.
-  $('scan-photo-input').click();
+async function startScan() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+    });
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities?.();
+    if (caps?.zoom) {
+      await track.applyConstraints({ advanced: [{ zoom: Math.min(3, caps.zoom.max) }] });
+    }
+    $('scan-video').srcObject = stream;
+    await $('scan-video').play();
+    _scanStream = stream;
+  } catch (_) {
+    $('scan-photo-input-fallback').click();
+    return;
+  }
+  _scanFailCount = 0;
+  _scanDecoding = false;
+  $('scan-hint').textContent = "Aim at barcode — tap if it doesn't auto-read";
+  $('scan-hint').classList.remove('warn');
+  $('scan-overlay').classList.remove('hidden');
+  _scanInterval = setInterval(_autoDecodeTick, 400);
+  $('scan-overlay').addEventListener('click', _manualDecodeTick);
 }
 
 function stopScan() {
+  clearInterval(_scanInterval);
+  _scanInterval = null;
+  $('scan-overlay').removeEventListener('click', _manualDecodeTick);
+  if (_scanStream) {
+    _scanStream.getTracks().forEach(t => t.stop());
+    _scanStream = null;
+  }
+  $('scan-video').srcObject = null;
   $('scan-overlay').classList.add('hidden');
 }
 
-async function _onPhotoCaptured(e) {
-  const file = e.target.files?.[0];
-  e.target.value = ''; // allow re-selecting the same file on retry
-  if (!file) return; // user backed out of the camera — nothing to show
+async function _decodeScanCanvas() {
+  const video = $('scan-video');
+  const canvas = $('scan-canvas');
+  if (!video.videoWidth) return null;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  if ('BarcodeDetector' in window) {
+    try {
+      const bitmap = await createImageBitmap(canvas);
+      const hits = await new BarcodeDetector({
+        formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'ean_8', 'upc_a'],
+      }).detect(bitmap);
+      bitmap.close?.();
+      if (hits.length) return hits[0].rawValue.trim();
+    } catch (_) {}
+  }
+  try {
+    const luminance = new ZXingBrowser.HTMLCanvasElementLuminanceSource(canvas);
+    const bmp = new ZXingBrowser.BinaryBitmap(new ZXingBrowser.HybridBinarizer(luminance));
+    const result = _getZxingReader().decode(bmp);
+    if (result?.getText()) return result.getText().trim();
+  } catch (_) {}
+  return null;
+}
 
+async function _autoDecodeTick() {
+  if (_scanDecoding) return;
+  _scanDecoding = true;
+  const result = await _decodeScanCanvas().catch(() => null);
+  _scanDecoding = false;
+  if (result) {
+    _onScanSuccess(result);
+  } else {
+    _scanFailCount++;
+    if (_scanFailCount === 10) {
+      $('scan-hint').textContent = 'Move closer or tap to scan now';
+      $('scan-hint').classList.remove('warn');
+    }
+  }
+}
+
+async function _manualDecodeTick(e) {
+  e.stopPropagation();
+  clearInterval(_scanInterval);
+  _scanDecoding = false;
+  const result = await _decodeScanCanvas().catch(() => null);
+  if (result) {
+    _onScanSuccess(result);
+    return;
+  }
+  $('fi-serial').value = '';
+  playSound('scanFail');
+  $('scan-hint').textContent = "Couldn't read — try again";
+  $('scan-hint').classList.add('warn');
+  await new Promise(r => setTimeout(r, 700));
+  $('scan-hint').classList.remove('warn');
+  $('scan-hint').textContent = "Aim at barcode — tap if it doesn't auto-read";
+  _scanDecoding = false;
+  _scanInterval = setInterval(_autoDecodeTick, 400);
+}
+
+function _onScanSuccess(value) {
+  $('fi-serial').value = value;
+  playSound('scan');
+  stopScan();
+}
+
+// Fallback: decode a photo from the OS camera (used only when getUserMedia is denied)
+async function _onFallbackPhotoCaptured(e) {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
   $('scan-hint').textContent = 'Reading photo…';
   $('scan-hint').classList.remove('warn');
   $('scan-overlay').classList.remove('hidden');
-
   const code = await _decodeImageFile(file);
   if (code) {
     $('fi-serial').value = code;
     playSound('scan');
-    stopScan();
+    $('scan-overlay').classList.add('hidden');
   } else {
-    // Clear any stale value — an empty field can't be mistaken for a fresh
-    // read, whereas a leftover number silently looks like a successful scan.
     $('fi-serial').value = '';
     playSound('scanFail');
     $('scan-hint').textContent = "Couldn't read the barcode — try again";
     $('scan-hint').classList.add('warn');
-    await new Promise(r => setTimeout(r, 1100)); // let the message register
+    await new Promise(r => setTimeout(r, 1100));
     $('scan-hint').classList.remove('warn');
-    stopScan();
-    $('scan-photo-input').click();
+    $('scan-overlay').classList.add('hidden');
+    $('scan-photo-input-fallback').click();
   }
 }
 
 async function _decodeImageFile(file) {
-  // Primary: native BarcodeDetector against the full-resolution still
   if ('BarcodeDetector' in window) {
     try {
       const bitmap = await createImageBitmap(file);
-      const supported = await BarcodeDetector.getSupportedFormats().catch(() => []);
-      const want = ['code_128', 'code_39', 'code_93', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'];
-      const formats = want.filter(f => !supported.length || supported.includes(f));
-      const detector = new BarcodeDetector({ formats: formats.length ? formats : ['code_128', 'qr_code'] });
-      const hits = await detector.detect(bitmap);
+      const hits = await new BarcodeDetector({
+        formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+      }).detect(bitmap);
       bitmap.close?.();
-      if (hits.length > 0) return hits[0].rawValue.trim();
+      if (hits.length) return hits[0].rawValue.trim();
     } catch (_) {}
   }
-  // Fallback: html5-qrcode's static-file decoder (covers browsers without BarcodeDetector)
   try {
-    const tmpId = '_scan-photo-tmp';
-    if (!$(tmpId)) {
-      const div = document.createElement('div');
-      div.id = tmpId;
-      div.style.display = 'none';
-      document.body.appendChild(div);
-    }
-    const tmp = new Html5Qrcode(tmpId, { verbose: false });
-    const result = await tmp.scanFile(file, false);
-    try { tmp.clear(); } catch (_) {}
-    if (result) return result.trim();
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    const luminance = new ZXingBrowser.HTMLCanvasElementLuminanceSource(canvas);
+    const bmp = new ZXingBrowser.BinaryBitmap(new ZXingBrowser.HybridBinarizer(luminance));
+    const result = _getZxingReader().decode(bmp);
+    if (result?.getText()) return result.getText().trim();
   } catch (_) {}
   return null;
 }
