@@ -1,7 +1,7 @@
-const CACHE = 'lia-field-v17';
+const CACHE = 'lia-field-v18';
 const ASSETS = [
   './', './index.html', './manifest.json',
-  'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js'
+  'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js'
 ];
 
 self.addEventListener('install', e => {

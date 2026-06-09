@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#4f6ef7">
   <link rel="manifest" href="manifest.json">
   <title>Lia Field</title>
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -1241,22 +1241,6 @@ $('btn-share-csv').addEventListener('click', async () => {
 // Falls back to OS camera photo if getUserMedia is denied.
 
 let _scanStream = null, _scanInterval = null, _scanDecoding = false, _scanFailCount = 0;
-let _zxingReader = null;
-
-function _getZxingReader() {
-  if (!_zxingReader) {
-    _zxingReader = new ZXingBrowser.MultiFormatReader();
-    try {
-      _zxingReader.setHints(new Map([
-        [ZXingBrowser.DecodeHintType.POSSIBLE_FORMATS, [
-          ZXingBrowser.BarcodeFormat.CODE_128, ZXingBrowser.BarcodeFormat.CODE_39,
-          ZXingBrowser.BarcodeFormat.QR_CODE,  ZXingBrowser.BarcodeFormat.EAN_13,
-        ]],
-      ]));
-    } catch (_) {}
-  }
-  return _zxingReader;
-}
 
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
@@ -1311,17 +1295,22 @@ async function _decodeScanCanvas() {
     try {
       const bitmap = await createImageBitmap(canvas);
       const hits = await new BarcodeDetector({
-        formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'ean_8', 'upc_a'],
+        formats: ['code_39', 'code_128', 'qr_code', 'ean_13', 'ean_8', 'upc_a'],
       }).detect(bitmap);
       bitmap.close?.();
       if (hits.length) return hits[0].rawValue.trim();
     } catch (_) {}
   }
+  // ZXing via JPEG blob URL (iOS + others without BarcodeDetector)
   try {
-    const luminance = new ZXingBrowser.HTMLCanvasElementLuminanceSource(canvas);
-    const bmp = new ZXingBrowser.BinaryBitmap(new ZXingBrowser.HybridBinarizer(luminance));
-    const result = _getZxingReader().decode(bmp);
-    if (result?.getText()) return result.getText().trim();
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.88));
+    const url = URL.createObjectURL(blob);
+    try {
+      const result = await new ZXingBrowser.BrowserMultiFormatReader().decodeFromImageUrl(url);
+      if (result?.getText()) return result.getText().trim();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   } catch (_) {}
   return null;
 }
@@ -1398,25 +1387,20 @@ async function _decodeImageFile(file) {
     try {
       const bitmap = await createImageBitmap(file);
       const hits = await new BarcodeDetector({
-        formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+        formats: ['code_39', 'code_128', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
       }).detect(bitmap);
       bitmap.close?.();
       if (hits.length) return hits[0].rawValue.trim();
     } catch (_) {}
   }
   try {
-    const img = new Image();
     const url = URL.createObjectURL(file);
-    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    canvas.getContext('2d').drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
-    const luminance = new ZXingBrowser.HTMLCanvasElementLuminanceSource(canvas);
-    const bmp = new ZXingBrowser.BinaryBitmap(new ZXingBrowser.HybridBinarizer(luminance));
-    const result = _getZxingReader().decode(bmp);
-    if (result?.getText()) return result.getText().trim();
+    try {
+      const result = await new ZXingBrowser.BrowserMultiFormatReader().decodeFromImageUrl(url);
+      if (result?.getText()) return result.getText().trim();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   } catch (_) {}
   return null;
 }
