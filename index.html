@@ -1716,7 +1716,9 @@ function addLibPart() {
 }
 
 // ── Service worker ────────────────────────────────────────────────────────────
-if ('serviceWorker' in navigator) {
+// Skipped inside Capacitor — the WKWebView/WebView already serves the bundled
+// app offline, so a service worker would just add a redundant caching layer.
+if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform()) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 

@@ -1,0 +1,8 @@
+@zxing/browser v0.1.5
+https://github.com/zxing-js/browser
+
+Licensed under the Apache License, Version 2.0.
+http://www.apache.org/licenses/LICENSE-2.0
+
+Vendored locally (pinned at v0.1.5) so the app works fully offline inside
+the Capacitor WebView, instead of loading from cdn.jsdelivr.net.

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#4f6ef7"/>
+  <g fill="#f5f7ff">
+    <!-- ladder rails -->
+    <rect x="340" y="140" width="64" height="744" rx="20"/>
+    <rect x="620" y="140" width="64" height="744" rx="20"/>
+    <!-- ladder rungs -->
+    <rect x="404" y="206" width="216" height="56" rx="14"/>
+    <rect x="404" y="366" width="216" height="56" rx="14"/>
+    <rect x="404" y="526" width="216" height="56" rx="14"/>
+    <rect x="404" y="686" width="216" height="56" rx="14"/>
+    <rect x="404" y="762" width="216" height="56" rx="14"/>
+  </g>
+</svg>
