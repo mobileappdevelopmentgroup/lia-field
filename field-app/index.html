@@ -323,6 +323,12 @@
                        border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
                        padding: 14px 40px; font-size: 16px; cursor: pointer; }
     .scan-cancel-btn:active { background: rgba(255,255,255,.22); }
+    .scan-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+                       z-index: 1; pointer-events: none; }
+    .scan-crosshair .frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+                              border: 2px solid rgba(255,255,255,.55); border-radius: 10px; }
+    .scan-crosshair .frame.h { width: 240px; height: 110px; }
+    .scan-crosshair .frame.v { width: 110px; height: 240px; }
 
     /* ── Settings section headers + sound/theme rows ── */
     .settings-section-hdr { font-size: 10px; font-weight: 700; color: var(--muted);
@@ -525,6 +531,10 @@
   <video id="scan-video" autoplay playsinline muted
          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;"></video>
   <canvas id="scan-canvas" style="display:none;"></canvas>
+  <div class="scan-crosshair" aria-hidden="true">
+    <div class="frame h"></div>
+    <div class="frame v"></div>
+  </div>
   <div class="scan-hint" id="scan-hint"
        style="position:relative;z-index:1;background:rgba(0,0,0,.6);border-radius:8px;padding:6px 14px;">
     Aim at barcode — tap if it doesn't auto-read
@@ -1242,6 +1252,11 @@ $('btn-share-csv').addEventListener('click', async () => {
 
 let _scanStream = null, _scanInterval = null, _scanDecoding = false, _scanFailCount = 0;
 
+// DecodeHintType.TRY_HARDER (enum value 3) isn't exported by the @zxing/browser UMD
+// bundle, but the numeric value is stable. It makes the 1D readers also try a
+// 90°-rotated pass, so vertically-oriented barcodes decode as reliably as horizontal ones.
+const ZXING_HINTS = new Map([[3, true]]);
+
 $('btn-scan').addEventListener('click', startScan);
 $('btn-scan-cancel').addEventListener('click', stopScan);
 $('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
@@ -1306,7 +1321,7 @@ async function _decodeScanCanvas() {
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.88));
     const url = URL.createObjectURL(blob);
     try {
-      const result = await new ZXingBrowser.BrowserMultiFormatReader().decodeFromImageUrl(url);
+      const result = await new ZXingBrowser.BrowserMultiFormatReader(ZXING_HINTS).decodeFromImageUrl(url);
       if (result?.getText()) return result.getText().trim();
     } finally {
       URL.revokeObjectURL(url);
@@ -1396,7 +1411,7 @@ async function _decodeImageFile(file) {
   try {
     const url = URL.createObjectURL(file);
     try {
-      const result = await new ZXingBrowser.BrowserMultiFormatReader().decodeFromImageUrl(url);
+      const result = await new ZXingBrowser.BrowserMultiFormatReader(ZXING_HINTS).decodeFromImageUrl(url);
       if (result?.getText()) return result.getText().trim();
     } finally {
       URL.revokeObjectURL(url);
