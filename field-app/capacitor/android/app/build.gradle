@@ -16,10 +16,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (project.hasProperty('LIA_FIELD_STORE_FILE')) {
+                storeFile file(LIA_FIELD_STORE_FILE)
+                storePassword LIA_FIELD_STORE_PASSWORD
+                keyAlias LIA_FIELD_KEY_ALIAS
+                keyPassword LIA_FIELD_KEY_PASSWORD
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (project.hasProperty('LIA_FIELD_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
