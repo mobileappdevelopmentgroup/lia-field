@@ -1059,6 +1059,8 @@ function renderSummary(result) {
       ];
       vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--err);">✗  VERIFICATION FAILED — still missing after ${v.passes} check(s) and ${v.fixAttempts} retry(ies). Add these manually in BSI.</div>`+
         `<table style="width:100%;border-collapse:collapse;">${rows.join('')}</table>`;
+    } else if (v.intentionallySkipped && v.intentionallySkipped.length) {
+      vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--ok);">✓  VERIFIED — no unintentional mismatches (${v.passes} check${v.passes===1?'':'s'}). ${v.intentionallySkipped.length} item(s) below were intentionally left as-is (boxes-only mode) and do NOT match the CSV.</div>`;
     } else {
       vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--ok);">✓  VERIFIED — every CSV line matches the work order (${v.passes} check${v.passes===1?'':'s'}).</div>`;
     }
@@ -1073,12 +1075,15 @@ function renderSummary(result) {
   }
 
   const hasCostFlags = flags.length > 0;
-  const bad = verifyFail||s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0||hasCostFlags;
+  const hasSkipped = !!(v && v.intentionallySkipped && v.intentionallySkipped.length);
+  const bad = verifyFail||s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0||hasCostFlags||hasSkipped;
   $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
   $('result-note').textContent = verifyFail
     ? '✗  Work order does NOT match the CSV — see VERIFICATION FAILED below. Fix manually before submitting.'
     : hasCostFlags
     ? '⚑  Cost flags require supervisor review before submitting the work order.'
+    : hasSkipped
+    ? '⚠  Some items were intentionally left as-is (boxes-only mode) and do NOT match the CSV — review before submitting.'
     : bad
     ? '⚠  Review the sections below before submitting the work order.'
     : (v

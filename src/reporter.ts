@@ -85,7 +85,11 @@ export function printSummary(summary: RunSummary): void {
   const v = summary.verification;
   if (v) {
     if (v.matched) {
-      console.log(`\n✓  VERIFIED (${v.passes} pass${v.passes === 1 ? '' : 'es'}) — every CSV line matches the work order.`);
+      if (v.intentionallySkipped?.length) {
+        console.log(`\n✓  VERIFIED (${v.passes} pass${v.passes === 1 ? '' : 'es'}) — no unintentional mismatches. ${v.intentionallySkipped.length} item(s) below were intentionally left as-is (boxes-only mode) and do NOT match the CSV.`);
+      } else {
+        console.log(`\n✓  VERIFIED (${v.passes} pass${v.passes === 1 ? '' : 'es'}) — every CSV line matches the work order.`);
+      }
     } else {
       console.log('\n╔══════════════════════════════════════════════════════════╗');
       console.log('║  ✗  VERIFICATION FAILED — work order does NOT match CSV ║');

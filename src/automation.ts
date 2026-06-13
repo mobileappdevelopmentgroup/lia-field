@@ -407,19 +407,31 @@ async function ensureProdModalClosed(page: Page, delay: number): Promise<void> {
 
 interface PartOption { value: string; text: string }
 
-function bestMatch(options: PartOption[], searchTerm: string): PartOption | undefined {
+// BSI option text looks like "B63 – RUNGS-A R-BASE 23.4" CBO" — the part
+// code is always the first whitespace-delimited token.
+function extractPartCode(text: string): string {
+  const m = text.trim().match(/^(\S+)/);
+  return (m ? m[1] : text).toUpperCase();
+}
+
+// excludeCodes = part codes already present in the target box. Options whose
+// part code is already in the box are skipped so we never re-pick a part
+// that BSI will reject as a duplicate.
+function bestMatch(options: PartOption[], searchTerm: string, excludeCodes: Set<string> = new Set()): PartOption | undefined {
   const norm = searchTerm.trim().toLowerCase();
+  const candidates = options.filter((o) => !excludeCodes.has(extractPartCode(o.text)));
+  const pool = candidates.length > 0 ? candidates : options;
   // 1. Exact match (whole text equals search term)
-  const exact = options.find((o) => o.text.trim().toLowerCase() === norm);
+  const exact = pool.find((o) => o.text.trim().toLowerCase() === norm);
   if (exact) return exact;
   // 2. Text starts with the search term
-  const starts = options.find((o) => o.text.trim().toLowerCase().startsWith(norm));
+  const starts = pool.find((o) => o.text.trim().toLowerCase().startsWith(norm));
   if (starts) return starts;
   // 3. Text contains the search term
-  const contains = options.find((o) => o.text.trim().toLowerCase().includes(norm));
+  const contains = pool.find((o) => o.text.trim().toLowerCase().includes(norm));
   if (contains) return contains;
-  // 4. Fallback — first option
-  return options[0];
+  // 4. Fallback — first option in the candidate pool (or first overall if every option is a duplicate)
+  return pool[0];
 }
 
 // ── Part entry ────────────────────────────────────────────────────────────────
@@ -429,6 +441,7 @@ async function addPart(
   part: PartEntry,
   isLast: boolean,
   opts: AutomationOptions,
+  excludeCodes: Set<string> = new Set(),
 ): Promise<PartResult> {
   const { searchTerm, quantity } = part;
   try {
@@ -474,9 +487,16 @@ async function addPart(
     }
 
     // Find the best match and how far down the list it is
-    const match = bestMatch(options, searchTerm);
+    const match = bestMatch(options, searchTerm, excludeCodes);
     if (!match) {
       return { searchTerm, status: 'not_found', message: 'Could not match any option' };
+    }
+    if (excludeCodes.has(extractPartCode(match.text))) {
+      // Every option BSI offered for this search term is already in the box —
+      // don't click it, BSI would reject it as a duplicate and pop a blocking modal.
+      console.log(`  Part "${searchTerm}": best match "${match.text}" is already in this box — skipping`);
+      if (isLast) await ensureProdModalClosed(page, opts.actionDelay);
+      return { searchTerm, status: 'skipped', message: `Already in this box (as "${extractPartCode(match.text)}")` };
     }
     const matchIndex = options.findIndex((o) => o.value === match.value);
     // Tab lands focus on #ResPno. First ArrowDown selects item 0, second selects item 1, etc.
@@ -653,8 +673,11 @@ async function addPartsToBox(
 
     for (let i = 0; i < partsToAdd.length; i++) {
       const isLast = i === partsToAdd.length - 1;
-      const result = await addPart(page, partsToAdd[i], isLast, opts);
+      const result = await addPart(page, partsToAdd[i], isLast, opts, inBoxSet);
       partResults.push(result);
+      if (result.status === 'success' && result.selectedOption) {
+        inBoxSet.add(extractPartCode(result.selectedOption));
+      }
       if (result.status !== 'success') {
         console.warn(`  [WARN] Part "${result.searchTerm}" → ${result.status}: ${result.message ?? ''}`);
         if (!isLast) {
