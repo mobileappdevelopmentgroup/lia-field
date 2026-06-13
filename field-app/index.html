@@ -144,6 +144,8 @@
                         padding: 5px 26px 5px 9px; width: 100%; outline: none;
                         -webkit-appearance: none; appearance: none; transition: border-color .12s; }
     input.field-input:focus { border-color: var(--accent); }
+    input.field-input.serial-warn,
+    input.field-input.serial-warn:focus { border-color: var(--err); box-shadow: 0 0 0 2px rgba(var(--err-rgb), .25); }
     input.field-input::placeholder { color: var(--muted); }
     .field-clear-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
                      background: none; border: none; color: var(--muted); font-size: 18px;
@@ -201,6 +203,11 @@
     .part-btn.active { background: rgba(var(--accent-rgb),.18); border-color: var(--accent); color: var(--accent-fg); }
     .pb-count { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: var(--accent); }
     .pb-dqty  { font-size: 8px; font-weight: 700; color: var(--accent); margin-left: 1px; vertical-align: super; }
+    .ac-dqty  { font-size: 11px; font-weight: 700; color: var(--accent-fg); margin-left: 8px; }
+    .chip-qty-input { width: 36px; background: var(--surf); border: 1px solid var(--accent);
+                      border-radius: 5px; color: var(--text); font-family: var(--mono); font-size: 13px;
+                      text-align: center; padding: 1px 2px; outline: none;
+                      -webkit-appearance: none; appearance: none; }
     .parts-empty-msg { font-size: 11px; color: var(--muted); text-align: center;
                        padding: 6px 0; font-style: italic; }
 
@@ -600,7 +607,7 @@
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
-  <div class="sheet-desc">★ Starred parts appear as quick-tap buttons. The × column sets the starting quantity per tap — subsequent taps always add 1.</div>
+  <div class="sheet-desc">★ Starred parts appear as quick-tap buttons. The × column sets how many are added per tap — a part set to ×2 counts 2, 4, 6… everywhere, including search results. Tap a selected part's chip to type the exact count.</div>
   <div class="sheet-fields" id="lib-list"></div>
   <div class="sheet-add-row">
     <input type="text" id="new-lib-input" placeholder="New part # (e.g. Lgh123WP)" autocomplete="off">
@@ -927,7 +934,9 @@ $('job-wo').addEventListener('input',   scheduleSave);
 function clearEntryForm() {
   ['fi-serial','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
   const qty = $('fi-part-qty'); if (qty) qty.value = '1';
+  _qtyExplicit = false;
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
+  updateSerialWarnState();
   _currentParts = new Map();
   renderPartButtons();
   renderSelectedParts();
@@ -936,7 +945,9 @@ function clearEntryForm() {
 function clearFormAll() {
   ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
   const qty = $('fi-part-qty'); if (qty) qty.value = '1';
+  _qtyExplicit = false;
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
+  updateSerialWarnState();
   _currentParts = new Map();
   renderPartButtons();
   renderSelectedParts();
@@ -950,7 +961,18 @@ document.addEventListener('click', e => {
   if (!x) return;
   const target = $(x.dataset.clear);
   if (target) { target.value = ''; target.focus(); }
+  if (x.dataset.clear === 'fi-serial') updateSerialWarnState();
 });
+
+// Serial numbers are digits-only; flag anything else so the user knows to
+// double-check or re-scan. Returns true when the current value is suspect.
+function updateSerialWarnState() {
+  const el = $('fi-serial');
+  const bad = /\D/.test(el.value);
+  el.classList.toggle('serial-warn', bad);
+  return bad;
+}
+$('fi-serial').addEventListener('input', updateSerialWarnState);
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
 function setupAutocomplete(inputId, listId, options) {
@@ -1018,7 +1040,8 @@ function renderPartButtons() {
     btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(name.toUpperCase()) + dLabel;
     btn.addEventListener('click', () => {
       const cur = _currentParts.get(name) || 0;
-      _currentParts.set(name, cur === 0 ? defaultQty : cur + 1);
+      // Each tap adds the catalog qty: a ×2 part counts 2, 4, 6…
+      _currentParts.set(name, cur + defaultQty);
       renderPartButtons(); renderSelectedParts();
     });
     grid.appendChild(btn);
@@ -1033,9 +1056,32 @@ function renderSelectedParts() {
     const chip = document.createElement('span');
     chip.className = 'part-chip';
     chip.innerHTML = `${esc(name.toUpperCase())}${qty > 1 ? ` ×${qty}` : ''} <button class="part-chip-x" title="Remove">×</button>`;
-    chip.querySelector('.part-chip-x').addEventListener('click', () => {
+    chip.querySelector('.part-chip-x').addEventListener('click', e => {
+      e.stopPropagation();
       _currentParts.delete(name); renderPartButtons(); renderSelectedParts();
     });
+    // Tap the chip to type the exact installed count instead of tapping repeatedly
+    chip.addEventListener('click', () => {
+      const cur = _currentParts.get(name) || 1;
+      chip.innerHTML = `${esc(name.toUpperCase())} ×<input type="number" class="chip-qty-input" min="0" max="99" inputmode="numeric" value="${cur}">`;
+      const inp = chip.querySelector('input');
+      inp.focus(); inp.select();
+      let done = false;
+      const commit = () => {
+        if (done) return; done = true;
+        const v = parseInt(inp.value, 10);
+        if (!isNaN(v)) {
+          if (v > 0) _currentParts.set(name, Math.min(v, 99));
+          else _currentParts.delete(name);
+        }
+        renderPartButtons(); renderSelectedParts();
+      };
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', e2 => {
+        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
+        else if (e2.key === 'Escape') { done = true; renderSelectedParts(); }
+      });
+    }, { once: true });
     container.appendChild(chip);
   });
 }
@@ -1356,6 +1402,7 @@ async function _manualDecodeTick(e) {
     return;
   }
   $('fi-serial').value = '';
+  updateSerialWarnState();
   playSound('scanFail');
   $('scan-hint').textContent = "Couldn't read — try again";
   $('scan-hint').classList.add('warn');
@@ -1368,7 +1415,7 @@ async function _manualDecodeTick(e) {
 
 function _onScanSuccess(value) {
   $('fi-serial').value = value;
-  playSound('scan');
+  playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
   stopScan();
 }
 
@@ -1383,10 +1430,11 @@ async function _onFallbackPhotoCaptured(e) {
   const code = await _decodeImageFile(file);
   if (code) {
     $('fi-serial').value = code;
-    playSound('scan');
+    playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
     $('scan-overlay').classList.add('hidden');
   } else {
     $('fi-serial').value = '';
+    updateSerialWarnState();
     playSound('scanFail');
     $('scan-hint').textContent = "Couldn't read the barcode — try again";
     $('scan-hint').classList.add('warn');
@@ -1503,6 +1551,7 @@ function addCustomField() {
 // ── Edit / Duplicate ladder ───────────────────────────────────────────────────
 function fillForm(l, includeSerial) {
   $('fi-serial').value = includeSerial ? (l.serialNum || '') : '';
+  updateSerialWarnState();
   $('fi-brand').value  = l.brand      || '';
   $('fi-type').value   = l.type       || '';
   $('fi-length').value = l.length     || '';
@@ -1534,20 +1583,31 @@ function duplicateLadder(idx) {
 }
 
 // ── Manual part input + autocomplete ─────────────────────────────────────────
+// True only when the user actually typed in the qty box — then the number is
+// the exact installed count, not an increment.
+let _qtyExplicit = false;
+
 function addManualPart() {
   const input = $('fi-part-manual');
   const raw = input.value.trim();
   if (!raw) return;
   const qtyInput = $('fi-part-qty');
-  const qty = Math.max(1, parseInt(qtyInput?.value, 10) || 1);
   const lib = getLibrary();
   const found = lib.find(p => p.name.toLowerCase() === raw.toLowerCase());
   const partName = found ? found.name : raw;
+  const step = (found && found.defaultQty) || 1;
   const cur = _currentParts.get(partName) || 0;
-  _currentParts.set(partName, cur + qty);
+  if (_qtyExplicit) {
+    // User dictated the count — set it outright (type 7 → exactly 7).
+    _currentParts.set(partName, Math.max(1, parseInt(qtyInput?.value, 10) || 1));
+  } else {
+    // Catalog behavior: first add pulls the start qty, repeats add it again (2 → 4 → 6…).
+    _currentParts.set(partName, cur + step);
+  }
   if (!found) ensureInLibrary(raw);
   input.value = '';
   if (qtyInput) qtyInput.value = '1';
+  _qtyExplicit = false;
   $('ac-part-list').classList.remove('open');
   renderPartButtons(); renderSelectedParts();
   input.focus();
@@ -1557,8 +1617,9 @@ $('btn-add-part-manual').addEventListener('click', addManualPart);
 $('fi-part-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
 
 // Qty input: clear on focus, restore 1 if left empty
-$('fi-part-qty').addEventListener('focus', function() { this.value = ''; });
-$('fi-part-qty').addEventListener('blur',  function() { if (!this.value || parseInt(this.value) < 1) this.value = '1'; });
+$('fi-part-qty').addEventListener('focus', function() { this.value = ''; _qtyExplicit = false; });
+$('fi-part-qty').addEventListener('input', function() { _qtyExplicit = this.value.trim() !== ''; });
+$('fi-part-qty').addEventListener('blur',  function() { if (!this.value || parseInt(this.value) < 1) { this.value = '1'; _qtyExplicit = false; } });
 $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
 
 (function setupPartAutocomplete() {
@@ -1576,7 +1637,9 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
     matches.forEach(p => {
       const item = document.createElement('div');
       item.className = 'ac-item';
-      item.textContent = p.name;
+      item.dataset.name = p.name;
+      const dq = p.defaultQty || 1;
+      item.innerHTML = esc(p.name) + (dq > 1 ? `<span class="ac-dqty">adds ${dq}</span>` : '');
       function pickPart(name) {
         input.value = name;
         list.classList.remove('open');
@@ -1607,7 +1670,7 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
       items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
     } else if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
       e.preventDefault();
-      input.value = items[focusedIdx].textContent;
+      input.value = items[focusedIdx].dataset.name;
       list.classList.remove('open');
       addManualPart();
     } else if (e.key === 'Escape') { list.classList.remove('open'); }

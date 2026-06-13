@@ -1,4 +1,4 @@
-const CACHE = 'lia-field-v20';
+const CACHE = 'lia-field-v21';
 const ASSETS = [
   './', './index.html', './manifest.json',
   'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js'
