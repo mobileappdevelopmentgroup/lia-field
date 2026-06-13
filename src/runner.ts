@@ -8,11 +8,11 @@ import {
   runAutomationWithDiff,
 } from './automation.js';
 import { buildSummary, printSummary, writeJsonLog } from './reporter.js';
-import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice, FlaggedLadder, WorkOrderBox, VerificationReport } from './types.js';
+import { runVerificationLoop } from './verify.js';
+import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice, FlaggedLadder, WorkOrderBox } from './types.js';
 
 const PM36_FLAG_THRESHOLD = 90;   // flag if total > $90 AND box contains PM36
 const HIGH_COST_THRESHOLD  = 250;  // flag any box with total > $250
-const MAX_VERIFY_PASSES    = 5;    // post-import CSV vs work-order checks (fixes run between passes)
 
 const AUTOMATION_OPTS: AutomationOptions = {
   dropdownTimeout: 15_000,
@@ -147,74 +147,27 @@ export async function run(
   // ── Verification loop ──────────────────────────────────────────────────────
   // Re-scrape the work order and compare every CSV line against it. Anything
   // missing is re-imported, then checked again — up to MAX_VERIFY_PASSES checks.
-  const verification: VerificationReport = {
-    passes: 0, fixAttempts: 0, matched: false, missingBoxes: [], missingParts: [],
-  };
   // In boxes-only mode the user chose to leave gaps in pre-existing boxes —
   // report those but don't "fix" them against the user's choice.
   const intentionalSerials = new Set(
     choice === 'boxes-only' ? diff.existingWithGaps.map((g) => g.record.serialNum) : [],
   );
-  let finalBoxes: WorkOrderBox[] = [];
 
-  for (let pass = 1; pass <= MAX_VERIFY_PASSES; pass++) {
-    verification.passes = pass;
-    console.log(`\n[VERIFY ${pass}/${MAX_VERIFY_PASSES}] Comparing work order against CSV...`);
-    await new Promise((r) => setTimeout(r, 1500)); // let page settle
-    try {
-      finalBoxes = await scrapeWorkOrderBoxes(workPage);
-    } catch (err: unknown) {
-      console.error(`  Could not re-read the work order: ${err instanceof Error ? err.message : String(err)}`);
-      break;
-    }
-
-    const vdiff = diffCsvVsWorkOrder(records, finalBoxes);
-    const fixableGaps = vdiff.existingWithGaps.filter((g) => !intentionalSerials.has(g.record.serialNum));
-    const skippedGaps = vdiff.existingWithGaps.filter((g) => intentionalSerials.has(g.record.serialNum));
-
-    verification.missingBoxes = vdiff.missingBoxes.map((r) => r.serialNum);
-    verification.missingParts = fixableGaps.map((g) => ({
-      serialNum: g.record.serialNum,
-      parts: g.missingParts.map((p) => p.searchTerm),
-    }));
-    if (skippedGaps.length > 0) {
-      verification.intentionallySkipped = skippedGaps.map((g) => ({
-        serialNum: g.record.serialNum,
-        parts: g.missingParts.map((p) => p.searchTerm),
-      }));
-    } else {
-      delete verification.intentionallySkipped;
-    }
-
-    if (vdiff.missingBoxes.length === 0 && fixableGaps.length === 0) {
-      verification.matched = true;
-      console.log('  ✓ Verified — every CSV line matches the work order.');
-      break;
-    }
-
-    console.log(`  [MISMATCH] ${vdiff.missingBoxes.length} ladder(s) missing, ${fixableGaps.length} box(es) with missing parts:`);
-    for (const r of vdiff.missingBoxes) console.log(`    ✗ SN ${r.serialNum}: not on work order`);
-    for (const g of fixableGaps) console.log(`    ⚠ SN ${g.record.serialNum}: missing ${g.missingParts.map((p) => p.searchTerm).join(', ')}`);
-
-    if (pass === MAX_VERIFY_PASSES) {
-      console.error(`  [ALERT] Still mismatched after ${MAX_VERIFY_PASSES} verification passes — review the summary and fix manually.`);
-      break;
-    }
-
-    verification.fixAttempts++;
-    console.log(`  Re-importing the missing items (fix attempt ${verification.fixAttempts})...`);
-    try {
-      const retryResults = await runAutomationWithDiff(
-        { missingBoxes: vdiff.missingBoxes, existingWithGaps: fixableGaps, alreadyComplete: [] },
+  const { verification, finalBoxes: verifiedBoxes } = await runVerificationLoop(
+    records,
+    ladderResults,
+    intentionalSerials,
+    {
+      scrapeBoxes: () => scrapeWorkOrderBoxes(workPage),
+      fixGaps: (gaps) => runAutomationWithDiff(
+        { ...gaps, alreadyComplete: [] },
         'all',
         workPage,
         AUTOMATION_OPTS,
-      );
-      mergeLadderResults(ladderResults, retryResults);
-    } catch (err: unknown) {
-      console.error(`  Fix attempt failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+      ),
+    },
+  );
+  let finalBoxes: WorkOrderBox[] = verifiedBoxes;
 
   const durationMs = Date.now() - startTime;
   const summary = buildSummary(ladderResults, durationMs);
@@ -274,18 +227,4 @@ export async function run(
   console.log(`\nDetailed log: ${logPath}\n`);
 
   return { success: true, summary, logPath };
-}
-
-// Fold retry results from a verification fix pass into the original results.
-// A retry entry only replaces the original when it actually improved things,
-// so a ladder that imported cleanly the first time is never downgraded.
-function mergeLadderResults(base: LadderResult[], retry: LadderResult[]): void {
-  for (const r of retry) {
-    const idx = base.findIndex((b) => b.serialNum === r.serialNum);
-    if (idx === -1) {
-      base.push(r);
-    } else if (r.partsOk > base[idx]!.partsOk || (base[idx]!.status !== 'success' && r.status === 'success')) {
-      base[idx] = r;
-    }
-  }
 }
