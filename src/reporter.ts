@@ -81,6 +81,26 @@ export function printSummary(summary: RunSummary): void {
 
   console.log(totalsTable.toString());
 
+  // Verification result — CSV vs final work-order state
+  const v = summary.verification;
+  if (v) {
+    if (v.matched) {
+      console.log(`\n✓  VERIFIED (${v.passes} pass${v.passes === 1 ? '' : 'es'}) — every CSV line matches the work order.`);
+    } else {
+      console.log('\n╔══════════════════════════════════════════════════════════╗');
+      console.log('║  ✗  VERIFICATION FAILED — work order does NOT match CSV ║');
+      console.log('╚══════════════════════════════════════════════════════════╝\n');
+      console.log(`  Checked ${v.passes} time(s), re-imported ${v.fixAttempts} time(s); still missing:`);
+      for (const sn of v.missingBoxes) console.log(`  ✗  SN ${sn}: ladder not on work order`);
+      for (const g of v.missingParts) console.log(`  ⚠  SN ${g.serialNum}: missing parts ${g.parts.join(', ')}`);
+      console.log('\n  Add these manually in bsiwebapp.com, then re-run to confirm.\n');
+    }
+    if (v.intentionallySkipped?.length) {
+      console.log('  Skipped by your choice (boxes-only mode):');
+      for (const g of v.intentionallySkipped) console.log(`  -  SN ${g.serialNum}: ${g.parts.join(', ')}`);
+    }
+  }
+
   // Prominent exceptions block — anything the user needs to fix manually
   const needsAttention = summary.ladderResults.filter(
     (r) => r.status !== 'success',

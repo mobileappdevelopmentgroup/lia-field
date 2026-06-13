@@ -108,6 +108,20 @@ async function waitForNetworkIdle(page: Page, timeout = 6_000): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout }).catch(() => undefined);
 }
 
+// Auto-accept any native browser alert/confirm BSI shows (e.g. duplicate part
+// warnings). Guarded with a WeakSet so the verification loop can re-run the
+// automation on the same page without stacking handlers — a second accept()
+// on the same dialog throws.
+const _dialogWired = new WeakSet<Page>();
+function wireDialogAutoAccept(page: Page): void {
+  if (_dialogWired.has(page)) return;
+  _dialogWired.add(page);
+  page.on('dialog', async (dialog) => {
+    console.warn(`  [BSI alert] ${dialog.message()}`);
+    await dialog.accept().catch(() => undefined);
+  });
+}
+
 // Case-insensitive label match for <select>. No-op if label is empty.
 async function selectByLabel(page: Page, selector: string, label: string): Promise<void> {
   if (!label) return;
@@ -717,11 +731,7 @@ export async function runAutomation(
 ): Promise<LadderResult[]> {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 
-  // Auto-accept any native browser alert/confirm BSI shows (e.g. duplicate part warnings).
-  workPage.on('dialog', async (dialog) => {
-    console.warn(`  [BSI alert] ${dialog.message()}`);
-    await dialog.accept();
-  });
+  wireDialogAutoAccept(workPage);
 
   const results: LadderResult[] = [];
 
@@ -887,10 +897,7 @@ export async function runAutomationWithDiff(
 ): Promise<LadderResult[]> {
   fs.mkdirSync(LOGS_DIR, { recursive: true });
 
-  workPage.on('dialog', async (dialog) => {
-    console.warn(`  [BSI alert] ${dialog.message()}`);
-    await dialog.accept();
-  });
+  wireDialogAutoAccept(workPage);
 
   const results: LadderResult[] = [];
 

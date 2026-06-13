@@ -38,6 +38,20 @@ export interface ExtraPartEntry {
   partNum: string;     // part number found in BSI but not in CSV
 }
 
+export interface VerificationGap {
+  serialNum: string;
+  parts: string[];   // CSV search terms still missing from this box
+}
+
+export interface VerificationReport {
+  passes: number;          // verification passes run (1–5)
+  fixAttempts: number;     // re-import attempts made to close mismatches
+  matched: boolean;        // true when every CSV line is on the work order
+  missingBoxes: string[];  // serials in CSV still absent from the work order
+  missingParts: VerificationGap[];          // boxes still missing CSV parts
+  intentionallySkipped?: VerificationGap[]; // boxes-only mode: gaps the user chose to leave
+}
+
 export interface RunSummary {
   totalLadders: number;
   successLadders: number;
@@ -51,6 +65,7 @@ export interface RunSummary {
   durationMs: number;
   extraOnWorkOrder?: ExtraPartEntry[]; // parts in BSI boxes not found in CSV
   flaggedLadders?: FlaggedLadder[];   // high-cost or PM36+cost red flags
+  verification?: VerificationReport;  // post-import CSV vs work-order check
 }
 
 // ── Diff / idempotent re-run types ───────────────────────────────────────────

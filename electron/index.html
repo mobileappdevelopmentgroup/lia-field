@@ -1043,14 +1043,47 @@ function renderSummary(result) {
       `<table style="width:100%;border-collapse:collapse;">${flagRows.join('')}</table>`;
   }
 
+  // Verification — CSV vs final work-order state (re-checked up to 5 times)
+  const v = s.verification;
+  const verifyFail = !!(v && !v.matched);
+  if (v) {
+    let vHtml = '';
+    if (verifyFail) {
+      const rows = [
+        ...v.missingBoxes.map(sn =>
+          `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--err);">✗ SN ${esc(sn)}</td>`+
+          `<td style="padding:4px 8px;font-size:12px;">ladder not on work order</td></tr>`),
+        ...v.missingParts.map(g =>
+          `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--err);">⚠ SN ${esc(g.serialNum)}</td>`+
+          `<td style="padding:4px 8px;">${g.parts.map(p=>`<span class="part-tag tag-error">${esc(p)}</span>`).join(' ')}</td></tr>`),
+      ];
+      vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--err);">✗  VERIFICATION FAILED — still missing after ${v.passes} check(s) and ${v.fixAttempts} retry(ies). Add these manually in BSI.</div>`+
+        `<table style="width:100%;border-collapse:collapse;">${rows.join('')}</table>`;
+    } else {
+      vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--ok);">✓  VERIFIED — every CSV line matches the work order (${v.passes} check${v.passes===1?'':'s'}).</div>`;
+    }
+    if (v.intentionallySkipped && v.intentionallySkipped.length) {
+      const skipRows = v.intentionallySkipped.map(g =>
+        `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--muted);">SN ${esc(g.serialNum)}</td>`+
+        `<td style="padding:4px 8px;font-size:12px;color:var(--muted);">${esc(g.parts.join(', '))}</td></tr>`);
+      vHtml += `<div style="margin:14px 0 4px;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--muted);">SKIPPED BY YOUR CHOICE (boxes-only mode)</div>`+
+        `<table style="width:100%;border-collapse:collapse;">${skipRows.join('')}</table>`;
+    }
+    $('sum-extra').innerHTML += vHtml;
+  }
+
   const hasCostFlags = flags.length > 0;
-  const bad = s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0||hasCostFlags;
+  const bad = verifyFail||s.errorLadders>0||s.partialLadders>0||s.failedParts>0||(s.extraOnWorkOrder||[]).length>0||hasCostFlags;
   $('result-note').className = 'result-note ' + (bad?'note-bad':'note-good');
-  $('result-note').textContent = hasCostFlags
+  $('result-note').textContent = verifyFail
+    ? '✗  Work order does NOT match the CSV — see VERIFICATION FAILED below. Fix manually before submitting.'
+    : hasCostFlags
     ? '⚑  Cost flags require supervisor review before submitting the work order.'
     : bad
     ? '⚠  Review the sections below before submitting the work order.'
-    : '✓  All ladders and parts match the CSV. Safe to submit the work order.';
+    : (v
+      ? '✓  Verified against BSI — all ladders and parts match the CSV. Safe to submit the work order.'
+      : '✓  All ladders and parts match the CSV. Safe to submit the work order.');
   if (result.logPath) $('log-path').textContent = `Log: ${result.logPath}`;
 }
 
