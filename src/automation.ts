@@ -716,15 +716,30 @@ export async function launchBrowser(): Promise<{
   context: BrowserContext;
   mainPage: Page;
 }> {
-  const browser = await chromium.launch({
-    headless: false,
-    channel: 'chrome',
-    args: [
-      '--start-maximized',
-      '--disable-extensions',           // prevent extensions from interfering with CDP
-      '--disable-background-networking', // reduce unnecessary background traffic
-    ],
-  });
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({
+      headless: false,
+      channel: 'chrome',
+      args: [
+        '--start-maximized',
+        '--disable-extensions',           // prevent extensions from interfering with CDP
+        '--disable-background-networking', // reduce unnecessary background traffic
+      ],
+    });
+  } catch (err) {
+    // channel:'chrome' drives the *system* Google Chrome install. Without it,
+    // Playwright throws a stack trace that means nothing to a field user.
+    const msg = String(err);
+    if (/executable doesn't exist|Chromium distribution 'chrome'|ENOENT/i.test(msg)) {
+      throw new Error(
+        'Google Chrome is required but was not found on this computer.\n\n' +
+        'Lia drives your installed Google Chrome to fill out the BSI work order. ' +
+        'Install Chrome from https://www.google.com/chrome/ and run the import again.',
+      );
+    }
+    throw err;
+  }
   const context = await browser.newContext({
     viewport: null, // let the OS window size dictate the viewport
   });

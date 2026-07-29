@@ -12,6 +12,7 @@
     "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
     "electron:dev": "npm run build:runner && electron .",
     "electron:build": "npm run build:runner && electron-builder --mac dmg",
+    "electron:build:win": "npm run build:runner && electron-builder --win nsis",
     "electron:build:dir": "npm run build:runner && electron-builder --mac dir"
   },
   "dependencies": {
@@ -53,6 +54,25 @@
         "width": 540,
         "height": 380
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lia"
     },
     "files": [
       "electron/**",

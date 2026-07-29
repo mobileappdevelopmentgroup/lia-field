@@ -20,6 +20,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [ ] Consider storing JWT session (`~/Library/Application Support/Lia/lia-auth.json`) in macOS Keychain via `keytar` instead of plaintext JSON
 - [ ] Add max-length check on `workOrderId` in `automation:start` IPC handler before DB storage
 
+## Release targets
+
+| Product | Channel | Identifier | Notes |
+|---------|---------|-----------|-------|
+| Lia Field (iOS) | TestFlight → App Store | ASC app `6778643426`, bundle `com.mobileappdevelopmentgroup.liafield` | Internal beta group `e459ff67-f6f5-490b-9ce3-c07d55a527ab` |
+| Lia Field (Android) | Play internal testing | `com.mobileappdevelopmentgroup.liafield` | Signed with `~/.android-keystores/lia-field-release.keystore` |
+| Lia Office (macOS) | Direct download (DMG) | — | `npm run electron:build` |
+| Lia Office (Windows) | Direct download (NSIS) | — | Built in CI — `.github/workflows/build-windows.yml`. **Not** shipped via Microsoft Store. |
+
+Privacy policy (required by both stores): <https://d1uwg2boqwq3l6.cloudfront.net/privacy.html>,
+source at `inspection-site/privacy.html`. It covers **Lia Field only** — Lia Field stores everything
+in on-device `localStorage` and makes no network calls, whereas Lia Office syncs to Supabase. Do not
+broaden that policy to cover both without rewriting the data-collection claims.
+
+The Windows build needs a `LIA_CONFIG_JSON` repo secret (the full body of `config.json`, which is
+gitignored). Signing is optional until a certificate exists: add `WINDOWS_CERT_BASE64` and
+`WINDOWS_CERT_PASSWORD` and builds sign automatically.
+
 ## Commands
 
 ```bash

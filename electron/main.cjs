@@ -30,9 +30,19 @@ function getRunnerPath() {
     : path.join(__dirname, '..', 'dist', 'electron-runner.cjs');
 }
 
+// Playwright's per-platform default browser cache. Lia launches system Chrome
+// (channel:'chrome'), so this rarely matters — but pointing it at a macOS-only
+// path made the runner unusable on Windows, so resolve it properly per platform.
 function getPlaywrightBrowsersPath() {
   if (app.isPackaged) return path.join(process.resourcesPath, 'playwright-browsers');
-  return path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
+  switch (process.platform) {
+    case 'darwin':
+      return path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
+    case 'win32':
+      return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
+    default:
+      return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'ms-playwright');
+  }
 }
 
 function getLogsDir() {

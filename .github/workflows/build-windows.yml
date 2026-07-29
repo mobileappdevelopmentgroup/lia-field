@@ -1,0 +1,86 @@
+name: Build Lia Office (Windows)
+
+# Produces a signed-if-possible NSIS installer for Lia Office.
+# Runs on a Windows runner because cross-building NSIS from macOS is unreliable
+# and Authenticode signing effectively requires Windows.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to build'
+        required: false
+        default: 'master'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # config.json is gitignored (it holds the Supabase URL + anon key), so it
+      # has to be materialized here. Store the whole file body as the LIA_CONFIG_JSON
+      # repository secret — Settings → Secrets and variables → Actions.
+      - name: Write config.json
+        shell: bash
+        env:
+          LIA_CONFIG_JSON: ${{ secrets.LIA_CONFIG_JSON }}
+        run: |
+          if [ -z "$LIA_CONFIG_JSON" ]; then
+            echo "::error::LIA_CONFIG_JSON secret is not set — the build would ship without Supabase config."
+            exit 1
+          fi
+          printf '%s' "$LIA_CONFIG_JSON" > config.json
+          node -e "JSON.parse(require('fs').readFileSync('config.json','utf8'))" \
+            || { echo "::error::LIA_CONFIG_JSON is not valid JSON"; exit 1; }
+          echo "config.json written ($(wc -c < config.json) bytes)"
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Code signing is optional so the workflow is useful before the certificate
+      # lands. Once you have a .pfx, add these two secrets and every build is signed:
+      #   WINDOWS_CERT_BASE64  — base64 of the .pfx file
+      #   WINDOWS_CERT_PASSWORD
+      # electron-builder reads CSC_LINK / CSC_KEY_PASSWORD automatically.
+      - name: Build installer
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$CSC_LINK" ]; then
+            echo "::warning::No signing certificate configured — installer will be UNSIGNED and will trigger a SmartScreen warning."
+          fi
+          npm run electron:build:win
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: lia-office-windows
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+          retention-days: 30
