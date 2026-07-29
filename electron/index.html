@@ -1317,7 +1317,7 @@ async function loadHistory() {
   body.innerHTML = '';
 
   if (!res.ok) {
-    body.innerHTML = `<div class="hist-status">Error: ${res.error}</div>`;
+    body.innerHTML = `<div class="hist-status">Error: ${esc(res.error)}</div>`;
     return;
   }
 

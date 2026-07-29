@@ -56,8 +56,11 @@ DROP POLICY IF EXISTS "inspections_update_auth" ON public.inspections;
 CREATE POLICY "inspections_update_auth" ON public.inspections
   FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
--- Grant anon SELECT so the public S3 site can query without login
-GRANT SELECT                ON public.inspections TO anon;
+-- anon must NOT reach the base table — the public S3 site reads the
+-- ladder_inspections_public view instead (granted at the bottom of this file).
+-- REVOKE (not just omitting the GRANT) so re-running this migration actually
+-- removes the privilege on databases where the old GRANT was already applied.
+REVOKE ALL ON public.inspections FROM anon;
 GRANT SELECT, INSERT, UPDATE ON public.inspections TO authenticated;
 
 -- ── Public view for the S3 inspection website ─────────────────────────────────
@@ -77,5 +80,9 @@ CREATE VIEW public.ladder_inspections_public AS
   FROM public.inspections
   ORDER BY serial_num, inspection_date DESC;
 
+-- This view is the ONLY path anon has to inspection data. It must stay
+-- security_invoker = false (the default) — the view runs with its owner's
+-- rights, which is what lets anon read through it without a base-table grant.
+-- Setting security_invoker = true here would break the public S3 site.
 GRANT SELECT ON public.ladder_inspections_public TO anon;
 GRANT SELECT ON public.ladder_inspections_public TO authenticated;
