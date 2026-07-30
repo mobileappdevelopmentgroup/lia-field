@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Security TODOs
 
 ### 🔴 HIGH — do first
-- [ ] **Rotate Supabase anon key immediately** — key `sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj` is committed in git history on a public repo; go to Supabase dashboard → Project Settings → API → regenerate anon key, then update `config.json`
-- [x] ~~Fix `inspections` table RLS~~ — `supabase/02_inspections.sql` now `REVOKE ALL ON public.inspections FROM anon`; anon reads only the `ladder_inspections_public` view. **Re-run `02_inspections.sql` against the live DB** — the revoke does not apply until you do.
+- [x] ~~Rotate Supabase anon key~~ — **deliberately dropped 2026-07-29, do not re-open without cause.** The key is a *publishable* browser-side identifier, hardcoded at `inspection-site/index.html:312` and deployed to CloudFront by design — the public inspection site cannot query without it. It is in git history because it was always meant to be public. The real defect was anon's grant on the `inspections` base table, fixed below. Rotating would swap one public identifier for another while requiring three coordinated redeploys (S3 site, macOS DMG, `LIA_CONFIG_JSON` CI secret). Revisit only if the Supabase project shows abnormal API volume.
+- [x] ~~Fix `inspections` table RLS~~ — `supabase/02_inspections.sql` `REVOKE ALL ON public.inspections FROM anon`; anon reads only the `ladder_inspections_public` view. **Applied against the live DB 2026-07-29.**
 - [ ] `config.json` is bundled as plaintext in the DMG (`extraResources`) — consider storing the anon key in macOS Keychain via `keytar` or prompting on first launch
 
 ### 🟡 MEDIUM
-- [ ] Add path validation to `csv:parse` and `inspections:parse-csv` IPC handlers in `electron/main.cjs` — currently accept any file path from the renderer; validate extension and constrain to expected directories
+- [x] ~~Add path validation to `csv:parse` and `inspections:parse-csv` IPC handlers~~ — both now go through `resolveCsvPath()` in `electron/main.cjs`: realpath (so symlinks are resolved before the extension check), `.csv` extension, regular-file check, 50 MB cap. Note the original suggestion to "constrain to expected directories" was **not** implemented — users legitimately open CSVs from Downloads, Desktop, external drives and network shares, so a directory allowlist would break normal use without adding much.
 - [x] ~~Fix IPC listener accumulation~~ — `electron/preload.cjs` routes every `onX` through an `on()` helper that clears the channel first, so re-binding can't stack listeners. Note: `ipcRenderer.once()` (the original suggestion) would have been a bug — the renderer binds at module scope and reuses handlers across runs, so a one-shot listener would leave the second automation run with no completion handler.
 - [x] ~~Escape `res.error` before inserting into `innerHTML`~~ — now `esc(res.error)` at `electron/index.html:1320`
 

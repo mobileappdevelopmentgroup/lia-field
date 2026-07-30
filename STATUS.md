@@ -79,9 +79,10 @@ catalog quantities everywhere (the June 12 work), on top of the barcode scanner.
 3. **CI path**: set the `LIA_CONFIG_JSON` repo secret (full body of the gitignored
    `config.json`; the workflow fails fast without it), then run
    **Actions → Build Lia Office (Windows)**.
-4. **Local path**: on a real Windows box, clone, `npm ci`, drop `config.json` in
-   by hand, `npm run electron:build:win`. No repo secret needed at all — item 3
-   becomes unnecessary.
+4. **Local path** ← chosen. On a real Windows box, clone, `npm ci`, drop
+   `config.json` in by hand, `npm run electron:build:win`. No repo secret needed
+   at all — item 3 becomes unnecessary. Full step-by-step, including winget
+   prerequisites and the signing caveat: **`docs/WINDOWS-BUILD.md`**.
 
 Either way, verify the installer on a real Windows machine. ⚠️ The NSIS build has
 never executed. It cannot be built or verified from macOS, so treat the first run

@@ -196,12 +196,49 @@ ipcMain.handle('dialog:open-csv', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+// ── CSV path validation ──────────────────────────────────────────────────────
+// Both CSV handlers take a path straight from the renderer and hand the parsed
+// contents back to it. In normal use that path came from a native open dialog,
+// but a compromised renderer could pass anything — which would make these an
+// arbitrary-file-read primitive. Directory allowlisting is not workable here:
+// users legitimately load CSVs from Downloads, Desktop, external drives and
+// network shares. So validate the file itself. Resolve symlinks *first*, then
+// check the extension, so a `ladders.csv` symlink pointing at a private file
+// is rejected on the target's extension rather than the link's.
+
+const MAX_CSV_BYTES = 50 * 1024 * 1024;
+
+function resolveCsvPath(filePath) {
+  if (typeof filePath !== 'string' || filePath.length === 0) return { error: 'No file selected.' };
+  if (filePath.includes('\0')) return { error: 'Invalid file path.' };
+
+  let real;
+  try { real = fs.realpathSync(path.resolve(filePath)); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
+
+  if (path.extname(real).toLowerCase() !== '.csv') return { error: 'Only .csv files can be opened.' };
+
+  let stat;
+  try { stat = fs.statSync(real); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
+
+  if (!stat.isFile()) return { error: 'Not a regular file.' };
+  if (stat.size > MAX_CSV_BYTES) {
+    return { error: `File is too large (${(stat.size / 1048576).toFixed(1)} MB, limit 50 MB).` };
+  }
+
+  return { path: real };
+}
+
 // ── IPC: CSV preview ─────────────────────────────────────────────────────────
 
 ipcMain.handle('csv:parse', (_event, filePath) => {
   const Papa = require('papaparse');
+  const checked = resolveCsvPath(filePath);
+  if (checked.error) return { error: checked.error };
+
   let content;
-  try { content = fs.readFileSync(filePath, 'utf-8'); }
+  try { content = fs.readFileSync(checked.path, 'utf-8'); }
   catch (err) { return { error: `Cannot read file: ${err.message}` }; }
 
   const result = Papa.parse(content, { header: true, skipEmptyLines: true });
@@ -438,8 +475,11 @@ ipcMain.handle('inspections:save-sample', async () => {
 
 ipcMain.handle('inspections:parse-csv', (_event, filePath) => {
   const Papa = require('papaparse');
+  const checked = resolveCsvPath(filePath);
+  if (checked.error) return { error: checked.error };
+
   let content;
-  try { content = fs.readFileSync(filePath, 'utf-8'); }
+  try { content = fs.readFileSync(checked.path, 'utf-8'); }
   catch (err) { return { error: `Cannot read file: ${err.message}` }; }
 
   const result = Papa.parse(content, { header: true, skipEmptyLines: true });
