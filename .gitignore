@@ -4,3 +4,4 @@ config.json
 logs/*.json
 logs/*.png
 .DS_Store
+.playwright-mcp/
