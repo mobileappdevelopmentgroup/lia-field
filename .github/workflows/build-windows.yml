@@ -54,8 +54,13 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      # Not `npm test`. On Windows npm runs scripts through cmd.exe, which does
+      # not expand globs — tsx would receive the literal string "src/*.test.ts",
+      # find no such file, and fail the build. Running under bash so the shell
+      # expands the pattern before tsx sees it.
       - name: Test
-        run: npm test
+        shell: bash
+        run: npx tsx --test src/*.test.ts
 
       # Code signing is optional so the workflow is useful before the certificate
       # lands. Once you have a .pfx, add these two secrets and every build is signed:
