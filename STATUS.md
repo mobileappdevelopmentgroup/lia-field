@@ -1,6 +1,6 @@
 # Lia — Project Status
 
-**As of 2026-07-29** · master @ `e9592f2`, pushed, working tree clean.
+**As of 2026-08-08** · master @ `042d579`, pushed, working tree clean.
 
 ---
 
@@ -11,7 +11,7 @@ Three products ship from this repo. Here is the honest state of each.
 | Product | State | Channel |
 |---------|-------|---------|
 | **Lia Field (iOS)** | ✅ Live in TestFlight, build 2 | Internal testing |
-| **Lia Field (Android)** | ✅ Signed AAB + APK built, not yet uploaded | Play internal testing |
+| **Lia Field (Android)** | ✅ **Live in Play internal testing**, versionCode 1 | Internal testing |
 | **Lia Office (macOS)** | ✅ Working, ships as DMG | Direct download |
 | **Lia Office (Windows)** | ⚠️ Code + CI done, **never built** | Direct download (NSIS) |
 | **Ladder Inspection Site** | ✅ Live, unchanged since June | S3 / CloudFront |
@@ -62,12 +62,24 @@ catalog quantities everywhere (the June 12 work), on top of the barcode scanner.
   `npm test` globs `src/*.test.ts`, and npm shells out to `cmd.exe` on Windows,
   which does not expand globs. Now runs `npx tsx` under bash.
 
+### Done 2026-08-08
+
+- **Lia Field is on Google Play internal testing.** App content declarations
+  filled in (privacy policy URL, data safety = no data collected, camera
+  justification), `lia-field-v1.0-vc1.aab` uploaded and rolled out.
+  The tester opt-in link is deliberately kept out of this repo — it lives in
+  `~/Desktop/Lia-Deliverables/FOR-TESTERS.md`, and Play Console shows it under
+  Test and release → Testing → Internal testing → Testers.
+- Enrolled in **Play App Signing** — the local keystore
+  (`a6dc5243…`) is now the *upload* key only; Google holds the app signing key
+  that end users' installs are signed with. The two fingerprints differ by
+  design.
+- Rewrote `~/Desktop/Lia-Deliverables/FOR-TESTERS.md` for the Play install path,
+  with an uninstall-first warning (see below).
+
 ### Blocked on you
 
-1. **Upload the AAB** to Play Console → Internal testing. Needs App content filled
-   in first — privacy policy URL, data safety, camera justification. All three
-   answers are in the deliverables README.
-2. **Windows code-signing certificate** — in progress on your side. Until it
+1. **Windows code-signing certificate** — in progress on your side. Until it
    lands, Windows installers are unsigned and trip SmartScreen. ⚠️ Check how the
    cert is delivered: since June 2023 OV code-signing certs ship on a hardware
    token or cloud HSM, and a hardware token **cannot** be used from a
@@ -76,12 +88,12 @@ catalog quantities everywhere (the June 12 work), on top of the barcode scanner.
 
 ### Then — pick one Windows build path
 
-3. **CI path**: set the `LIA_CONFIG_JSON` repo secret (full body of the gitignored
+2. **CI path**: set the `LIA_CONFIG_JSON` repo secret (full body of the gitignored
    `config.json`; the workflow fails fast without it), then run
    **Actions → Build Lia Office (Windows)**.
-4. **Local path** ← chosen. On a real Windows box, clone, `npm ci`, drop
+3. **Local path** ← chosen. On a real Windows box, clone, `npm ci`, drop
    `config.json` in by hand, `npm run electron:build:win`. No repo secret needed
-   at all — item 3 becomes unnecessary. Full step-by-step, including winget
+   at all — item 2 becomes unnecessary. Full step-by-step, including winget
    prerequisites and the signing caveat: **`docs/WINDOWS-BUILD.md`**.
 
 Either way, verify the installer on a real Windows machine. ⚠️ The NSIS build has
@@ -90,12 +102,37 @@ as unproven whichever path you take.
 
 ### After that
 
-5. Collect tester feedback, fix, bump `versionCode`, re-ship.
-6. Decide on public release. Everything so far is internal-track only.
+4. Collect tester feedback, fix, bump `versionCode`, re-ship. ⚠️ **versionCode 1
+   is permanently burned** — Play rejects it forever, even after a release is
+   deleted. The next Android build must be `versionCode 2` in
+   `field-app/capacitor/android/app/build.gradle:10`.
+5. Decide whether Android production is even wanted. **The Play account is a
+   Personal account** (confirmed 2026-08-08), so production access requires 12
+   testers opted into a *closed* track for 14 continuous days, then a
+   Google-reviewed application. Internal testing earns **zero** progress toward
+   it. Recruit ~18–20 so attrition doesn't reset the clock, and read the live
+   progress card under Test and release → Testing → Closed testing rather than
+   trusting remembered policy details.
+
+   ⚠️ Worth questioning before starting that clock: Lia Field's users are field
+   techs at a handful of businesses. Internal testing caps at 100 testers and
+   closed testing is uncapped — either may serve permanently, making the
+   production gate moot. Public discoverability is not a goal for this app, by
+   the same reasoning that keeps Lia Office off the Microsoft Store. Also
+   unverified: if the Play account predates 2023-11-13 the requirement does not
+   apply at all.
 
 ---
 
 ## Decisions worth remembering
+
+**Sideloaded builds cannot update from Play.** The APKs sent to testers before
+2026-08-08 are signed with `~/.android-keystores/lia-field-release.keystore`
+directly. Play-distributed builds are signed with Google's Play App Signing key.
+Same package name, different signature — Android refuses the install with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` (or a bare "App not installed"). Testers
+must uninstall the sideloaded app first, which wipes its `localStorage`. Don't
+hand out raw APKs alongside the Play track again.
 
 **No Microsoft Store.** Lia Office automates a third-party site
 (`bsiwebapp.com`) under a credentialed login, its users are a handful of
