@@ -407,6 +407,23 @@
     .sheet-add-row input:focus { border-color: var(--accent); }
     .sheet-add-row input::placeholder { color: var(--muted); }
     .sheet-done { width: 100%; flex-shrink: 0; }
+
+    /* ── Job scope ── */
+    .scope-opt { width: 100%; text-align: left; background: var(--surf2);
+                 border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+                 cursor: pointer; color: var(--text); margin-bottom: 8px; }
+    .scope-opt:active { border-color: var(--accent); background: rgba(var(--accent-rgb),.10); }
+    .scope-opt-name { font-size: 15px; font-weight: 700; }
+    .scope-opt-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+    .scope-badge { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+                   text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px;
+                   vertical-align: 1px; }
+    .scope-badge.ladder { background: rgba(var(--accent-rgb),.16); color: var(--accent-fg); }
+    .scope-badge.fp     { background: rgba(var(--ok-rgb),.16);     color: var(--ok-fg); }
+    .fp-todo { padding: 30px 22px; text-align: center; color: var(--muted);
+               font-size: 13.5px; line-height: 1.65; }
+    .fp-todo strong { display: block; color: var(--text); font-size: 15px;
+                      font-weight: 700; margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -521,6 +538,13 @@
 
   </div><!-- /form-panel -->
 
+  <!-- Fall protection jobs: capture form not built yet -->
+  <div id="fp-todo-panel" class="fp-todo" style="display:none;">
+    <strong>Fall protection capture is not built yet</strong>
+    This job is saved and keeps its work order number. Item capture — serial, model,
+    inspection checks and photo evidence — is the next piece of work.
+  </div>
+
   <!-- PANEL 2: Parts grid + manual input -->
   <div id="parts-panel">
     <div class="parts-selected" id="parts-selected"></div>
@@ -625,6 +649,22 @@
 
 <!-- Parts Library Sheet -->
 <div class="sheet-backdrop hidden" id="lib-backdrop"></div>
+<!-- New-job scope chooser -->
+<div class="settings-sheet hidden" id="scope-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">New job</div>
+  <div class="sheet-desc">Ladders and fall protection are always separate work orders, so a job covers one or the other.</div>
+  <button class="scope-opt" data-scope="ladder">
+    <div class="scope-opt-name">Ladder Repair</div>
+    <div class="scope-opt-desc">Serial, brand, type, length and parts — the existing flow.</div>
+  </button>
+  <button class="scope-opt" data-scope="fall_protection">
+    <div class="scope-opt-name">Fall Protection</div>
+    <div class="scope-opt-desc">Harnesses, lanyards and similar — per-item inspection checks.</div>
+  </button>
+  <button class="btn-g sheet-done" id="btn-cancel-scope">Cancel</button>
+</div>
+
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
@@ -864,13 +904,14 @@ function renderJobList() {
   $('jobs-empty').style.display = sorted.length === 0 ? '' : 'none';
   sorted.forEach(job => {
     const count = (job.ladders || []).length;
+    const sc    = SCOPES[jobScope(job)] || SCOPES.ladder;
     const date  = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
     const card  = document.createElement('div');
     card.className = 'job-card';
     card.innerHTML = `
       <div class="job-card-info">
         <div class="job-card-name">${esc(job.name || 'Untitled Job')}</div>
-        <div class="job-card-meta">${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${count} ladder${count !== 1 ? 's' : ''} · ${date}</div>
+        <div class="job-card-meta"><span class="scope-badge ${sc.badge}">${esc(sc.label)}</span>${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${count} ${esc(sc.unit)}${count !== 1 ? 's' : ''} · ${date}</div>
       </div>
       <div class="job-actions">
         <button class="btn-p" style="font-size:13px;padding:7px 12px;" data-open="${esc(job.id)}">Open</button>
@@ -888,13 +929,43 @@ function renderJobList() {
   });
 }
 
-$('btn-new-job').addEventListener('click', () => {
+const SCOPES = {
+  ladder:          { label: 'Ladder',          badge: 'ladder', unit: 'ladder' },
+  fall_protection: { label: 'Fall Protection', badge: 'fp',     unit: 'item' },
+};
+// Jobs created before scopes existed are all ladder jobs.
+const jobScope = job => (job && job.scope) || 'ladder';
+
+$('btn-new-job').addEventListener('click', openScopeSheet);
+$('btn-cancel-scope').addEventListener('click', closeScopeSheet);
+
+function openScopeSheet() {
+  $('scope-sheet').classList.remove('hidden');
+  $('sheet-backdrop').classList.remove('hidden');
+}
+function closeScopeSheet() {
+  $('scope-sheet').classList.add('hidden');
+  $('sheet-backdrop').classList.add('hidden');
+}
+
+document.querySelectorAll('.scope-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    closeScopeSheet();
+    createJob(btn.dataset.scope);
+  });
+});
+
+function createJob(scope) {
   const id  = crypto.randomUUID();
   const now = new Date().toISOString();
-  const job = { id, name: '', workOrderNum: '', ladders: [], createdAt: now, updatedAt: now };
+  const job = {
+    id, name: '', workOrderNum: '',
+    scope: SCOPES[scope] ? scope : 'ladder',
+    ladders: [], createdAt: now, updatedAt: now,
+  };
   const all = loadJobs(); all[id] = job; saveJobs(all);
   openJob(id);
-});
+}
 
 // ════════════════════════════════════════════════════════════════
 // Job Detail
@@ -913,10 +984,11 @@ function openJob(id) {
   setSaveStatus('');
   clearFormAll();
   goScreen('detail');
+  applyScopeToDetail(_job);
   renderLadderList();
   renderPartButtons();
   renderCustomFieldsForm();
-  $('fi-serial').focus();
+  if (jobScope(_job) !== 'fall_protection') $('fi-serial').focus();
 }
 
 $('btn-back').addEventListener('click', () => {
@@ -1158,6 +1230,18 @@ const LADDER_FLAGS = [
 ];
 const NO_FLAGS = () => ({ leveler: null, claw: null, vrung: null, lubricated: null });
 let _currentFlags = NO_FLAGS();
+
+// A fall protection job must not be handed the ladder entry form — the fields
+// and the parts catalogue are both wrong for it.
+function applyScopeToDetail(job) {
+  const isFp  = jobScope(job) === 'fall_protection';
+  const ladderPanels = ['form-panel', 'parts-panel', 'add-btn-panel', 'recent-panel'];
+  ladderPanels.forEach(id => { const el = $(id); if (el) el.style.display = isFp ? 'none' : ''; });
+  const todo = $('fp-todo-panel'); if (todo) todo.style.display = isFp ? '' : 'none';
+  const share = $('btn-share-csv');
+  // The ladder CSV shape does not describe a fall protection item.
+  if (share) share.style.display = isFp ? 'none' : '';
+}
 
 function renderFlags() {
   const row = $('flag-row');
