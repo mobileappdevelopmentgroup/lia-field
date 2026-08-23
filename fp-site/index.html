@@ -59,7 +59,8 @@
                    word-break: break-all; line-height: 1.2; }
     .cert-status-text { font-size: 13px; font-weight: 600; margin-top: 4px; }
     .cert-status-text.ok { color: var(--ok); } .cert-status-text.warn { color: var(--warn); }
-    .cert-status-text.err { color: var(--err); } .cert-status-text.none { color: var(--muted); }
+    .cert-status-text.err, .cert-status-text.over { color: var(--err); }
+    .cert-status-text.none { color: var(--muted); }
     .cert-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
     .condemned { background: var(--err-bg); color: var(--err); padding: 12px 16px;
@@ -185,10 +186,20 @@ function daysUntil(d) {
 // overall assessment outranks the calendar.
 function statusInfo(rec) {
   if (!rec) return { cls: 'none', text: 'No inspection on record' };
-  if (rec.overall_pass === false) return { cls: 'err', text: 'Failed inspection — removed from service' };
+  // effective_status is computed by the database, so a passing item that has
+  // gone past its due date reads as overdue without anyone editing the record.
+  const eff = rec.effective_status
+    || (rec.overall_pass === false ? 'fail'
+        : (rec.next_due_date && daysUntil(rec.next_due_date) < 0) ? 'inspection overdue' : 'pass');
+
+  if (eff === 'fail') return { cls: 'err', text: 'Failed inspection — removed from service' };
+
   const days = daysUntil(rec.next_due_date);
+  if (eff === 'inspection overdue') {
+    return { cls: 'over', text: days === null ? 'Inspection overdue'
+      : `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` };
+  }
   if (days === null) return { cls: 'ok',   text: 'No expiry recorded' };
-  if (days < 0)      return { cls: 'err',  text: `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` };
   if (days <= 30)    return { cls: 'warn', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
   return { cls: 'ok', text: `Valid — ${days} days remaining` };
 }
@@ -198,6 +209,9 @@ function sealSVG(cls) {
     ok:   { stroke:'#16a34a', fill:'#f0fdf4', text:'#15803d', label:'VALID',     icon:'✓' },
     warn: { stroke:'#d97706', fill:'#fffbeb', text:'#b45309', label:'DUE SOON',  icon:'!' },
     err:  { stroke:'#dc2626', fill:'#fef2f2', text:'#b91c1c', label:'FAILED',    icon:'✕' },
+    // Overdue is not the same as failed — the item may be perfectly serviceable,
+    // it just needs re-inspecting. Showing FAILED here would misrepresent it.
+    over: { stroke:'#dc2626', fill:'#fef2f2', text:'#b91c1c', label:'OVERDUE',   icon:'!' },
     none: { stroke:'#9ca3af', fill:'#f9fafb', text:'#6b7280', label:'NO RECORD', icon:'?' },
   };
   const c = C[cls] || C.none;
@@ -273,7 +287,7 @@ function renderCertificate(rec, checks) {
 
   el('cert-fields').innerHTML = [
     field('Item Type',      rec.item_type),
-    field('Status',         rec.status),
+    field('Status',         rec.effective_status || rec.status),
     field('Manufacturer',   rec.manufacturer),
     field('Model',          rec.model),
     field('Lot #',          rec.lot_number, { mono: true }),

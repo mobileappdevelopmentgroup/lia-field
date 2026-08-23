@@ -96,8 +96,8 @@ CREATE TABLE IF NOT EXISTS public.fp_inspections (
   lot_number       text,
   mfg_month        integer CHECK (mfg_month IS NULL OR mfg_month BETWEEN 1 AND 12),
   mfg_year         integer CHECK (mfg_year  IS NULL OR mfg_year BETWEEN 1900 AND 2200),
-  -- Free text for now: the valid set of statuses has not been pinned down. Add
-  -- a CHECK constraint here once it has, rather than guessing at it.
+  -- pass | fail | 'inspection overdue'. The CHECK is added in 07_fp_status.sql,
+  -- after any pre-existing values have been normalized.
   status           text,
   nfc_tag_serial   text,
 
@@ -211,6 +211,20 @@ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public AS $$
    ORDER BY expires_at LIMIT p_limit;
 $$;
 
+-- ── Status ───────────────────────────────────────────────────────────────────
+-- Recorded statuses are pass, fail and 'inspection overdue'. The first two are
+-- facts about the inspection; the third is a state a tech may find an item
+-- already in. What a certificate *displays* is derived — see fp_effective_status
+-- in 07_fp_status.sql — because a passing item goes overdue on its own.
+CREATE OR REPLACE FUNCTION public.fp_default_status(p_overall_pass boolean, p_recorded text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN p_recorded = 'inspection overdue' THEN 'inspection overdue'
+    WHEN p_overall_pass IS false THEN 'fail'
+    ELSE 'pass'
+  END;
+$$;
+
 -- ── The write path ───────────────────────────────────────────────────────────
 -- Mirrors record_inspection(): resolves the asset and the catalogue entry,
 -- supersedes any current row for the same item and date, and writes the checks
@@ -321,7 +335,9 @@ BEGIN
     coalesce(nullif(p->>'lot_number',''),   v_prev.lot_number),
     coalesce((p->>'mfg_month')::integer,    v_prev.mfg_month),
     coalesce((p->>'mfg_year')::integer,     v_prev.mfg_year),
-    coalesce(nullif(p->>'status',''),       v_prev.status),
+    -- Derived from the checks unless the tech explicitly recorded that the item
+    -- was already out of date when they found it.
+    public.fp_default_status(v_pass, nullif(p->>'status','')),
     coalesce(nullif(p->>'nfc_tag_serial',''), v_prev.nfc_tag_serial),
     coalesce((p->>'template_id')::uuid,     v_prev.template_id),
     coalesce((p->>'template_version')::integer, v_prev.template_version),
