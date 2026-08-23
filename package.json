@@ -13,6 +13,7 @@
     "build:core": "esbuild src/core/index.ts --bundle --platform=node --format=cjs --outfile=dist/lia-core.cjs",
     "build:all": "npm run build:runner && npm run build:core",
     "electron:dev": "npm run build:all && electron .",
+    "electron:dev:staging": "npm run build:all && LIA_ENV=staging electron .",
     "electron:build": "npm run build:all && electron-builder --mac dmg",
     "electron:build:win": "npm run build:all && electron-builder --win nsis",
     "electron:build:dir": "npm run build:all && electron-builder --mac dir"

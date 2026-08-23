@@ -43,10 +43,19 @@ function getLogsDir() {
   return path.join(app.getPath('documents'), 'Lia Logs');
 }
 
+// LIA_ENV=staging points a dev run at config.staging.json instead, so migrations
+// and billing changes can be rehearsed against a throwaway Supabase project
+// before they touch the real one. Ignored in a packaged build — a shipped app
+// must never be able to talk to anything but production.
 function getConfigPath() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'config.json')
-    : path.join(__dirname, '..', 'config.json');
+  if (app.isPackaged) return path.join(process.resourcesPath, 'config.json');
+  const env = (process.env.LIA_ENV || '').trim().toLowerCase();
+  const name = env && env !== 'production' ? `config.${env}.json` : 'config.json';
+  const p = path.join(__dirname, '..', name);
+  if (env && env !== 'production' && !fs.existsSync(p)) {
+    throw new Error(`LIA_ENV=${env} but ${name} does not exist. Copy config.example.json to ${name} and fill it in.`);
+  }
+  return p;
 }
 
 function readConfig() {
