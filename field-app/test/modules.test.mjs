@@ -63,7 +63,7 @@ for (const dir of ['field-app/capacitor/www',
     entry:typeof buildLadderFromForm,
   }));
   const name = dir.split('/').slice(-3).join('/');
-  ok(`${name}: every module shipped`, r.scripts, 12);
+  ok(`${name}: every module shipped`, r.scripts, 13);
   // connect-src 'self' blocks every Supabase call — and only on device, so a
   // browser test passes while the phone silently fails. Assert the origin is
   // named rather than trusting the sync script ran.

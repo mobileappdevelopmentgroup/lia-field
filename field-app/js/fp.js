@@ -59,7 +59,7 @@ function fpRenderAll() {
   if (items) items.style.display = has ? 'none' : '';
 
   if (has) { fpRenderRecord(); fpRenderEditForm(); fpRenderChecks(); fpRenderSave(); }
-  else fpRenderItems();
+  else { fpRenderItems(); fpRenderPending(); }
 }
 
 const fpMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -291,8 +291,62 @@ function fpCommit(item) {
   // photo — is not a keystroke. The 800 ms debounce is right for typing and
   // wrong here; backgrounding the app inside that window would lose the record.
   saveNow();
+
+  // Queue for upload. Local first, always: the record is already safe on the
+  // device, and the queue drains whenever a connection turns up.
+  if (root_LiaSync()) {
+    root_LiaSync().enqueue({
+      clientId: item.id,
+      kind: 'fall_protection',
+      payload: fpToPayload(item),
+    });
+    fpRenderPending();
+  }
+
   playSound('ladder');
   fpReset();
+}
+
+function root_LiaSync() { return typeof window !== 'undefined' ? window.LiaSync : null; }
+
+// The shape record_fp_inspection expects. Deliberately omits discard_reason —
+// the database composes it from the failed checks, so a client cannot make a
+// certificate disagree with what actually failed.
+function fpToPayload(item) {
+  return {
+    serial_num: item.serial_num,
+    manufacturer: item.manufacturer || null,
+    model: item.model || null,
+    item_type: item.item_type || null,
+    description: item.description || null,
+    lot_number: item.lot_number || null,
+    mfg_month: item.mfg_month ? Number(item.mfg_month) : null,
+    mfg_year: item.mfg_year ? Number(item.mfg_year) : null,
+    nfc_tag_serial: item.nfc_tag_serial || null,
+    work_order_id: (_job && _job.workOrderNum) || null,
+    inspection_date: item.inspection_date,
+    next_due_date: item.next_due_date,
+    discard_note: item.discard_note || null,
+    captured_at: item.capturedAt,
+    source: 'field',
+    checks: item.checks,
+  };
+}
+
+// A count of what has not reached the server yet. Techs work all day offline;
+// they need to see the backlog is known about rather than lost.
+function fpRenderPending() {
+  const el = $('fp-pending');
+  if (!el) return;
+  const sync = root_LiaSync();
+  if (!sync) { el.style.display = 'none'; return; }
+  const p = sync.pendingSummary();
+  if (!p.total) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = 'fp-pending' + (p.failing ? ' warn' : '');
+  el.textContent = p.failing
+    ? `${p.total} waiting to upload · ${p.failing} not going through`
+    : `${p.total} waiting to upload`;
 }
 
 function fpRenderItems() {

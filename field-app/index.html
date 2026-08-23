@@ -11,6 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <title>Lia Field</title>
   <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -505,6 +506,8 @@
                     font-size: 11px; font-weight: 600; font-family: var(--font); flex-shrink: 0; }
     .fp-photo-thumb { width: 104px; height: 104px; border-radius: 9px; border: 1px solid var(--border);
                       object-fit: cover; flex-shrink: 0; }
+    .fp-pending { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+    .fp-pending.warn { color: var(--bad-fg); }
   </style>
 </head>
 <body>
@@ -668,6 +671,7 @@
   <div id="fp-items-panel" style="display:none;">
     <div class="recent-hdr">
       <span class="recent-hdr-label" id="fp-items-hdr">Items (0)</span>
+      <span class="fp-pending" id="fp-pending" style="display:none;"></span>
     </div>
     <div id="fp-items-list"></div>
   </div>
@@ -841,6 +845,7 @@
 <script src="./js/jobs.js"></script>
 <script src="./js/entry.js"></script>
 <script src="./js/list.js"></script>
+<script src="./js/sync.js"></script>
 <script src="./js/fp.js"></script>
 <script src="./js/export.js"></script>
 <script src="./js/scan.js"></script>

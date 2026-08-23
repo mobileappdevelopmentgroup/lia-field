@@ -23,10 +23,16 @@ cp "$SRC/manifest.json" "$WWW/manifest.json"
 cp "$SRC/sw.js" "$WWW/sw.js"
 cp "$SRC"/icon-*.png "$WWW/"
 cp vendor/zxing/zxing-browser.min.js "$WWW/vendor/zxing/"
+mkdir -p "$WWW/vendor/supabase"
+cp vendor/supabase/supabase.min.js "$WWW/vendor/supabase/"
 
 # 1. Use the locally vendored ZXing bundle instead of the CDN
 sed -i '' \
   's#<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>#<script src="./vendor/zxing/zxing-browser.min.js"></script>#' \
+  "$WWW/index.html"
+
+sed -i '' \
+  's#<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>#<script src="./vendor/supabase/supabase.min.js"></script>#' \
   "$WWW/index.html"
 
 # 2. Add a CSP meta tag.
