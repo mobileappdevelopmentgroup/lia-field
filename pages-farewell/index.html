@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Lia Field has moved</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f5f5; --surf: #fff; --border: #d1d1d6; --text: #1c1c1e;
+      --muted: #8e8e93; --accent: #0071e3; --ok: #25a244; --warn: #d97706;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'SF Mono', 'Fira Code', monospace;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text);
+           min-height: 100dvh; padding: 24px 20px 40px; -webkit-text-size-adjust: 100%; }
+    .wrap { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 26px; font-weight: 800; letter-spacing: -.03em; margin-bottom: 8px; }
+    .lede { font-size: 15px; color: var(--muted); line-height: 1.55; margin-bottom: 24px; }
+    .card { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
+            padding: 18px 20px; margin-bottom: 14px; }
+    .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .card p { font-size: 14px; line-height: 1.6; color: var(--text); }
+    .card p + p { margin-top: 10px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .btn { display: block; width: 100%; padding: 15px; border-radius: 10px; border: none;
+           font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+           margin-top: 14px; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--surf); color: var(--text); border: 1px solid var(--border); }
+    .found { border-color: var(--warn); }
+    .found h2 { color: var(--warn); }
+    #status { font-size: 13.5px; line-height: 1.5; margin-top: 12px; min-height: 20px; }
+    #status.ok { color: var(--ok); font-weight: 600; }
+    #status.err { color: #d92d20; font-weight: 600; }
+    code { font-family: var(--mono); font-size: 12.5px; background: rgba(0,0,0,.05);
+           padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lia Field has moved</h1>
+  <p class="lede">
+    The web version has been retired. Lia Field is now an installed app on iOS and
+    Android, which is what lets it read NFC tags and keep your equipment list on the
+    phone.
+  </p>
+
+  <!-- Anything captured here lives in THIS browser's storage. The installed app
+       cannot see it, so it has to be exported before this page goes away. -->
+  <div class="card found" id="data-card" style="display:none;">
+    <h2>You have unsaved work in this browser</h2>
+    <p id="data-summary"></p>
+    <p class="muted">
+      The installed app cannot see it — browser storage is separate. Save it now,
+      then send the file to your supervisor so nothing is lost.
+    </p>
+    <button class="btn btn-primary" id="btn-export">Save my jobs to a file</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="card" id="clean-card" style="display:none;">
+    <h2>Nothing to move</h2>
+    <p>There are no jobs saved in this browser, so nothing needs exporting.</p>
+  </div>
+
+  <div class="card">
+    <h2>Getting the app</h2>
+    <p>Your supervisor has the install link for your phone.</p>
+    <p class="muted">
+      Once it is installed, sign in with your work account and let it download the
+      equipment list once. After that it works with no signal.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Checking a certificate</h2>
+    <p>
+      Looking up a ladder or a piece of fall-protection equipment does not need the
+      app — the certificate site still works in any browser.
+    </p>
+    <button class="btn btn-secondary" onclick="location.href='https://d1uwg2boqwq3l6.cloudfront.net/'">
+      Open certificate lookup
+    </button>
+  </div>
+</div>
+
+<script>
+// This page replaces the app at its own URL, so the old service worker is still
+// registered and would keep serving the cached app instead of this notice.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(rs => Promise.all(rs.map(r => r.unregister())))
+    .catch(() => {});
+  if (window.caches && caches.keys) {
+    caches.keys().then(ks => ks.forEach(k => { if (/^lia-field/.test(k)) caches.delete(k); }))
+      .catch(() => {});
+  }
+}
+
+const KEYS = ['lia-field-jobs', 'lia-custom-fields', 'lia-parts-library',
+              'lia-theme', 'lia-sounds', 'lia-quick-parts'];
+
+function collect() {
+  const out = {};
+  let jobs = 0, ladders = 0;
+  KEYS.forEach(k => {
+    let v = null;
+    try { v = localStorage.getItem(k); } catch (_) { return; }
+    if (v === null) return;
+    try { out[k] = JSON.parse(v); } catch (_) { out[k] = v; }
+  });
+  const j = out['lia-field-jobs'];
+  if (j && typeof j === 'object') {
+    const list = Object.values(j);
+    jobs = list.length;
+    ladders = list.reduce((n, x) => n + ((x.ladders || []).length) + ((x.items || []).length), 0);
+  }
+  return { data: out, jobs, ladders, any: Object.keys(out).length > 0 };
+}
+
+const found = collect();
+if (found.jobs > 0 || found.any) {
+  document.getElementById('data-card').style.display = '';
+  document.getElementById('data-summary').textContent = found.jobs
+    ? `${found.jobs} job${found.jobs !== 1 ? 's' : ''} with ${found.ladders} item${found.ladders !== 1 ? 's' : ''} recorded.`
+    : 'Some saved settings were found.';
+} else {
+  document.getElementById('clean-card').style.display = '';
+}
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  const status = document.getElementById('status');
+  try {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      source: 'lia-field-pwa',
+      note: 'Exported from the retired web version of Lia Field.',
+      ...found.data,
+    };
+    const name = 'lia-field-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+
+    // Phones mostly land in the share sheet; the anchor is the desktop path.
+    const file = window.File ? new File([blob], name, { type: 'application/json' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: name })
+        .then(() => { status.textContent = 'Saved. Send that file to your supervisor.'; status.className = 'ok'; })
+        .catch(err => { if (err && err.name === 'AbortError') return; download(blob, name, status); });
+      return;
+    }
+    download(blob, name, status);
+  } catch (_) {
+    status.textContent = 'Could not save the file. Try a different browser, or ask your supervisor.';
+    status.className = 'err';
+  }
+});
+
+function download(blob, name, status) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  status.textContent = 'Saved. Send that file to your supervisor.';
+  status.className = 'ok';
+}
+</script>
+</body>
+</html>
