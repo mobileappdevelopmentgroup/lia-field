@@ -22,6 +22,13 @@
 
   function loadConfig() {
     if (_config) return Promise.resolve(_config);
+    // fetch() cannot read file:// in any browser, so attempting it only logs a
+    // console error for a request that was never going to work. The app runs
+    // over https or capacitor://localhost in every real deployment; opening the
+    // HTML directly is local-only by definition.
+    if (root.location && root.location.protocol === 'file:') {
+      return Promise.resolve(null);
+    }
     return fetch('./config.json', { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })

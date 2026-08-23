@@ -1,4 +1,4 @@
-const CACHE = 'lia-field-v25';
+const CACHE = 'lia-field-v26';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './js/jobs.js',
   './js/entry.js',
   './js/list.js',
+  './js/nfc.js',
   './js/sync.js',
   './js/fp.js',
   './js/export.js',

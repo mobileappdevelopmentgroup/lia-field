@@ -381,11 +381,20 @@ function fpRenderItems() {
 
 (function fpWire() {
   const tap = $('fp-btn-tap');
-  if (tap) tap.addEventListener('click', () => {
-    // NFC is native-only; the sheet lands in the NFC phase.
-    if (!window.LiaNfc) { fpHint('Tag reading needs the installed app — scan or type instead.', true); return; }
-    window.LiaNfc.read().then(uid => fpLookup(uid)).catch(() => fpHint('No tag read.', true));
-  });
+  // A dead button is worse than no button: hide Tap outright where NFC is not
+  // available, so scan and type are what the tech reaches for.
+  if (tap && (!window.LiaNfc || !window.LiaNfc.isAvailable())) {
+    tap.style.display = 'none';
+  } else if (tap) {
+    tap.addEventListener('click', () => {
+      fpHint('Hold the phone against the tag…');
+      window.LiaNfc.read().then(res => {
+        // A tag may carry the serial, or only its own hardware id — the
+        // catalogue indexes both, so either resolves the item.
+        fpLookup(res.serial || res.uid);
+      }).catch(err => fpHint(err.message || 'No tag read.', true));
+    });
+  }
 
   const scan = $('fp-btn-scan');
   if (scan) scan.addEventListener('click', () => {
