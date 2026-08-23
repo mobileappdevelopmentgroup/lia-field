@@ -92,69 +92,112 @@
 
   <main>
     <div class="banner">
-      Lia Field does not collect, transmit, or share any personal data.
+      Lia Field is a work tool for inspection technicians. It collects the inspection
+      records you create, and the account you sign in with — nothing else.
     </div>
 
     <div class="card">
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated: July 28, 2026</p>
+      <p class="updated">Last updated: August 23, 2026</p>
 
       <h2>Scope</h2>
       <p class="scope">
         This policy covers the <strong>Lia Field</strong> mobile application for iOS and Android
         (<code>com.mobileappdevelopmentgroup.liafield</code>), published by Mobile App Development
-        Group. It does not cover Lia Office, our separate desktop application, which operates under
-        a different data model.
+        Group. Lia Field is issued to technicians by the company that employs or contracts them;
+        it is not a consumer app and has no public sign-up.
       </p>
 
       <h2>Data We Collect</h2>
-      <p>
-        None. Lia Field does not collect, transmit, sell, or share any personal information.
-        The app has no user accounts, no sign-in, and no analytics.
-      </p>
-
-      <h2>How Your Information Is Stored</h2>
-      <p>
-        Everything you enter into Lia Field — ladder serial numbers, location IDs, part
-        selections, inspection notes, and job records — is stored <strong>only on your
-        device</strong>, in the app's local storage. This information is never uploaded to our
-        servers or to any third party. We have no ability to access it.
-      </p>
-      <p>
-        You can remove all stored data at any time by clearing the app's data or uninstalling
-        the app. Once removed, it is permanently gone; because we never receive a copy, there is
-        nothing for us to delete on our end.
-      </p>
-
-      <h2>Camera</h2>
-      <p>
-        Lia Field requests camera access for a single purpose: scanning barcodes on ladder
-        serial-number tags. Barcode decoding happens entirely on your device, in real time.
-      </p>
+      <p>Only what the app needs to do its job:</p>
       <ul>
-        <li>No photos or video are saved to your device by the app.</li>
-        <li>No images are transmitted off your device, to us or to anyone else.</li>
-        <li>Camera access is optional — you can decline it and enter serial numbers manually.</li>
+        <li><strong>Your account</strong> — the email address and name on the account your
+          employer creates for you, and your technician (rep) number.</li>
+        <li><strong>Inspection records</strong> — work order numbers, equipment serial numbers,
+          manufacturer, model, lot and manufacture dates, inspection results, and any notes you
+          add.</li>
+        <li><strong>Photographs you take of defective equipment</strong>, which are required as
+          evidence when an item is removed from service.</li>
+        <li><strong>Who recorded what, and when</strong> — the account that captured each record,
+          a device identifier, and timestamps. This is so the lead technician on a job can see
+          which technician submitted which items.</li>
+      </ul>
+      <p>
+        We do <strong>not</strong> collect location or GPS data, contacts, advertising
+        identifiers, or any information about how you use your phone outside this app.
+      </p>
+
+      <h2>How Your Information Is Stored and Shared</h2>
+      <p>
+        Records are stored on your device first, so the app works with no signal, and are
+        uploaded to our servers when you are back on a connection. Your employer's account can
+        see the records captured under it — that is the purpose of the app.
+      </p>
+      <p>
+        Equipment inspection results are also published to a public certificate page, so that
+        anyone holding a piece of equipment can check whether it is safe to use. That page shows
+        the equipment's serial number, manufacturer and model, inspection and due dates, the
+        responsible technician's rep number, and whether it passed. It does
+        <strong>not</strong> show photographs, the reason an item was condemned, or which
+        individual technician collected the record.
+      </p>
+
+      <h2>Where It Is Processed</h2>
+      <p>
+        Our servers and database are hosted by Supabase, which stores and processes this
+        information on our behalf. We do not sell your information, and we do not share it with
+        anyone else except where the law requires it.
+      </p>
+
+      <h2>How Long We Keep It</h2>
+      <ul>
+        <li><strong>Photographs of condemned equipment: 2 years</strong>, then deleted
+          automatically.</li>
+        <li><strong>Inspection records:</strong> kept for as long as your employer's account is
+          active, because an equipment safety certificate has to remain verifiable.</li>
+        <li><strong>Your account:</strong> until your employer removes it.</li>
       </ul>
 
-      <h2>Network Access</h2>
+      <h2>Camera</h2>
+      <p>Lia Field uses the camera for two things:</p>
+      <ul>
+        <li><strong>Scanning barcodes</strong> on equipment tags. Decoding happens on your
+          device; the image is not kept or uploaded.</li>
+        <li><strong>Photographing defective equipment</strong>, when you remove an item from
+          service. These photos <em>are</em> uploaded, because they are the evidence for that
+          decision.</li>
+      </ul>
       <p>
-        The packaged mobile app operates entirely offline. All of its code and assets, including
-        the barcode-scanning library, are bundled inside the app. Lia Field makes no network
-        requests during normal operation.
+        You can decline camera access and enter serial numbers by hand — but a photograph is
+        required to record an item as defective.
+      </p>
+
+      <h2>NFC</h2>
+      <p>
+        Where your device supports it, Lia Field reads and writes NFC tags attached to equipment,
+        so a technician can identify an item by holding the phone against it. Only the tag's
+        identifier and the equipment serial number are involved. NFC is optional; the app works
+        without it.
       </p>
 
       <h2>Third-Party Services</h2>
       <p>
-        None. Lia Field contains no advertising, no analytics or crash-reporting SDKs, and no
-        social or tracking integrations.
+        Lia Field contains no advertising, no analytics, no crash-reporting SDKs, and no social
+        or tracking integrations. Supabase, named above, is our hosting and database provider and
+        acts only on our instructions.
+      </p>
+
+      <h2>Your Rights</h2>
+      <p>
+        You can ask for a copy of the information held about you, or ask us to correct or delete
+        it, by writing to the address below. Because these records are your employer's business
+        records, requests to delete inspection data are handled with them.
       </p>
 
       <h2>Children's Privacy</h2>
       <p>
-        Lia Field is a professional tool for ladder-inspection technicians and is not directed
-        at children. Because the app collects no data from anyone, it collects no data from
-        children.
+        Lia Field is a professional tool issued to working technicians. It is not directed at
+        children and we do not knowingly collect information from anyone under 16.
       </p>
 
       <h2>Changes to This Policy</h2>

@@ -32,9 +32,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Lia Office (Windows) | Direct download (NSIS) | — | Built in CI — `.github/workflows/build-windows.yml`. **Not** shipped via Microsoft Store. |
 
 Privacy policy (required by both stores): <https://d1uwg2boqwq3l6.cloudfront.net/privacy.html>,
-source at `inspection-site/privacy.html`. It covers **Lia Field only** — Lia Field stores everything
-in on-device `localStorage` and makes no network calls, whereas Lia Office syncs to Supabase. Do not
-broaden that policy to cover both without rewriting the data-collection claims.
+source at `inspection-site/privacy.html`. It covers **Lia Field only**; Lia Office is a separate
+data model and is not in scope.
+
+⚠️ **Before shipping any build that syncs**, both stores' data declarations must be updated in the
+same submission — they currently say "no data collected". See `docs/STORE-DATA-DECLARATIONS.md`
+for exactly what to tick. Shipping against a stale declaration can pull the listing.
 
 The Windows build needs a `LIA_CONFIG_JSON` repo secret (the full body of `config.json`, which is
 gitignored). Signing is optional until a certificate exists: add `WINDOWS_CERT_BASE64` and

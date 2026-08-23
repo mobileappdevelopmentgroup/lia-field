@@ -64,6 +64,15 @@ for (const dir of ['field-app/capacitor/www',
   }));
   const name = dir.split('/').slice(-3).join('/');
   ok(`${name}: every module shipped`, r.scripts, 12);
+  // connect-src 'self' blocks every Supabase call — and only on device, so a
+  // browser test passes while the phone silently fails. Assert the origin is
+  // named rather than trusting the sync script ran.
+  const csp = await q.evaluate(() => {
+    const m = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    return m ? m.getAttribute('content') : '';
+  });
+  const connect = (csp.match(/connect-src ([^;]*)/) || [])[1] || '';
+  ok(`${name}: CSP lets the app reach Supabase`, /https:\/\/[a-z0-9]+\.supabase\.co/.test(connect), true);
   ok(`${name}: zxing is vendored, not from a CDN`, r.cdn, false);
   ok(`${name}: the app initialises`, r.entry, 'function');
   if (berrs.length) { failures++; console.log('FAIL', name, berrs[0]); }
