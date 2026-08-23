@@ -273,6 +273,72 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
   return { records, skipped };
 });
 
+// ── IPC: fall protection catalog ─────────────────────────────────────────────
+// Models and the checks techs are asked. Templates are versioned and an
+// inspection pins the version it was performed against, so editing a checklist
+// never rewrites what a past certificate says the tech was asked.
+
+ipcMain.handle('fp:list-models', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb
+      .from('fp_models')
+      .select('id, manufacturer, model, item_type, has_impact_indicator')
+      .order('manufacturer').order('model');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, models: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fp:get-checks', async (_event, modelId) => {
+  try {
+    const sb = await getSupabase();
+    const { data: tpls, error: te } = await sb
+      .from('fp_check_templates')
+      .select('id, version, published_at')
+      .eq('model_id', modelId)
+      .order('version', { ascending: false })
+      .limit(1);
+    if (te) return { ok: false, error: te.message };
+    if (!tpls || !tpls.length) return { ok: true, version: 0, published: false, checks: [] };
+
+    const { data: checks, error: ce } = await sb
+      .from('fp_template_checks')
+      .select('ord, code, prompt, required')
+      .eq('template_id', tpls[0].id)
+      .order('ord');
+    if (ce) return { ok: false, error: ce.message };
+    return {
+      ok: true,
+      version: tpls[0].version,
+      published: !!tpls[0].published_at,
+      checks: checks || [],
+    };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fp:save-model', async (_event, model) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('save_fp_model', { p: model });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fp:publish-checks', async (_event, modelId, checks) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('publish_fp_checks', {
+      p_model_id: modelId,
+      p_checks: checks,
+    });
+    if (error) return { ok: false, error: error.message };
+    const res = typeof data === 'string' ? JSON.parse(data) : data;
+    return { ok: true, version: res && res.version };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── IPC: automation lifecycle ─────────────────────────────────────────────────
 
 // Writes go through the record_inspections RPC rather than a direct upsert.

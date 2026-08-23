@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('api', {
   saveSampleCsv: ()         => ipcRenderer.invoke('csv:save-sample'),
   getLogsDir:    ()         => ipcRenderer.invoke('app:get-logs-dir'),
 
+  // ── Fall protection catalog ──────────────────────────────────────────────
+  fpListModels:    ()                 => ipcRenderer.invoke('fp:list-models'),
+  fpGetChecks:     (modelId)          => ipcRenderer.invoke('fp:get-checks', modelId),
+  fpSaveModel:     (model)            => ipcRenderer.invoke('fp:save-model', model),
+  fpPublishChecks: (modelId, checks)  => ipcRenderer.invoke('fp:publish-checks', modelId, checks),
+
   // ── Automation lifecycle ─────────────────────────────────────────────────
   startAutomation:  (csvPath, workOrderId) => ipcRenderer.send('automation:start', csvPath, workOrderId),
   analyzeWorkOrder: ()                     => ipcRenderer.send('automation:analyze'),

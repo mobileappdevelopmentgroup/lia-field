@@ -68,5 +68,10 @@ echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/06_snapshot_test.sql"
 
 echo
+echo "Running authoring assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/07_authoring_test.sql"
+
+echo
 echo "Inspect with: psql -d $DB"
 echo "Drop with:    psql -d postgres -c 'DROP DATABASE $DB;'"

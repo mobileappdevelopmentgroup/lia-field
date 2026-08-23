@@ -69,6 +69,56 @@
     .home-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
     .home-title { font-size: 22px; font-weight: 700; color: var(--text); }
     .home-sub   { font-size: 13px; color: var(--muted); margin-top: -24px; }
+    /* ── Fall protection catalog ── */
+    .cat-wrap { display: flex; flex-direction: column; height: 100%; }
+    .cat-head { display: flex; align-items: center; gap: 14px; padding: 18px 26px 14px;
+                border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .cat-title { font-size: 17px; font-weight: 700; }
+    .back-link { background: none; border: none; color: var(--accent-fg); font-size: 13px;
+                 cursor: pointer; font-family: inherit; padding: 0; }
+    .cat-body { flex: 1; min-height: 0; display: flex; }
+    .cat-list { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border);
+                display: flex; flex-direction: column; overflow-y: auto; }
+    .cat-list-hdr { display: flex; align-items: center; justify-content: space-between;
+                    padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--muted);
+                    text-transform: uppercase; letter-spacing: .07em; }
+    .cat-item { padding: 10px 16px; cursor: pointer; border-left: 2px solid transparent; }
+    .cat-item:hover { background: rgba(255,255,255,.03); }
+    .cat-item.sel { background: rgba(79,110,247,.10); border-left-color: var(--accent); }
+    .cat-item-name { font-size: 13px; font-weight: 600; }
+    .cat-item-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cat-detail { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 26px; }
+    .cat-empty { color: var(--muted); font-size: 13px; padding: 30px 0; }
+    .cat-row { display: flex; gap: 12px; margin-bottom: 14px; }
+    .cat-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .cat-field label { font-size: 10.5px; font-weight: 700; color: var(--muted);
+                       text-transform: uppercase; letter-spacing: .06em; }
+    .cat-field input { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
+                       color: var(--text); font-family: inherit; font-size: 13px; padding: 8px 10px;
+                       outline: none; }
+    .cat-field input:focus { border-color: var(--accent); }
+    .cat-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+    .cat-note { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin: 5px 0 18px 24px; }
+    .cat-checks-hdr { display: flex; align-items: center; justify-content: space-between;
+                      font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+                      letter-spacing: .07em; margin-bottom: 8px; }
+    .cat-ver { font-weight: 600; text-transform: none; letter-spacing: 0; }
+    .cat-check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .cat-check-row input[type=text] { flex: 1; background: var(--surf2); border: 1px solid var(--border);
+                                      border-radius: 7px; color: var(--text); font-family: inherit;
+                                      font-size: 13px; padding: 8px 10px; outline: none; }
+    .cat-check-row input[type=text]:focus { border-color: var(--accent); }
+    .cat-x { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+             cursor: pointer; width: 30px; height: 32px; font-size: 15px; flex-shrink: 0; }
+    .cat-x:hover { color: var(--err); border-color: var(--err); }
+    .btn-mini { background: var(--surf2); border: 1px solid var(--border); border-radius: 7px;
+                color: var(--text); font-family: inherit; font-size: 12px; font-weight: 600;
+                padding: 7px 12px; cursor: pointer; }
+    .btn-mini:hover { border-color: var(--accent); }
+    .cat-actions { display: flex; gap: 10px; margin-top: 22px; }
+    .cat-msg { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+    .cat-msg.err { color: var(--err); }
+
     .mode-cards { display: flex; gap: 20px; }
     .mode-card  { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
                   padding: 32px 28px; width: 200px; display: flex; flex-direction: column;
@@ -317,6 +367,11 @@
         <div class="mode-name">Work History</div>
         <div class="mode-desc">View past work orders and ladders you've submitted.</div>
       </div>
+      <div class="mode-card" id="home-catalog">
+        <div class="mode-icon">🦺</div>
+        <div class="mode-name">Fall Protection</div>
+        <div class="mode-desc">Manage models and the checks techs are asked in the field.</div>
+      </div>
     </div>
     <div class="qr-section">
       <div class="qr-item">
@@ -333,6 +388,72 @@
 
     <div class="home-footer">
       <a id="btn-signout">Sign out</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: FALL PROTECTION CATALOG ═══════════════ -->
+<!-- Models and the checks techs are asked in the field. Templates are versioned
+     and an inspection pins the version it was performed against, so editing a
+     checklist can never rewrite what a past certificate says was asked. -->
+<div id="screen-catalog" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-catalog-home">← Home</button>
+      <div class="cat-title">Fall Protection Catalog</div>
+    </div>
+
+    <div class="cat-body">
+      <div class="cat-list">
+        <div class="cat-list-hdr">
+          <span>Models</span>
+          <button class="btn-mini" id="btn-new-model">+ New</button>
+        </div>
+        <div id="cat-models"></div>
+      </div>
+
+      <div class="cat-detail" id="cat-detail">
+        <div class="cat-empty" id="cat-empty">Pick a model, or add one.</div>
+
+        <div id="cat-editor" style="display:none;">
+          <div class="cat-row">
+            <div class="cat-field">
+              <label>Manufacturer</label>
+              <input type="text" id="cat-mfr" autocomplete="off">
+            </div>
+            <div class="cat-field">
+              <label>Model</label>
+              <input type="text" id="cat-model" autocomplete="off">
+            </div>
+            <div class="cat-field">
+              <label>Item type</label>
+              <input type="text" id="cat-type" autocomplete="off" placeholder="Harness, Lanyard…">
+            </div>
+          </div>
+
+          <label class="cat-check">
+            <input type="checkbox" id="cat-indicator">
+            <span>This model has an impact indicator</span>
+          </label>
+          <div class="cat-note">
+            When off, techs are never asked about the indicator — the check is
+            hidden for this model rather than answered "not applicable".
+          </div>
+
+          <div class="cat-checks-hdr">
+            <span>Checks asked in the field</span>
+            <span class="cat-ver" id="cat-version"></span>
+          </div>
+          <div id="cat-checks"></div>
+          <button class="btn-mini" id="btn-add-check">+ Add check</button>
+
+          <div class="cat-actions">
+            <button class="btn-g" id="btn-save-model">Save</button>
+            <button class="btn-p" id="btn-publish">Publish to devices</button>
+          </div>
+          <div class="cat-msg" id="cat-msg"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -560,9 +681,11 @@ let _supabaseConfigured = false;
 let _session = null;
 
 // ── Screen management ─────────────────────────────────────────────────────────
+// Derived from the DOM rather than a hardcoded list, so adding a screen is one
+// markup change instead of two places that can drift apart.
 function showScreen(name) {
-  ['login','home','inspect','office','history'].forEach(s => {
-    $(`screen-${s}`).classList.toggle('active', s === name);
+  document.querySelectorAll('.screen').forEach(el => {
+    el.classList.toggle('active', el.id === `screen-${name}`);
   });
   document.body.classList.remove('summary-mode');
 }
@@ -640,6 +763,7 @@ function goToDestination(dest) {
   if (dest === 'office')  { showScreen('office');  officeReset(); }
   else if (dest === 'inspect') { showScreen('inspect'); inspectReset(); }
   else if (dest === 'history') { showScreen('history'); loadHistory(); }
+  else if (dest === 'catalog') { showScreen('catalog'); loadCatalog(); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -673,11 +797,175 @@ function showLoginError(msg) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Fall protection catalog
+// ════════════════════════════════════════════════════════════════
+let _catModels = [];
+let _catSel = null;      // the model being edited, null when adding
+let _catChecks = [];
+
+$('btn-catalog-home').addEventListener('click', () => showScreen('home'));
+
+function catMsg(text, isErr) {
+  const el = $('cat-msg');
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+async function loadCatalog() {
+  catMsg('');
+  const res = await window.api.fpListModels();
+  if (!res.ok) { catMsg(res.error, true); return; }
+  _catModels = res.models;
+  renderCatList();
+  // Keep the selection across a reload so saving does not throw the user out.
+  if (_catSel && _catModels.some(m => m.id === _catSel.id)) selectModel(_catSel.id);
+  else { _catSel = null; $('cat-editor').style.display = 'none'; $('cat-empty').style.display = ''; }
+}
+
+function renderCatList() {
+  const list = $('cat-models');
+  list.innerHTML = '';
+  if (!_catModels.length) {
+    list.innerHTML = '<div class="cat-empty" style="padding:16px;">No models yet.</div>';
+    return;
+  }
+  _catModels.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'cat-item' + (_catSel && _catSel.id === m.id ? ' sel' : '');
+    row.innerHTML = `
+      <div class="cat-item-name">${esc(m.manufacturer)} ${esc(m.model)}</div>
+      <div class="cat-item-sub">${esc(m.item_type || '—')}${m.has_impact_indicator ? ' · indicator' : ''}</div>`;
+    row.addEventListener('click', () => selectModel(m.id));
+    list.appendChild(row);
+  });
+}
+
+async function selectModel(id) {
+  const m = _catModels.find(x => x.id === id);
+  if (!m) return;
+  _catSel = m;
+  renderCatList();
+  $('cat-empty').style.display = 'none';
+  $('cat-editor').style.display = '';
+  $('cat-mfr').value = m.manufacturer || '';
+  $('cat-model').value = m.model || '';
+  $('cat-type').value = m.item_type || '';
+  $('cat-indicator').checked = !!m.has_impact_indicator;
+  catMsg('Loading checks…');
+
+  const res = await window.api.fpGetChecks(id);
+  if (!res.ok) { catMsg(res.error, true); return; }
+  _catChecks = (res.checks || []).map(c => ({ code: c.code || '', prompt: c.prompt }));
+  $('cat-version').textContent = res.version
+    ? `v${res.version}${res.published ? ' · published' : ''}`
+    : 'not published yet';
+  renderCatChecks();
+  catMsg('');
+}
+
+$('btn-new-model').addEventListener('click', () => {
+  _catSel = null;
+  renderCatList();
+  $('cat-empty').style.display = 'none';
+  $('cat-editor').style.display = '';
+  ['cat-mfr','cat-model','cat-type'].forEach(id => { $(id).value = ''; });
+  $('cat-indicator').checked = false;
+  $('cat-version').textContent = 'new';
+  // A sensible starting point rather than a blank list — every model is asked
+  // these, and the tech can be given something to trim rather than compose.
+  _catChecks = [
+    { code: 'labels',   prompt: 'Labels and markings present, secured and legible' },
+    { code: 'webbing',  prompt: 'Webbing free of cuts, fraying, chemical damage' },
+    { code: 'stitch',   prompt: 'Stitching intact, no pulled or broken threads' },
+    { code: 'hardware', prompt: 'Hardware free of cracks, corrosion and distortion' },
+  ];
+  renderCatChecks();
+  catMsg('');
+  $('cat-mfr').focus();
+});
+
+function renderCatChecks() {
+  const el = $('cat-checks');
+  el.innerHTML = '';
+  _catChecks.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'cat-check-row';
+    row.innerHTML = `
+      <input type="text" data-i="${i}" placeholder="What is the tech asked?">
+      <button class="cat-x" data-x="${i}" title="Remove">×</button>`;
+    row.querySelector('input').value = c.prompt;
+    row.querySelector('input').addEventListener('input', e => {
+      _catChecks[Number(e.target.dataset.i)].prompt = e.target.value;
+    });
+    row.querySelector('[data-x]').addEventListener('click', () => {
+      _catChecks.splice(i, 1);
+      renderCatChecks();
+    });
+    el.appendChild(row);
+  });
+  if ($('cat-indicator').checked) {
+    const note = document.createElement('div');
+    note.className = 'cat-note';
+    note.style.margin = '4px 0 0 0';
+    note.textContent = 'The impact-indicator check is added automatically for this model.';
+    el.appendChild(note);
+  }
+}
+
+$('cat-indicator').addEventListener('change', renderCatChecks);
+$('btn-add-check').addEventListener('click', () => {
+  _catChecks.push({ code: '', prompt: '' });
+  renderCatChecks();
+  const inputs = $('cat-checks').querySelectorAll('input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
+
+async function saveModel() {
+  const model = {
+    id: _catSel ? _catSel.id : null,
+    manufacturer: $('cat-mfr').value.trim(),
+    model: $('cat-model').value.trim(),
+    item_type: $('cat-type').value.trim(),
+    has_impact_indicator: $('cat-indicator').checked,
+  };
+  if (!model.manufacturer || !model.model) {
+    catMsg('A manufacturer and model are required.', true);
+    return null;
+  }
+  catMsg('Saving…');
+  const res = await window.api.fpSaveModel(model);
+  if (!res.ok) { catMsg(res.error, true); return null; }
+  _catSel = { ...model, id: res.id };
+
+  const list = await window.api.fpListModels();
+  if (list.ok) { _catModels = list.models; renderCatList(); }
+  return res.id;
+}
+
+$('btn-save-model').addEventListener('click', async () => {
+  const id = await saveModel();
+  if (id) catMsg('Saved. Checks are not on devices until you publish.');
+});
+
+$('btn-publish').addEventListener('click', async () => {
+  const id = await saveModel();
+  if (!id) return;
+  const checks = _catChecks.filter(c => c.prompt.trim());
+  if (!checks.length) { catMsg('Add at least one check before publishing.', true); return; }
+  catMsg('Publishing…');
+  const res = await window.api.fpPublishChecks(id, checks);
+  if (!res.ok) { catMsg(res.error, true); return; }
+  $('cat-version').textContent = `v${res.version} · published`;
+  catMsg(`Published v${res.version}. Devices pick it up on their next sync. Earlier inspections keep the version they were done against.`);
+});
+
+// ════════════════════════════════════════════════════════════════
 // Home
 // ════════════════════════════════════════════════════════════════
 $('home-office').addEventListener('click', () => requireAuth('office'));
 $('home-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('home-history').addEventListener('click', () => requireAuth('history'));
+$('home-catalog').addEventListener('click', () => requireAuth('catalog'));
 $('btn-history-home').addEventListener('click', () => showScreen('home'));
 
 $('btn-signout').addEventListener('click', async () => {

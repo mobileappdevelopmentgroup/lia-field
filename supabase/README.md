@@ -16,6 +16,7 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 6. `06_fall_protection.sql` — fall-protection catalogue, checklists, inspections, photos
 7. `07_fp_status.sql` — status constraint and derived status
 8. `08_device_snapshot.sql` — the read model behind the on-device cache
+9. `09_fp_authoring.sql` — catalogue authoring (leads only)
 
 All are idempotent and safe to re-run.
 
