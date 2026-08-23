@@ -7,3 +7,7 @@ export {
   isPartColumn, partColumns, parseFlagValue, type FlagName,
 } from './csv-columns.js';
 export { parsePartValue, type PartEntry } from './part-value.js';
+export {
+  mergeRecords, unionParts, serialKey, SUSPECT_SKEW_MS,
+  type MergeRecord, type MergedItem, type MergeResult, type FieldConflict, type Scope,
+} from './merge.js';
