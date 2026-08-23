@@ -13,6 +13,7 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 3. `03_accounts_billing.sql` — accounts, work orders, and one-token-per-work-order billing
 4. `04_inspections_v2.sql` — versioned, account-scoped inspections + the public view
 5. `05_rep_and_attribution.sql` — rep numbers, collector attribution, derived certificate URLs
+6. `06_fall_protection.sql` — fall-protection catalogue, checklists, inspections, photos
 
 All are idempotent and safe to re-run.
 
