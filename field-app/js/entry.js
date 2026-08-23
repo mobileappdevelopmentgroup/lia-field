@@ -275,10 +275,19 @@ let _currentFlags = NO_FLAGS();
 // A fall protection job must not be handed the ladder entry form — the fields
 // and the parts catalogue are both wrong for it.
 function applyScopeToDetail(job) {
-  const isFp  = jobScope(job) === 'fall_protection';
-  const ladderPanels = ['form-panel', 'parts-panel', 'add-btn-panel', 'recent-panel'];
-  ladderPanels.forEach(id => { const el = $(id); if (el) el.style.display = isFp ? 'none' : ''; });
-  const todo = $('fp-todo-panel'); if (todo) todo.style.display = isFp ? '' : 'none';
+  const isFp = jobScope(job) === 'fall_protection';
+  ['form-panel', 'parts-panel', 'add-btn-panel', 'recent-panel']
+    .forEach(id => { const el = $(id); if (el) el.style.display = isFp ? 'none' : ''; });
+  // fp.js decides which of its own panels are showing, since that depends on
+  // whether an item is currently in hand.
+  const fpInput = $('fp-input-panel');
+  if (fpInput) fpInput.style.display = isFp ? '' : 'none';
+  if (!isFp) {
+    ['fp-record', 'fp-edit-form', 'fp-checks-panel', 'fp-save-panel', 'fp-items-panel']
+      .forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+  } else if (typeof fpReset === 'function') {
+    fpReset();
+  }
   const share = $('btn-share-csv');
   // The ladder CSV shape does not describe a fall protection item.
   if (share) share.style.display = isFp ? 'none' : '';

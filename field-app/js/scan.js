@@ -131,6 +131,15 @@ async function _manualDecodeTick(e) {
 }
 
 function _onScanSuccess(value) {
+  // A fall protection job borrows this scanner, so route the result there
+  // instead of into the ladder serial field.
+  if (window._fpAwaitScan) {
+    window._fpAwaitScan = false;
+    playSound('scan');
+    stopScan();
+    if (typeof fpLookup === 'function') fpLookup(value);
+    return;
+  }
   $('fi-serial').value = value;
   playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
   stopScan();

@@ -420,10 +420,91 @@
                    vertical-align: 1px; }
     .scope-badge.ladder { background: rgba(var(--accent-rgb),.16); color: var(--accent-fg); }
     .scope-badge.fp     { background: rgba(var(--ok-rgb),.16);     color: var(--ok-fg); }
-    .fp-todo { padding: 30px 22px; text-align: center; color: var(--muted);
-               font-size: 13.5px; line-height: 1.65; }
-    .fp-todo strong { display: block; color: var(--text); font-size: 15px;
-                      font-weight: 700; margin-bottom: 8px; }
+    /* ── Fall protection capture ── */
+    #fp-input-panel { flex-shrink: 0; background: var(--surf); border-bottom: 1px solid var(--border);
+                      padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .fp-ways { display: flex; gap: 5px; }
+    .fp-way { flex: 1; min-height: 46px; border-radius: 8px; background: var(--surf2);
+              border: 1px solid var(--border); color: var(--muted); font-size: 13px;
+              font-weight: 700; font-family: var(--font); cursor: pointer;
+              display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0; }
+    .fp-way svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .fp-way.primary { flex: 1.35; background: rgba(var(--accent-rgb),.12);
+                      border-color: rgba(var(--accent-rgb),.35); color: var(--accent-fg); }
+    .fp-way.new { background: rgba(var(--ok-rgb),.14); border-color: rgba(var(--ok-rgb),.32); color: var(--ok-fg); }
+    .fp-way:active { opacity: .7; }
+    .fp-typed { display: flex; gap: 6px; align-items: center; }
+    .fp-typed .field-input { flex: 1; min-width: 0; padding-right: 9px; }
+    .fp-hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+    .fp-hint.warn { color: var(--bad-fg); font-weight: 600; }
+
+    /* The record card. Matched = green; anything else stays neutral. */
+    #fp-record { flex-shrink: 0; margin: 10px 12px 0; background: var(--surf);
+                 border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    #fp-record.matched { border: 1.5px solid var(--ok); }
+    .fp-rec-hdr { padding: 7px 12px; display: flex; align-items: center; gap: 7px;
+                  background: var(--surf2); }
+    #fp-record.matched .fp-rec-hdr { background: rgba(var(--ok-rgb),.10); }
+    .fp-rec-tag { font-size: 10px; font-weight: 800; text-transform: uppercase;
+                  letter-spacing: .06em; color: var(--muted); }
+    #fp-record.matched .fp-rec-tag { color: var(--ok-fg); }
+    .fp-rec-edit { margin-left: auto; display: flex; align-items: center; gap: 5px;
+                   padding: 5px 10px; border-radius: 6px; background: var(--surf);
+                   border: 1px solid var(--border); color: var(--accent-fg);
+                   font-size: 11.5px; font-weight: 700; font-family: var(--font); cursor: pointer; }
+    .fp-rec-body { padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 1px; }
+    .fp-rec-sn { font-family: var(--mono); font-size: 17px; font-weight: 700; }
+    .fp-rec-sub { font-size: 12px; color: var(--muted); margin-left: 8px; }
+    .fp-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.5; }
+    .fp-kv .k { color: var(--muted); flex-shrink: 0; }
+    .fp-kv .v { font-weight: 600; text-align: right; }
+
+    #fp-edit-form { flex-shrink: 0; background: var(--surf); border-bottom: 1px solid var(--border);
+                    padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; }
+
+    /* One check per row so the whole list fits without scrolling. */
+    #fp-checks-panel { flex-shrink: 0; padding: 10px 12px 0; display: flex;
+                       flex-direction: column; gap: 5px; }
+    .fp-checks-hdr { display: flex; align-items: center; justify-content: space-between; }
+    #fp-checks-list { display: flex; flex-direction: column; gap: 5px; }
+    .fp-chk { display: flex; align-items: center; gap: 10px; background: var(--surf);
+              border: 1px solid var(--border); border-radius: 8px; padding: 6px 6px 6px 11px; }
+    .fp-chk.failed { border: 1.5px solid var(--bad); }
+    .fp-chk-q { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.3; }
+    .fp-seg { display: flex; gap: 3px; flex-shrink: 0; }
+    .fp-seg button { width: 52px; height: 44px; border-radius: 6px; background: var(--surf2);
+                     border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+                     font-weight: 700; font-family: var(--font); cursor: pointer; padding: 0; }
+    .fp-seg button.on-pass { background: rgba(var(--ok-rgb),.16); border: 1.5px solid var(--ok); color: var(--ok-fg); }
+    .fp-seg button.on-fail { background: rgba(var(--bad-rgb),.16); border: 1.5px solid var(--bad); color: var(--bad-fg); }
+
+    #fp-save-panel { flex-shrink: 0; background: var(--surf); border-top: 1px solid var(--border);
+                     padding: 7px 12px calc(7px + var(--safe-b)); display: flex;
+                     flex-direction: column; gap: 6px; }
+    .fp-overall { display: flex; align-items: center; justify-content: center; gap: 7px;
+                  font-size: 11px; color: var(--muted); }
+    .fp-overall .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .add-ladder-btn.fail { background: var(--bad); }
+
+    #fp-items-panel { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                      padding: 8px 12px calc(8px + var(--safe-b)); display: flex;
+                      flex-direction: column; gap: 6px; }
+    #fp-items-list { display: flex; flex-direction: column; gap: 6px; }
+    .fp-item { background: var(--surf); border: 1px solid var(--border); border-radius: 8px;
+               padding: 9px 12px 8px; display: flex; flex-direction: column; gap: 3px; }
+    .fp-item.failed { background: rgba(var(--bad-rgb),.05); border-color: rgba(var(--bad-rgb),.35); }
+    .fp-item-top { display: flex; gap: 6px; align-items: baseline; }
+    .fp-item-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .fp-item-meta { font-size: 11px; color: var(--muted); }
+    .fp-item-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+    .fp-item-badge.pass { color: var(--ok-fg); }
+    .fp-item-badge.fail { color: var(--bad-fg); }
+    .fp-photo-add { width: 104px; height: 104px; border-radius: 9px; border: 1px dashed var(--border);
+                    background: var(--surf); color: var(--muted); display: flex; flex-direction: column;
+                    align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+                    font-size: 11px; font-weight: 600; font-family: var(--font); flex-shrink: 0; }
+    .fp-photo-thumb { width: 104px; height: 104px; border-radius: 9px; border: 1px solid var(--border);
+                      object-fit: cover; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -538,11 +619,57 @@
 
   </div><!-- /form-panel -->
 
-  <!-- Fall protection jobs: capture form not built yet -->
-  <div id="fp-todo-panel" class="fp-todo" style="display:none;">
-    <strong>Fall protection capture is not built yet</strong>
-    This job is saved and keeps its work order number. Item capture — serial, model,
-    inspection checks and photo evidence — is the next piece of work.
+  <!-- ── Fall protection capture ──────────────────────────────────────────── -->
+
+  <!-- Four ways in. A tap is fastest, but a tag can be missing or unreadable, so
+       scanning and typing stay first-class — and New adds an item outright,
+       rather than making the tech scan something and be told it is not on file. -->
+  <div id="fp-input-panel" style="display:none;">
+    <div class="fp-ways">
+      <button class="fp-way primary" id="fp-btn-tap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>Tap
+      </button>
+      <button class="fp-way" id="fp-btn-scan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>Scan
+      </button>
+      <button class="fp-way" id="fp-btn-type">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Type
+      </button>
+      <button class="fp-way new" id="fp-btn-new">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
+      </button>
+    </div>
+    <div class="fp-typed" id="fp-typed-row" style="display:none;">
+      <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-p" id="fp-btn-lookup" style="font-size:13px;padding:8px 14px;">Find</button>
+    </div>
+    <div class="fp-hint" id="fp-hint"></div>
+  </div>
+
+  <!-- The record, from the device's own copy of last year's inspection.
+       Read-only by DEFAULT, not permanently: a stray touch must not rewrite last
+       year's data on a part the tech is only confirming, but Edit unlocks it. -->
+  <div id="fp-record" style="display:none;"></div>
+  <div id="fp-edit-form" style="display:none;"></div>
+
+  <div id="fp-checks-panel" style="display:none;">
+    <div class="fp-checks-hdr">
+      <span class="recent-hdr-label">Checks — all pass unless you say otherwise</span>
+    </div>
+    <div id="fp-checks-list"></div>
+  </div>
+
+  <div id="fp-save-panel" style="display:none;">
+    <div class="fp-overall" id="fp-overall"></div>
+    <button class="add-ladder-btn" id="fp-btn-save">Pass &amp; Next Item</button>
+  </div>
+
+  <div id="fp-items-panel" style="display:none;">
+    <div class="recent-hdr">
+      <span class="recent-hdr-label" id="fp-items-hdr">Items (0)</span>
+    </div>
+    <div id="fp-items-list"></div>
   </div>
 
   <!-- PANEL 2: Parts grid + manual input -->
@@ -650,6 +777,36 @@
 <!-- Parts Library Sheet -->
 <div class="sheet-backdrop hidden" id="lib-backdrop"></div>
 <!-- New-job scope chooser -->
+<!-- Removal from service. A photo is required; the reason comes from the checks
+     that failed, so the tech does not retype it; a note is offered, never demanded. -->
+<div class="settings-sheet hidden" id="fp-condemn-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">Removal from service</div>
+  <div class="sheet-desc" id="fp-condemn-why"></div>
+  <div class="sheet-fields">
+    <div class="field-ig">
+      <div class="field-label">Photo evidence — required</div>
+      <div id="fp-photo-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="fp-photo-add" id="fp-btn-photo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>Add photo</span>
+        </button>
+      </div>
+      <input type="file" id="fp-photo-input" accept="image/*" capture="environment" style="display:none;">
+    </div>
+    <div class="field-ig">
+      <div class="field-label">Note — optional</div>
+      <div class="field-ig-wrap">
+        <input type="text" id="fp-condemn-note" class="field-input"
+               placeholder="Anything worth adding…" autocomplete="off">
+      </div>
+    </div>
+    <div class="fp-hint">Stored on this phone until you are back on wifi. Kept for 2 years.</div>
+  </div>
+  <button class="btn-p sheet-done" id="fp-btn-confirm-condemn" style="background:var(--bad);">Confirm Removal</button>
+  <button class="btn-g sheet-done" id="fp-btn-cancel-condemn" style="margin-top:6px;">Back to checks</button>
+</div>
+
 <div class="settings-sheet hidden" id="scope-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">New job</div>
@@ -684,6 +841,7 @@
 <script src="./js/jobs.js"></script>
 <script src="./js/entry.js"></script>
 <script src="./js/list.js"></script>
+<script src="./js/fp.js"></script>
 <script src="./js/export.js"></script>
 <script src="./js/scan.js"></script>
 <script src="./js/sheets.js"></script>

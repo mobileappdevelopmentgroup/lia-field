@@ -19,7 +19,10 @@ function renderJobList() {
   [...body.querySelectorAll('.job-card')].forEach(el => el.remove());
   $('jobs-empty').style.display = sorted.length === 0 ? '' : 'none';
   sorted.forEach(job => {
-    const count = (job.ladders || []).length;
+    // A fall protection job counts items, not ladders.
+    const count = jobScope(job) === 'fall_protection'
+      ? (job.items || []).length
+      : (job.ladders || []).length;
     const sc    = SCOPES[jobScope(job)] || SCOPES.ladder;
     const date  = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
     const card  = document.createElement('div');
@@ -77,7 +80,7 @@ function createJob(scope) {
   const job = {
     id, name: '', workOrderNum: '',
     scope: SCOPES[scope] ? scope : 'ladder',
-    ladders: [], createdAt: now, updatedAt: now,
+    ladders: [], items: [], createdAt: now, updatedAt: now,
   };
   const all = loadJobs(); all[id] = job; saveJobs(all);
   openJob(id);

@@ -63,7 +63,7 @@ for (const dir of ['field-app/capacitor/www',
     entry:typeof buildLadderFromForm,
   }));
   const name = dir.split('/').slice(-3).join('/');
-  ok(`${name}: every module shipped`, r.scripts, 11);
+  ok(`${name}: every module shipped`, r.scripts, 12);
   ok(`${name}: zxing is vendored, not from a CDN`, r.cdn, false);
   ok(`${name}: the app initialises`, r.entry, 'function');
   if (berrs.length) { failures++; console.log('FAIL', name, berrs[0]); }
