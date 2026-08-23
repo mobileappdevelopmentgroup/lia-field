@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+           background:#f5f5f5; color:#1c1c1e; -webkit-font-smoothing:antialiased; }
+    a { color:#0071e3; } a:hover { color:#005bb5; }
+  </style>
+</helmet>
+
+<div style="width:390px; height:844px; display:flex; flex-direction:column; background:#f5f5f5; overflow:hidden;">
+
+  <!-- topbar -->
+  <div style="height:50px; flex-shrink:0; background:#ffffff; border-bottom:1px solid #d1d1d6; display:flex; align-items:center; gap:8px; padding:0 12px;">
+    <div style="color:#0071e3; font-size:15px; font-weight:600;">‹ Jobs</div>
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;">
+      <input value="Comcast Northern Tier" style="border:none; background:none; font-size:17px; font-weight:800; letter-spacing:-.02em; color:#1c1c1e; padding:0; width:100%; font-family:inherit;">
+      <input value="WO-88104" style="border:none; background:none; font-size:12px; font-weight:400; color:#8e8e93; padding:0; width:100%; font-family:'SF Mono','Fira Code',monospace;">
+    </div>
+    <div style="width:32px; height:32px; border-radius:7px; background:#ebebeb; display:flex; align-items:center; justify-content:center;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.43.65.79.79H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+  </div>
+
+  <!-- scope strip -->
+  <div style="flex-shrink:0; background:#ffffff; border-bottom:1px solid #d1d1d6; padding:7px 12px; display:flex; align-items:center; gap:8px;">
+    <span style="font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:rgba(37,162,68,.16); color:#25a244;">Fall Protection</span>
+    <span style="font-size:11px; color:#8e8e93;">14 items · 1 removed from service</span>
+  </div>
+
+  <!-- list -->
+  <div style="flex:1; min-height:0; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:6px;">
+
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <span style="font-size:10px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.08em;">Recent</span>
+      <div style="border:1px solid #d1d1d6; border-radius:6px; font-size:11px; font-weight:600; color:#8e8e93; padding:4px 9px;">↑ Sync</div>
+    </div>
+
+    <div style="background:#ffffff; border:1px solid #d1d1d6; border-radius:8px; padding:9px 12px 8px; display:flex; flex-direction:column; gap:3px;">
+      <div style="display:flex; gap:6px; align-items:baseline;">
+        <span style="font-family:'SF Mono','Fira Code',monospace; font-size:13px; font-weight:700;">H-4471-A</span>
+        <span style="font-size:11px; color:#8e8e93;">MSA · V-FIT · Harness</span>
+        <span style="margin-left:auto; font-size:10px; font-weight:800; color:#25a244; letter-spacing:.04em;">PASS</span>
+      </div>
+      <div style="font-size:11px; color:#8e8e93;">Lot 88-C · Mfg Apr 2024 · Due 1 Apr 2027</div>
+    </div>
+
+    <div style="background:#ffffff; border:1px solid #d1d1d6; border-radius:8px; padding:9px 12px 8px; display:flex; flex-direction:column; gap:3px;">
+      <div style="display:flex; gap:6px; align-items:baseline;">
+        <span style="font-family:'SF Mono','Fira Code',monospace; font-size:13px; font-weight:700;">L-2210</span>
+        <span style="font-size:11px; color:#8e8e93;">Petzl · ABSORBICA · Lanyard</span>
+        <span style="margin-left:auto; font-size:10px; font-weight:800; color:#25a244; letter-spacing:.04em;">PASS</span>
+      </div>
+      <div style="font-size:11px; color:#8e8e93;">Lot 19-B · Mfg Nov 2023 · Due 1 Apr 2027</div>
+    </div>
+
+    <div style="background:rgba(217,45,32,.05); border:1px solid rgba(217,45,32,.35); border-radius:8px; padding:9px 12px 8px; display:flex; flex-direction:column; gap:3px;">
+      <div style="display:flex; gap:6px; align-items:baseline;">
+        <span style="font-family:'SF Mono','Fira Code',monospace; font-size:13px; font-weight:700;">H-4472-A</span>
+        <span style="font-size:11px; color:#8e8e93;">MSA · V-FIT · Harness</span>
+        <span style="margin-left:auto; font-size:10px; font-weight:800; color:#d92d20; letter-spacing:.04em;">REMOVED</span>
+      </div>
+      <div style="font-size:11px; color:#d92d20;">Impact indicator deployed · photo attached</div>
+    </div>
+
+    <div style="background:#ffffff; border:1px solid #d1d1d6; border-radius:8px; padding:9px 12px 8px; display:flex; flex-direction:column; gap:3px;">
+      <div style="display:flex; gap:6px; align-items:baseline;">
+        <span style="font-family:'SF Mono','Fira Code',monospace; font-size:13px; font-weight:700;">SRL-0098</span>
+        <span style="font-size:11px; color:#8e8e93;">3M · NANO-LOK · SRL</span>
+        <span style="margin-left:auto; font-size:10px; font-weight:800; color:#25a244; letter-spacing:.04em;">PASS</span>
+      </div>
+      <div style="font-size:11px; color:#8e8e93;">Lot 42-A · Mfg Jan 2025 · Due 1 Apr 2027</div>
+    </div>
+  </div>
+
+  <!-- add -->
+  <div style="flex-shrink:0; background:#ffffff; border-top:1px solid #d1d1d6; padding:8px 12px 22px;">
+    <div style="width:100%; min-height:48px; background:#0071e3; color:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">+ Add Item</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

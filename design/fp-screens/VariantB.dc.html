@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+           background:#f5f5f5; color:#1c1c1e; -webkit-font-smoothing:antialiased; }
+    a { color:#0071e3; } a:hover { color:#005bb5; }
+  </style>
+</helmet>
+
+<div style="width:390px; height:844px; display:flex; flex-direction:column; background:#f5f5f5; overflow:hidden;">
+
+  <div style="height:50px; flex-shrink:0; background:#fff; border-bottom:1px solid #d1d1d6; display:flex; align-items:center; gap:8px; padding:0 12px;">
+    <div style="color:#0071e3; font-size:15px; font-weight:600;">‹ Back</div>
+    <div style="flex:1; font-size:17px; font-weight:800; letter-spacing:-.02em;">Item 3 of 14</div>
+    <span style="font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:rgba(37,162,68,.16); color:#25a244;">Fall Protection</span>
+  </div>
+
+  <!-- Identity collapses to one line once it is filled. Tapping it expands the
+       full field set; the checks are what stays on screen. -->
+  <div style="background:#fff; border-bottom:1px solid #d1d1d6; padding:10px 12px; display:flex; align-items:center; gap:10px;">
+    <div style="width:38px; height:38px; border-radius:8px; background:rgba(0,113,227,.12); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9M14 17H5M17 3l3 4-3 4M7 13l-3 4 3 4"/></svg>
+    </div>
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+      <div style="font-family:'SF Mono','Fira Code',monospace; font-size:15px; font-weight:700;">H-4471-A</div>
+      <div style="font-size:11px; color:#8e8e93; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">MSA · V-FIT · Harness · Lot 88-C · Apr 2024</div>
+    </div>
+    <div style="font-size:12px; font-weight:600; color:#0071e3; flex-shrink:0;">Edit</div>
+  </div>
+
+  <div style="padding:12px 12px 6px; display:flex; align-items:center; justify-content:space-between;">
+    <span style="font-size:10px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.08em;">Checks · 1 of 3 answered</span>
+    <span style="font-size:10px; color:#8e8e93;">MSA V-FIT · v3</span>
+  </div>
+
+  <div style="flex:1; min-height:0; overflow-y:auto; padding:0 12px; display:flex; flex-direction:column; gap:8px;">
+
+    <div style="background:#fff; border:1px solid #d1d1d6; border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:16px; line-height:1.35; font-weight:500;">Are all labels and markings present, secured and legible?</div>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; min-height:56px; border-radius:9px; background:rgba(37,162,68,.16); border:1.5px solid #25a244; color:#25a244; display:flex; align-items:center; justify-content:center; gap:6px; font-size:15px; font-weight:700;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#25a244" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          Pass
+        </div>
+        <div style="flex:1; min-height:56px; border-radius:9px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; gap:6px; font-size:15px; font-weight:700;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          Fail
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #d1d1d6; border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:16px; line-height:1.35; font-weight:500;">Has the impact indicator been activated?</div>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; min-height:56px; border-radius:9px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; gap:6px; font-size:15px; font-weight:700;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          Pass
+        </div>
+        <div style="flex:1; min-height:56px; border-radius:9px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; gap:6px; font-size:15px; font-weight:700;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="3" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          Fail
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff; border:1px solid #d1d1d6; border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:12px; opacity:.55;">
+      <div style="font-size:16px; line-height:1.35; font-weight:500;">Is the webbing free of cuts, fraying and chemical damage?</div>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; min-height:56px; border-radius:9px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">Pass</div>
+        <div style="flex:1; min-height:56px; border-radius:9px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">Fail</div>
+      </div>
+    </div>
+
+    <div style="min-height:48px; border:1px dashed #d1d1d6; border-radius:9px; display:flex; align-items:center; justify-content:center; gap:6px; color:#8e8e93; font-size:13px; font-weight:600;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Add a check for this item only
+    </div>
+    <div style="height:8px;"></div>
+  </div>
+
+  <div style="flex-shrink:0; background:#fff; border-top:1px solid #d1d1d6; padding:8px 12px 22px; display:flex; gap:8px;">
+    <div style="flex:1; min-height:48px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">Save</div>
+    <div style="flex:1.4; min-height:48px; background:#0071e3; color:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">Save &amp; Next</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

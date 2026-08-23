@@ -1,0 +1,18 @@
+{
+  "artboards": [
+    { "file": "ItemList.dc.html",  "x": 0,    "y": 0,   "w": 390, "h": 844, "title": "Item list" },
+    { "file": "Main.dc.html",      "x": 510,  "y": 0,   "w": 390, "h": 844, "title": "A — Form first" },
+    { "file": "VariantB.dc.html",  "x": 1020, "y": 0,   "w": 390, "h": 844, "title": "B — Checks first" },
+    { "file": "FailState.dc.html", "x": 1530, "y": 0,   "w": 390, "h": 844, "title": "Fail state" },
+    { "file": "Condemn.dc.html",   "x": 2040, "y": 0,   "w": 390, "h": 844, "title": "Removal from service" }
+  ],
+  "annotations": [
+    { "id": "the-choice", "x": 510, "y": -190, "w": 900,
+      "text": "THE DECISION — two ways to lay out item capture.\n\nA (Form first) mirrors the ladder screen you already have: every field visible, checks below the fold. Familiar, fast for a tech who is heads-down entering data. Tradeoff: the safety-critical part is the part you have to scroll to.\n\nB (Checks first) collapses identity to one line once filled and gives the checks the whole screen with 56px targets. The checks are the actual work and the thing that condemns an item. Tradeoff: editing identity costs a tap, and it needs a Save & Next flow to be worth it." },
+    { "id": "flow-note", "x": 1530, "y": -190, "w": 900,
+      "text": "THE CONDEMN PATH — this is forced, not optional.\n\nOne failed check fails the item; the tech never picks the overall result. Failing reveals the banner, and the item cannot be saved without a reason AND a photo. Both screens shown in variant B's layout.\n\nThe database enforces the same rule, so a device that skips it is refused." },
+    { "id": "assumptions", "x": 0, "y": -190, "w": 440,
+      "text": "Static mockups, light theme (the app's default).\n\nMatched to field-app/index.html: same tokens, 50px topbar, 9.5px uppercase labels, 7px input radii, mono serials. Sample data throughout.\n\nNot drawn: the model/manufacturer picker (mirrors the existing parts library) and NFC write, which needs its own flow." }
+  ],
+  "launch": { "view": "canvas" }
+}
