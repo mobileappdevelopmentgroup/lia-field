@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+           background:#f5f5f5; color:#1c1c1e; -webkit-font-smoothing:antialiased; }
+    a { color:#0071e3; } a:hover { color:#005bb5; }
+    .lbl { font-size:9.5px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.06em; }
+    .inp { background:#ebebeb; border:1px solid #d1d1d6; border-radius:7px; color:#1c1c1e;
+           font-family:inherit; font-size:16px; padding:7px 9px; width:100%; outline:none; }
+    .ph  { color:#8e8e93; }
+  </style>
+</helmet>
+
+<div style="width:390px; height:844px; display:flex; flex-direction:column; background:#f5f5f5; overflow:hidden;">
+
+  <div style="height:50px; flex-shrink:0; background:#fff; border-bottom:1px solid #d1d1d6; display:flex; align-items:center; gap:8px; padding:0 12px;">
+    <div style="color:#0071e3; font-size:15px; font-weight:600;">‹ Back</div>
+    <div style="flex:1; font-size:17px; font-weight:800; letter-spacing:-.02em;">New Item</div>
+    <span style="font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:rgba(37,162,68,.16); color:#25a244;">Fall Protection</span>
+  </div>
+
+  <!-- The uncommon path: a tag or serial with no record on the device. Only
+       here does the tech type anything. -->
+  <div style="flex-shrink:0; margin:10px 12px 0; background:rgba(0,113,227,.07); border:1px solid rgba(0,113,227,.3); border-radius:10px; padding:10px 12px; display:flex; gap:9px; align-items:flex-start;">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round" style="flex-shrink:0; margin-top:1px;"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
+    <div style="flex:1; min-width:0; font-size:12.5px; line-height:1.45; color:#1c1c1e;">
+      <strong>No record for this tag.</strong> First time this item has been inspected, so it needs entering once. Next year it will come up filled in.
+    </div>
+  </div>
+
+  <div style="flex:1; min-height:0; overflow-y:auto; padding:10px 12px 0; display:flex; flex-direction:column; gap:7px;">
+
+    <div style="display:flex; gap:7px; align-items:flex-end;">
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Serial #</div>
+        <input class="inp" value="H-5580-B">
+      </div>
+      <div style="width:46px; height:46px; border-radius:7px; background:rgba(0,113,227,.15); border:1px solid rgba(0,113,227,.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:7px;">
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Manufacturer</div>
+        <input class="inp" value="MSA">
+      </div>
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Model</div>
+        <input class="inp" value="V-FIT">
+      </div>
+    </div>
+
+    <!-- Known combinations come from the catalogue, same as the ladder parts
+         library: tap instead of type. -->
+    <div style="display:flex; flex-wrap:wrap; gap:5px;">
+      <div style="font-size:11px; font-weight:600; padding:6px 10px; border-radius:6px; background:rgba(0,113,227,.14); border:1px solid rgba(0,113,227,.28); color:#0071e3; font-family:'SF Mono','Fira Code',monospace;">MSA · V-FIT</div>
+      <div style="font-size:11px; font-weight:600; padding:6px 10px; border-radius:6px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; font-family:'SF Mono','Fira Code',monospace;">Petzl · ABSORBICA</div>
+      <div style="font-size:11px; font-weight:600; padding:6px 10px; border-radius:6px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; font-family:'SF Mono','Fira Code',monospace;">3M · NANO-LOK</div>
+    </div>
+
+    <div style="display:flex; gap:7px;">
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Item type</div>
+        <input class="inp" value="Harness">
+      </div>
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Lot #</div>
+        <input class="inp ph" value="optional">
+      </div>
+    </div>
+
+    <div style="display:flex; gap:7px;">
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Mfg month</div>
+        <input class="inp ph" value="MM">
+      </div>
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+        <div class="lbl">Mfg year</div>
+        <input class="inp ph" value="YYYY">
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:2px;">
+      <div class="lbl">Description</div>
+      <input class="inp ph" value="optional">
+    </div>
+
+    <div style="display:flex; align-items:center; gap:9px; background:#fff; border:1px solid #d1d1d6; border-radius:8px; padding:9px 11px; margin-top:2px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="#0071e3"/></svg>
+      <div style="flex:1; min-width:0; font-size:12.5px; line-height:1.35;">Write serial to a blank NFC tag</div>
+      <div style="width:52px; height:44px; border-radius:6px; background:rgba(0,113,227,.14); border:1px solid rgba(0,113,227,.3); color:#0071e3; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0;">Write</div>
+    </div>
+
+    <div style="height:6px;"></div>
+  </div>
+
+  <div style="flex-shrink:0; background:#fff; border-top:1px solid #d1d1d6; padding:7px 12px 22px;">
+    <div style="width:100%; min-height:50px; background:#0071e3; color:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800;">Continue to Checks</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

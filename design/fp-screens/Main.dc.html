@@ -11,9 +11,19 @@
     body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
            background:#f5f5f5; color:#1c1c1e; -webkit-font-smoothing:antialiased; }
     a { color:#0071e3; } a:hover { color:#005bb5; }
-    .lbl { font-size:9.5px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.06em; }
-    .inp { background:#ebebeb; border:1px solid #d1d1d6; border-radius:7px; color:#1c1c1e;
-           font-family:inherit; font-size:16px; padding:6px 9px; width:100%; outline:none; }
+    .kv { display:flex; justify-content:space-between; gap:10px; font-size:12px; line-height:1.5; }
+    .k  { color:#8e8e93; flex-shrink:0; }
+    .v  { font-weight:600; text-align:right; }
+    .mono { font-family:'SF Mono','Fira Code',monospace; }
+    /* One check = one row. Prompt left, segmented Pass/Fail right, 44px tall. */
+    .chk { display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #d1d1d6;
+           border-radius:8px; padding:6px 6px 6px 11px; }
+    .chk-q { flex:1; min-width:0; font-size:12.5px; line-height:1.3; }
+    .seg { display:flex; gap:3px; flex-shrink:0; }
+    .seg > div { width:52px; height:44px; border-radius:6px; display:flex; align-items:center;
+                 justify-content:center; font-size:12px; font-weight:700; }
+    .on-pass { background:rgba(37,162,68,.16); border:1.5px solid #25a244; color:#25a244; }
+    .off     { background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; }
   </style>
 </helmet>
 
@@ -21,124 +31,93 @@
 
   <div style="height:50px; flex-shrink:0; background:#fff; border-bottom:1px solid #d1d1d6; display:flex; align-items:center; gap:8px; padding:0 12px;">
     <div style="color:#0071e3; font-size:15px; font-weight:600;">‹ Back</div>
-    <div style="flex:1; font-size:17px; font-weight:800; letter-spacing:-.02em;">Add Item</div>
+    <div style="flex:1; font-size:17px; font-weight:800; letter-spacing:-.02em;">Item 3 of 14</div>
     <span style="font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:rgba(37,162,68,.16); color:#25a244;">Fall Protection</span>
   </div>
 
-  <div style="flex:1; min-height:0; overflow-y:auto;">
-
-    <!-- identity -->
-    <div style="background:#fff; border-bottom:1px solid #d1d1d6; padding:7px 12px; display:flex; flex-direction:column; gap:5px;">
-
-      <div style="display:flex; gap:6px; align-items:flex-end;">
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Serial #</div>
-          <input class="inp" value="H-4471-A">
-        </div>
-        <div style="width:44px; height:44px; border-radius:7px; background:rgba(0,113,227,.15); border:1px solid rgba(0,113,227,.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-        </div>
-        <div style="width:44px; height:44px; border-radius:7px; background:rgba(0,113,227,.15); border:1px solid rgba(0,113,227,.35); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.2" fill="#0071e3"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>
-        </div>
-      </div>
-
-      <div style="display:flex; gap:6px;">
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Manufacturer</div>
-          <input class="inp" value="MSA">
-        </div>
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Model</div>
-          <input class="inp" value="V-FIT">
-        </div>
-      </div>
-
-      <div style="display:flex; gap:6px;">
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Item Type</div>
-          <input class="inp" value="Harness">
-        </div>
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Lot #</div>
-          <input class="inp" value="88-C">
-        </div>
-      </div>
-
-      <div style="display:flex; gap:6px;">
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Mfg Month</div>
-          <input class="inp" value="04">
-        </div>
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Mfg Year</div>
-          <input class="inp" value="2024">
-        </div>
-        <div style="flex:1.4; min-width:0; display:flex; flex-direction:column; gap:2px;">
-          <div class="lbl">Inspected</div>
-          <input class="inp" value="2026-08-22">
-        </div>
-      </div>
-
-      <div style="display:flex; flex-direction:column; gap:2px;">
-        <div class="lbl">Description</div>
-        <input class="inp" value="Full body harness, rear D-ring">
-      </div>
-
-      <div style="display:flex; align-items:center; gap:6px; padding-top:1px;">
-        <span class="lbl">Next due</span>
-        <span style="font-family:'SF Mono','Fira Code',monospace; font-size:12px; font-weight:700; color:#1c1c1e;">2027-08-22</span>
-        <span style="font-size:10px; color:#8e8e93;">— one year, set automatically</span>
-      </div>
+  <!-- Tap-to-read is the whole input. The tech does not type. -->
+  <div style="flex-shrink:0; background:#fff; border-bottom:1px solid #d1d1d6; padding:8px 12px; display:flex; gap:8px;">
+    <div style="flex:1; min-height:46px; border-radius:8px; background:rgba(0,113,227,.12); border:1px solid rgba(0,113,227,.35); display:flex; align-items:center; justify-content:center; gap:8px; color:#0071e3; font-size:14px; font-weight:700;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0071e3" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="#0071e3"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>
+      Tap NFC tag
     </div>
-
-    <!-- checks -->
-    <div style="padding:10px 12px 6px; display:flex; align-items:center; justify-content:space-between;">
-      <span style="font-size:10px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.08em;">Inspection Checks</span>
-      <span style="font-size:10px; color:#8e8e93;">MSA V-FIT · v3</span>
+    <div style="width:46px; min-height:46px; border-radius:8px; background:#ebebeb; border:1px solid #d1d1d6; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
     </div>
-
-    <div style="padding:0 12px; display:flex; flex-direction:column; gap:6px;">
-
-      <div style="background:#fff; border:1px solid #d1d1d6; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
-        <div style="font-size:14px; line-height:1.4;">Are all labels and markings present, secured and legible?</div>
-        <div style="display:flex; gap:6px;">
-          <div style="flex:1; min-height:44px; border-radius:7px; background:rgba(37,162,68,.16); border:1px solid #25a244; color:#25a244; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Pass</div>
-          <div style="flex:1; min-height:44px; border-radius:7px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Fail</div>
-        </div>
-      </div>
-
-      <div style="background:#fff; border:1px solid #d1d1d6; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
-        <div style="font-size:14px; line-height:1.4;">Has the impact indicator been activated?</div>
-        <div style="display:flex; gap:6px;">
-          <div style="flex:1; min-height:44px; border-radius:7px; background:rgba(37,162,68,.16); border:1px solid #25a244; color:#25a244; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Pass</div>
-          <div style="flex:1; min-height:44px; border-radius:7px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Fail</div>
-        </div>
-      </div>
-
-      <div style="background:#fff; border:1px solid #d1d1d6; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
-        <div style="font-size:14px; line-height:1.4;">Is the webbing free of cuts, fraying and chemical damage?</div>
-        <div style="display:flex; gap:6px;">
-          <div style="flex:1; min-height:44px; border-radius:7px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Pass</div>
-          <div style="flex:1; min-height:44px; border-radius:7px; background:#ebebeb; border:1px solid #d1d1d6; color:#8e8e93; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;">Fail</div>
-        </div>
-      </div>
-
-      <div style="min-height:44px; border:1px dashed #d1d1d6; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:6px; color:#8e8e93; font-size:13px; font-weight:600;">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        Add a check for this item only
-      </div>
-    </div>
-
-    <div style="height:14px;"></div>
   </div>
 
-  <div style="flex-shrink:0; background:#fff; border-top:1px solid #d1d1d6; padding:8px 12px 22px; display:flex; flex-direction:column; gap:6px;">
+  <!-- Recognised item: everything below is pulled from the device's own copy of
+       last year's record. Read-only on purpose — the job is to VERIFY it is the
+       right part, not to retype it. -->
+  <div style="flex-shrink:0; margin:10px 12px 0; background:#fff; border:1.5px solid #25a244; border-radius:10px; overflow:hidden;">
+    <div style="background:rgba(37,162,68,.10); padding:7px 12px; display:flex; align-items:center; gap:7px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#25a244" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <span style="font-size:10px; font-weight:800; color:#25a244; text-transform:uppercase; letter-spacing:.06em;">Matched — inspected last year</span>
+      <span style="margin-left:auto; font-size:11px; font-weight:600; color:#0071e3;">Edit</span>
+    </div>
+    <div style="padding:9px 12px 10px; display:flex; flex-direction:column; gap:1px;">
+      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:4px;">
+        <span class="mono" style="font-size:17px; font-weight:700;">H-4471-A</span>
+        <span style="font-size:12px; color:#8e8e93;">MSA V-FIT</span>
+      </div>
+      <div class="kv"><span class="k">Item type</span><span class="v">Harness</span></div>
+      <div class="kv"><span class="k">Description</span><span class="v">Full body, rear D-ring</span></div>
+      <div class="kv"><span class="k">Lot #</span><span class="v mono">88-C</span></div>
+      <div class="kv"><span class="k">Manufactured</span><span class="v">Apr 2024</span></div>
+      <div class="kv"><span class="k">Last inspected</span><span class="v">12 Apr 2025 · BTV-4471</span></div>
+      <div class="kv"><span class="k">Tag</span><span class="v mono">04:A1:B2:C3</span></div>
+    </div>
+  </div>
+
+  <div style="padding:11px 12px 6px; display:flex; align-items:center; justify-content:space-between;">
+    <span style="font-size:10px; font-weight:700; color:#8e8e93; text-transform:uppercase; letter-spacing:.08em;">Checks — all pass unless you say otherwise</span>
+  </div>
+
+  <div style="flex:1; min-height:0; overflow-y:auto; padding:0 12px; display:flex; flex-direction:column; gap:5px;">
+
+    <div class="chk">
+      <div class="chk-q">Labels and markings present, secured and legible</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div class="chk">
+      <div class="chk-q">Impact indicator not activated</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div class="chk">
+      <div class="chk-q">Webbing free of cuts, fraying, chemical damage</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div class="chk">
+      <div class="chk-q">Stitching intact, no pulled or broken threads</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div class="chk">
+      <div class="chk-q">Hardware free of cracks, corrosion and distortion</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div class="chk">
+      <div class="chk-q">D-rings and buckles operate correctly</div>
+      <div class="seg"><div class="on-pass">Pass</div><div class="off">Fail</div></div>
+    </div>
+
+    <div style="min-height:38px; border:1px dashed #d1d1d6; border-radius:8px; display:flex; align-items:center; justify-content:center; gap:6px; color:#8e8e93; font-size:12px; font-weight:600;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Add a check for this item only
+    </div>
+    <div style="height:4px;"></div>
+  </div>
+
+  <div style="flex-shrink:0; background:#fff; border-top:1px solid #d1d1d6; padding:7px 12px 22px; display:flex; flex-direction:column; gap:6px;">
     <div style="display:flex; align-items:center; justify-content:center; gap:7px; font-size:11px; color:#8e8e93;">
       <span style="width:7px; height:7px; border-radius:50%; background:#25a244; display:inline-block;"></span>
-      Overall: <strong style="color:#25a244;">PASS</strong> — set by the checks above
+      Overall <strong style="color:#25a244;">PASS</strong> · next due 23 Aug 2027
     </div>
-    <div style="width:100%; min-height:48px; background:#0071e3; color:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;">Save Item</div>
+    <div style="width:100%; min-height:50px; background:#25a244; color:#fff; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800;">Pass &amp; Next Item</div>
   </div>
 
 </div>
