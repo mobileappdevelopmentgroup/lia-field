@@ -20,14 +20,17 @@
       --border:     #2b2b4b;
       --accent:     #4f6ef7;
       --ok:         #2ecc71;
+      --bad:        #e05260;
       --err:        #e74c3c;
       --text:       #dde0f0;
       --muted:      #5e6080;
       --accent-fg:  #8fa4ff;
       --ok-fg:      #60d998;
+      --bad-fg:     #ff8b95;
       --err-fg:     #e07070;
       --accent-rgb: 79,110,247;
       --ok-rgb:     46,204,113;
+      --bad-rgb:    224,82,96;
       --err-rgb:    231,76,60;
       --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --mono:   'SF Mono','Fira Code','Cascadia Code',monospace;
@@ -41,14 +44,17 @@
       --border:     #d1d1d6;
       --accent:     #0071e3;
       --ok:         #25a244;
+      --bad:        #d92d20;
       --err:        #d93025;
       --text:       #1c1c1e;
       --muted:      #8e8e93;
       --accent-fg:  #0071e3;
       --ok-fg:      #25a244;
+      --bad-fg:     #d92d20;
       --err-fg:     #d93025;
       --accent-rgb: 0,113,227;
       --ok-rgb:     37,162,68;
+      --bad-rgb:    217,45,32;
       --err-rgb:    217,48,37;
     }
     html, body { height: 100%; height: -webkit-fill-available; height: 100dvh; }
@@ -168,6 +174,18 @@
     /* 2-column row: Location | Description */
     .meta-row-2 { display: flex; gap: 6px; }
     .meta-row-2 .field-ig { flex: 1; min-width: 0; }
+
+    /* BSI checkboxes: Leveler / Claw / V-Rung / Properly lubricated.
+       Tri-state — unset is not the same as "no". */
+    .flag-row { display: flex; gap: 5px; }
+    .flag-btn { flex: 1; background: var(--surf2); border: 1px solid var(--border);
+                border-radius: 7px; color: var(--muted); padding: 6px 2px; cursor: pointer;
+                display: flex; flex-direction: column; align-items: center; gap: 1px;
+                line-height: 1.2; }
+    .flag-btn .fb-k { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .flag-btn .fb-v { font-size: 9px; font-weight: 600; letter-spacing: .03em; }
+    .flag-btn.yes { background: rgba(var(--ok-rgb),.16);  border-color: var(--ok);  color: var(--ok-fg); }
+    .flag-btn.no  { background: rgba(var(--bad-rgb),.16); border-color: var(--bad); color: var(--bad-fg); }
 
     /* Autocomplete */
     .ac-wrap { position: relative; }
@@ -494,6 +512,9 @@
         </div>
       </div>
     </div>
+
+    <!-- BSI checkboxes, rendered by renderFlags() -->
+    <div class="flag-row" id="flag-row"></div>
 
     <!-- Custom fields injected dynamically -->
     <div id="custom-fields-form"></div>
@@ -938,8 +959,10 @@ function clearEntryForm() {
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   updateSerialWarnState();
   _currentParts = new Map();
+  _currentFlags = NO_FLAGS();
   renderPartButtons();
   renderSelectedParts();
+  renderFlags();
 }
 
 function clearFormAll() {
@@ -949,8 +972,10 @@ function clearFormAll() {
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   updateSerialWarnState();
   _currentParts = new Map();
+  _currentFlags = NO_FLAGS();
   renderPartButtons();
   renderSelectedParts();
+  renderFlags();
 }
 
 $('btn-clear-form').addEventListener('click', clearFormAll);
@@ -1124,6 +1149,38 @@ function setEditMode(editing) {
   $('btn-cancel-edit').style.display = editing ? 'block' : 'none';
 }
 
+// The four checkboxes that sit under Length on the BSI ladder form.
+const LADDER_FLAGS = [
+  { key: 'leveler',    code: 'L', col: 'Leveler',    label: 'Leveler' },
+  { key: 'claw',       code: 'C', col: 'Claw',       label: 'Claw' },
+  { key: 'vrung',      code: 'V', col: 'V-Rung',     label: 'V-Rung' },
+  { key: 'lubricated', code: 'P', col: 'Lubricated', label: 'Properly lubricated' },
+];
+const NO_FLAGS = () => ({ leveler: null, claw: null, vrung: null, lubricated: null });
+let _currentFlags = NO_FLAGS();
+
+function renderFlags() {
+  const row = $('flag-row');
+  if (!row) return;
+  row.innerHTML = '';
+  LADDER_FLAGS.forEach(f => {
+    const v = _currentFlags[f.key];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'flag-btn' + (v === true ? ' yes' : v === false ? ' no' : '');
+    b.title = f.label + (v === true ? ': yes' : v === false ? ': no' : ' \u2014 not assessed');
+    b.innerHTML = `<span class="fb-k">${f.code}</span>` +
+                  `<span class="fb-v">${v === true ? 'YES' : v === false ? 'NO' : '\u2014'}</span>`;
+    // unset -> yes -> no -> unset. "Not assessed" has to stay distinct from
+    // "no": the importer only ever ticks a box, it never unticks one.
+    b.addEventListener('click', () => {
+      _currentFlags[f.key] = v === null ? true : v === true ? false : null;
+      renderFlags();
+    });
+    row.appendChild(b);
+  });
+}
+
 function buildLadderFromForm(existingId) {
   const parts = [];
   _currentParts.forEach((qty, name) => { if (qty > 0) parts.push({ name, qty }); });
@@ -1142,6 +1199,7 @@ function buildLadderFromForm(existingId) {
     desc:       $('fi-desc').value.trim(),
     customFields,
     parts,
+    flags: { ..._currentFlags },
   };
 }
 
@@ -1250,9 +1308,13 @@ function buildCsv(job) {
   const cfNames = [...cfSet];
   const maxParts = ladders.reduce((m, l) => Math.max(m, (l.parts || []).length), 0);
   const partCols = Array.from({ length: maxParts }, (_, i) => String.fromCharCode(65 + i));
+  // Prefixed because three of these collide with real part numbers — "Levelers"
+  // is in the seed catalogue, and Claw and V-Rung are part numbers too. A bare
+  // column would be imported into BSI as a part to search for.
+  const flagCols = LADDER_FLAGS.map(f => `[Flag] ${f.col}`);
   const headers  = [
     'Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description',
-    ...cfNames.map(n => `[Custom] ${n}`), ...partCols,
+    ...flagCols, ...cfNames.map(n => `[Custom] ${n}`), ...partCols,
   ];
   const escape = v => {
     const s = String(v ?? '');
@@ -1264,6 +1326,10 @@ function buildCsv(job) {
       'Location ID': l.locationId || '', 'Brand': l.brand || '',
       'Type': l.type || '', 'Length': l.length || '', 'Description': 'Ladder Repair',
     };
+    LADDER_FLAGS.forEach((f, i) => {
+      const v = (l.flags || {})[f.key];
+      row[flagCols[i]] = v === true ? 'Yes' : v === false ? 'No' : '';
+    });
     cfNames.forEach(n => { row[`[Custom] ${n}`] = (l.customFields || {})[n] || ''; });
     (l.parts || []).forEach((p, i) => {
       row[String.fromCharCode(65 + i)] = p.qty > 1 ? `(${p.qty}) ${p.name}` : (p.name || '');
@@ -1563,7 +1629,8 @@ function fillForm(l, includeSerial) {
   document.querySelectorAll('.cf-input').forEach(input => {
     input.value = (input.dataset.cf && l.customFields && l.customFields[input.dataset.cf]) || '';
   });
-  renderPartButtons(); renderSelectedParts();
+  _currentFlags = Object.assign(NO_FLAGS(), l.flags || {});
+  renderPartButtons(); renderSelectedParts(); renderFlags();
   $('fi-serial').focus();
 }
 
@@ -1835,6 +1902,7 @@ if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform()) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderJobList();
+renderFlags();
 </script>
 </body>
 </html>

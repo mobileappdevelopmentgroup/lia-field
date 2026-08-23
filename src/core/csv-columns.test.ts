@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isPartColumn, partColumns } from './csv-columns.js';
+import { isPartColumn, partColumns, parseFlagValue } from './csv-columns.js';
 import { parsePartValue } from './part-value.js';
 
 // Regression: "[Custom] " columns come from Lia Field's user-defined fields and are
@@ -32,9 +32,12 @@ test('everything else is a part column', () => {
 test('partColumns picks out only real parts from a field-app header row', () => {
   const headers = [
     'Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description',
-    '[Custom] Truck Bay', '[Custom] Notes', 'Lubricated', 'A', 'B',
+    '[Custom] Truck Bay', '[Custom] Notes', 'Lubricated',
+    '[Flag] Leveler', '[Flag] Claw', '[Flag] V-Rung', '[Flag] Lubricated',
+    'Levelers', 'A', 'B',
   ];
-  assert.deepEqual(partColumns(headers), ['A', 'B']);
+  // "Levelers" survives as a part; "[Flag] Leveler" does not.
+  assert.deepEqual(partColumns(headers), ['Levelers', 'A', 'B']);
 });
 
 test('quantity parses as prefix, suffix, or bare', () => {
@@ -48,4 +51,32 @@ test('blank and missing part cells are skipped', () => {
   assert.equal(parsePartValue('   '), null);
   assert.equal(parsePartValue(undefined), null);
   assert.equal(parsePartValue(null), null);
+});
+
+// The four BSI checkboxes are prefixed because three of them collide with real
+// part numbers. A bare "Claw" or "Levelers" column must still be a part.
+test('flag columns are metadata, but the part numbers they describe are not', () => {
+  assert.equal(isPartColumn('[Flag] Leveler'), false);
+  assert.equal(isPartColumn('[Flag] Claw'), false);
+  assert.equal(isPartColumn('[Flag] V-Rung'), false);
+  assert.equal(isPartColumn('[Flag] Lubricated'), false);
+
+  // These are the real part numbers and must keep being imported as parts.
+  assert.equal(isPartColumn('Levelers'), true);
+  assert.equal(isPartColumn('Claw'), true);
+  assert.equal(isPartColumn('V-Rung'), true);
+});
+
+test('flag values are tri-state, and blank means "not assessed"', () => {
+  for (const v of ['Yes', 'yes', 'Y', 'true', '1', 'x']) {
+    assert.equal(parseFlagValue(v), true, `${v} should be true`);
+  }
+  for (const v of ['No', 'no', 'N', 'false', '0']) {
+    assert.equal(parseFlagValue(v), false, `${v} should be false`);
+  }
+  // null, not false — the automation ticks boxes but never unticks them, so
+  // "no" and "didn't look" must stay distinguishable.
+  for (const v of ['', '   ', undefined, null, 'maybe']) {
+    assert.equal(parseFlagValue(v as string), null);
+  }
 });

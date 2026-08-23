@@ -2,5 +2,8 @@
 // (CommonJS) can share this logic with the TypeScript import path instead of
 // keeping its own copy.
 
-export { METADATA_COLS, CUSTOM_COL_PREFIX, isPartColumn, partColumns } from './csv-columns.js';
+export {
+  METADATA_COLS, CUSTOM_COL_PREFIX, FLAG_COL_PREFIX, FLAG_COLS,
+  isPartColumn, partColumns, parseFlagValue, type FlagName,
+} from './csv-columns.js';
 export { parsePartValue, type PartEntry } from './part-value.js';

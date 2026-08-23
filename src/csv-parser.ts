@@ -1,7 +1,7 @@
 import fs from 'fs';
 import Papa from 'papaparse';
 import type { LadderRecord, PartEntry } from './types.js';
-import { partColumns } from './core/csv-columns.js';
+import { partColumns, FLAG_COLS, parseFlagValue } from './core/csv-columns.js';
 import { parsePartValue } from './core/part-value.js';
 
 interface CsvRow { [key: string]: string | undefined; }
@@ -55,6 +55,12 @@ export function parseCsv(filePath: string): ParseResult {
       length,
       desc,
       parts,
+      flags: {
+        leveler:    parseFlagValue(row[FLAG_COLS.leveler]),
+        claw:       parseFlagValue(row[FLAG_COLS.claw]),
+        vrung:      parseFlagValue(row[FLAG_COLS.vrung]),
+        lubricated: parseFlagValue(row[FLAG_COLS.lubricated]),
+      },
     });
   });
 

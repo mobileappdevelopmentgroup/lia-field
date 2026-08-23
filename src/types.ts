@@ -3,6 +3,16 @@ export interface PartEntry {
   quantity: number;
 }
 
+// The four BSI checkboxes under the Length field. Tri-state: null means the
+// tech did not assess it, which is not the same as "no" — the automation only
+// ever ticks a box, never unticks one.
+export interface LadderFlags {
+  leveler:    boolean | null;
+  claw:       boolean | null;
+  vrung:      boolean | null;
+  lubricated: boolean | null;
+}
+
 export interface LadderRecord {
   serialNum: string;
   truckId: string;
@@ -11,6 +21,7 @@ export interface LadderRecord {
   length: string;
   desc: string;
   parts: PartEntry[];
+  flags?: LadderFlags;
 }
 
 export type PartStatus = 'success' | 'not_found' | 'error' | 'skipped';
