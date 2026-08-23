@@ -30,7 +30,7 @@
       "y": 0,
       "w": 390,
       "h": 844,
-      "title": "Not on file yet"
+      "title": "New item \u2014 entered once"
     },
     {
       "file": "ItemList.dc.html",
@@ -61,7 +61,7 @@
       "x": 2040,
       "y": -210,
       "w": 440,
-      "text": "Changed this pass: scan and type sit beside NFC (a tag can be missing or unreadable); Edit is a real button on the record; the fail screen asks only for a photo, with an optional note.\n\nSample data. Check wording is placeholder \u2014 the real set comes from the model's checklist."
+      "text": "Changed this pass: a New button sits beside Tap / Scan / Type, and on the item list, so a brand-new item never has to be scanned and rejected first.\n\nAlso: Edit is a real button on the record; the fail screen asks for a photo, with the reason carried through from the failed check and a note that is optional.\n\nSample data. Check wording is placeholder \u2014 the real set comes from the model's checklist."
     }
   ],
   "launch": {

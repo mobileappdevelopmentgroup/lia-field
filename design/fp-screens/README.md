@@ -12,14 +12,15 @@ input radii, mono serials, 44px+ hit targets.
 | `Main.dc.html` | Inspect — the two-tap path |
 | `FailState.dc.html` | One check failed |
 | `Condemn.dc.html` | Removal from service: reason + photo |
-| `NewItem.dc.html` | Tag with no record yet — the only screen with inputs |
+| `NewItem.dc.html` | First inspection for an item — the only screen with inputs |
 | `ItemList.dc.html` | Fall-protection job, item list |
 | `canvas.json` | Layout, sticky notes, launch view |
 
 ## The interaction this is built around
 
 Tap the tag — or scan, or type — and last year's record comes up from the
-device's own copy. Every check already reads Pass. The tech confirms the part
+device's own copy. **New** sits alongside those three, and on the item list, so a
+brand-new item is added outright rather than scanned and rejected first. Every check already reads Pass. The tech confirms the part
 matches and taps **Pass & Next**. Two taps, nothing typed.
 
 The record is read-only **by default, not permanently**: a stray touch cannot
