@@ -1,6 +1,6 @@
 # Lia — Project Status
 
-**As of 2026-08-23** · branch `fall-protection` @ `28da07f`. `master` frozen at
+**As of 2026-08-23** · branch `fall-protection` @ `194ba00`. `master` frozen at
 `prod-baseline-2026-08-22` (`6db1ef3`), pushed.
 
 ---
@@ -17,7 +17,7 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 | 3 — Ladder L/C/V/P | ◐ Capture done and verified; BSI automation needs a codegen session |
 | 4 — Field app sync | ◐ Read model + on-device cache done and tested; auth and upload need staging Supabase |
 | 5 — Multi-tech merge | Not started |
-| 6 — Fall protection | ◐ Schema, checklists, status, photo retention, job scope all done. Screens agreed; **capture UI not yet built** |
+| 6 — Fall protection | ◐ Schema, status, photo retention, job scope, **capture UI** all done. Remaining: the checklist templates syncing down, and upload |
 | 7 — Cert site | ◐ `fp-site/index.html` built and verified; deploys under `/fp/` on the existing bucket |
 | 8–9 — NFC, PWA decommission | Not started |
 
@@ -62,7 +62,7 @@ the first blank-work-order import charge and every one after it free forever.
 
 ```bash
 npm test              # 11 unit (CSV/flag logic)
-npm run test:field    # 40 browser (device cache, module split, shipped bundles)
+npm run test:field    # 79 browser (device cache, modules, bundles, FP capture)
 npm run test:sql      # 155 assertions against a throwaway local Postgres
 npm run typecheck
 ```
