@@ -14,7 +14,7 @@ let automationChild = null;
 // the preview shown here and the import that actually runs can never disagree
 // about what counts as a part column — they used to, and "[Custom] " fields were
 // being searched for as BSI parts.
-const { partColumns, parsePartValue } = require('../dist/lia-core.cjs');
+const { partColumns, parsePartValue, FLAG_COLS, parseFlagValue } = require('../dist/lia-core.cjs');
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -250,6 +250,14 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
       length:  (row['Length'] ?? '').trim(),
       desc:    (row['Description'] ?? '').trim(),
       parts,
+      // Kept in step with src/csv-parser.ts so the preview and the import can
+      // never disagree about a row — the whole point of the shared core.
+      flags: {
+        leveler:    parseFlagValue(row[FLAG_COLS.leveler]),
+        claw:       parseFlagValue(row[FLAG_COLS.claw]),
+        vrung:      parseFlagValue(row[FLAG_COLS.vrung]),
+        lubricated: parseFlagValue(row[FLAG_COLS.lubricated]),
+      },
     });
   });
 

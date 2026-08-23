@@ -1,8 +1,81 @@
 # Lia — Project Status
 
-**As of 2026-08-08** · master @ `042d579`, pushed, working tree clean.
+**As of 2026-08-22** · branch `fall-protection` @ `a7d0673`. `master` frozen at
+`prod-baseline-2026-08-22` (`6db1ef3`), pushed.
 
 ---
+
+## Fall protection work — where it stands
+
+Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
+
+| Phase | State |
+|---|---|
+| 0 — Migration safety (staging Supabase) | ⛔ **Blocked on you** — needs a staging project created |
+| 1 — Shared CSV core + live bug fix | ✅ Done, tested |
+| 2 — Accounts, versioning, correct billing | ✅ Written and tested locally, **not applied to any live DB** |
+| 3 — Ladder L/C/V/P | ◐ Capture done and verified; BSI automation needs a codegen session |
+| 4–9 — Sync, merge, fall protection, cert site, NFC, PWA decommission | Not started |
+
+### ⚠️ Do not ship Lia Office before applying the migrations
+
+The current build calls `preflight_work_order` and `charge_work_order`, which only
+exist after `supabase/03_accounts_billing.sql` and `04_inspections_v2.sql` are
+applied. Without them every import is blocked. Ship the SQL and the app together.
+
+Rehearse the migrations first — they carry real credit balances and restructure
+live inspection rows:
+
+```bash
+./supabase/test/run.sh      # throwaway local Postgres, 61 assertions
+```
+
+### What the billing rework changed
+
+A token is now charged **once per work order, only after the import succeeds**.
+Previously it was consumed the moment Start was clicked — before Chrome launched
+and before the diff card where the user can still cancel — and re-running the same
+work order charged again. Cancelling, a missing Chrome, and crashes are now free,
+and editing or merging more techs' data into a paid work order is free.
+
+The work order field is now **required**. It used to default to the literal string
+`'unknown'`; under the new `(account, work order)` uniqueness that would have made
+the first blank-work-order import charge and every one after it free forever.
+
+### Bugs fixed along the way
+
+- `src/csv-parser.ts` was importing every `[Custom] ` field into BSI as a part to
+  search for. The renderer preview filtered them; the code that actually ran did
+  not. Both now share `src/core/`.
+- `autoInsertInspections` fired on failed runs, and wrote `notes: null`, blanking
+  notes on every re-import.
+- `inspections` RLS was `USING (true)` for every authenticated user — any tech
+  could read and overwrite any other company's records.
+- The destructive `UNIQUE (serial_num, inspection_date)` is gone; inspections are
+  versioned and supersede rather than overwrite.
+
+### Still needed from you
+
+1. **A staging Supabase project** — so the migrations can be rehearsed against a
+   restored production snapshot before touching the real one.
+2. **A BSI work order that can be dirtied** — for the codegen session that finds
+   the four L/C/V/P checkbox selectors, and later the fall-protection box.
+3. **How BSI identifies a fall-protection box.** Ladder boxes key off the serial;
+   an aggregate FP box has none, so re-running an FP import would add a second box
+   rather than update the first. That double-bills the customer.
+4. FP field semantics: valid `status` values, what "rep number" identifies, whether
+   "URL" is the NFC target or a manufacturer document link, and a photo retention
+   period for the privacy policy.
+
+### Known consequence, flagged deliberately
+
+Ladders and fall protection are always separate work orders, and a token is charged
+per work order — so **a job site with both scopes costs two tokens**. That follows
+from the two rules and is probably intended, but it had not been written down.
+
+---
+
+## Prior status (2026-08-08)
 
 ## Where we are
 
