@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld('api', {
   getSession:           ()                 => ipcRenderer.invoke('auth:get-session'),
   login:                (creds)            => ipcRenderer.invoke('auth:login', creds),
   logout:               ()                 => ipcRenderer.invoke('auth:logout'),
-  consumeCredit:        (workOrderId)      => ipcRenderer.invoke('auth:consume-credit', workOrderId),
 
   // ── File & CSV ───────────────────────────────────────────────────────────
   openCsv:       ()         => ipcRenderer.invoke('dialog:open-csv'),
@@ -43,7 +42,9 @@ contextBridge.exposeInMainWorld('api', {
   onComplete:        (cb) => on('automation:complete',          (_e, result) => cb(result)),
   onError:           (cb) => on('automation:error',             (_e, msg)    => cb(msg)),
   onExited:          (cb) => on('automation:exited',            (_e, code)   => cb(code)),
-  onCreditOk:        (cb) => on('automation:credit-ok',         (_e, left)   => cb(left)),
+  onCreditOk:        (cb) => on('automation:credit-ok',         (_e, res)    => cb(res)),
+  onPreflight:       (cb) => on('automation:preflight',          (_e, res)    => cb(res)),
+  onBillingWarning:  (cb) => on('automation:billing-warning',    (_e, msg)    => cb(msg)),
   onCreditError:     (cb) => on('automation:credit-error',      (_e, msg)    => cb(msg)),
   onPaused:          (cb) => on('automation:paused',            ()           => cb()),
   onResumed:         (cb) => on('automation:resumed',           ()           => cb()),

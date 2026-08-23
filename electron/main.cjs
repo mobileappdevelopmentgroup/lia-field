@@ -170,15 +170,6 @@ ipcMain.handle('auth:logout', async () => {
   return { ok: true };
 });
 
-ipcMain.handle('auth:consume-credit', async (_event, workOrderId) => {
-  try {
-    const sb = await getSupabase();
-    const { data, error } = await sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, creditsLeft: data };
-  } catch (err) { return { ok: false, error: String(err) }; }
-});
-
 // ── IPC: file dialog ─────────────────────────────────────────────────────────
 
 ipcMain.handle('dialog:open-csv', async () => {
@@ -267,33 +258,35 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
 
 // ── IPC: automation lifecycle ─────────────────────────────────────────────────
 
-async function autoInsertInspections(sb, rows, workOrderId, techName) {
-  const today = new Date().toISOString().split('T')[0];
-  const nextDue = new Date();
-  nextDue.setFullYear(nextDue.getFullYear() + 1);
-  const nextDueStr = nextDue.toISOString().split('T')[0];
-  // Only send keys that carry a value. Sending `notes: null` here would blank out
-  // notes a tech had already entered, because the upsert overwrites on conflict.
-  // inspections:upload does the same stripping — the two paths used to disagree.
+// Writes go through the record_inspections RPC rather than a direct upsert.
+// The RPC supersedes an existing record instead of overwriting it, and carries
+// forward any value this write omits — so a re-import can no longer blank out
+// notes a tech typed, and two techs on the same serial no longer erase each
+// other. See supabase/04_inspections_v2.sql.
+async function recordInspections(sb, rows, workOrderId, techName, source) {
   const records = rows.map(row => {
-    const rec = {
-      serial_num:      row.serial,
-      inspection_date: today,
-      tech_name:       techName,
-      next_due_date:   nextDueStr,
-    };
+    const rec = { serial_num: row.serial, tech_name: techName, source: source || 'office' };
     if (workOrderId) rec.work_order_id = workOrderId;
     if (row.brand)   rec.brand  = row.brand;
     if (row.type)    rec.type   = row.type;
     if (row.length)  rec.length = row.length;
+    // inspection_date and next_due_date are left to the RPC: it defaults to
+    // today and today + 1 year.
+    if (row.inspection_date) rec.inspection_date = row.inspection_date;
+    if (row.next_due_date)   rec.next_due_date   = row.next_due_date;
+    if (row.notes)           rec.notes           = row.notes;
     return rec;
   });
+
+  let written = 0;
+  const errors = [];
   for (let i = 0; i < records.length; i += 100) {
-    await sb.from('inspections').upsert(records.slice(i, i + 100), {
-      onConflict: 'serial_num,inspection_date',
-      ignoreDuplicates: false,
-    });
+    const batch = records.slice(i, i + 100);
+    const { data, error } = await sb.rpc('record_inspections', { p: batch });
+    if (error) errors.push(error.message);
+    else written += (data ?? batch.length);
   }
+  return { written, errors };
 }
 
 ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
@@ -333,15 +326,33 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
           .filter(r => r.serial);
       } catch {}
 
-      const { data, error } = await _sb.rpc('consume_credit', { p_work_order_id: workOrderId || 'unknown' });
+      // Preflight only — nothing is charged here. This used to call
+      // consume_credit before the browser even launched, so cancelling at the
+      // diff card, a missing Chrome, or a crashed run all cost a credit for
+      // work that never happened. The charge now happens in the 'complete'
+      // handler, gated on success.
+      //
+      // We still check up front so a tech with no credits is stopped now
+      // rather than after importing 200 ladders.
+      const { data: pre, error } = await _sb.rpc('preflight_work_order', {
+        p_wo_number: workOrderId,
+      });
       if (error) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('automation:credit-error', error.message);
         }
         return;
       }
+      const preflight = typeof pre === 'string' ? JSON.parse(pre) : pre;
+      if (preflight && preflight.can_run === false) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('automation:credit-error',
+            'No import credits remaining — contact your administrator.');
+        }
+        return;
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('automation:credit-ok', data);
+        mainWindow.webContents.send('automation:preflight', preflight);
       }
     } catch (err) {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -388,11 +399,34 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             mainWindow.show();
             mainWindow.focus();
             app.focus({ steal: true });
-            // Only log inspections for a run that actually succeeded. This used to
-            // fire on every 'complete', so a failed or cancelled run still wrote
-            // inspection records for ladders that were never imported.
-            if (event.success && _sb && _serials.length > 0) {
-              autoInsertInspections(_sb, _serials, workOrderId, _techName).catch(() => {});
+            // Charge and log only for a run that actually succeeded. This used
+            // to fire on every 'complete', so a failed or cancelled run still
+            // wrote inspection records for ladders that were never imported.
+            if (event.success && _sb) {
+              (async () => {
+                try {
+                  const { data, error } = await _sb.rpc('charge_work_order', {
+                    p_wo_number: workOrderId,
+                    p_scope: 'ladder',
+                  });
+                  if (error) throw new Error(error.message);
+                  const res = typeof data === 'string' ? JSON.parse(data) : data;
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('automation:credit-ok', res);
+                  }
+                } catch (err) {
+                  // The import already landed in BSI, so this is a billing
+                  // problem, not an import failure — say so rather than
+                  // implying the work was lost.
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('automation:billing-warning', String(err));
+                  }
+                }
+                if (_serials.length > 0) {
+                  await recordInspections(_sb, _serials, workOrderId, _techName, 'office')
+                    .catch(() => {});
+                }
+              })();
             }
             break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;
@@ -523,22 +557,21 @@ ipcMain.handle('inspections:upload', async (_event, records) => {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) return { ok: false, error: 'Not logged in — sign in first to upload inspections.' };
 
-    // Upsert in batches of 50: strip null fields so existing values are preserved on conflict
+    // Same write path as an automated run — record_inspections supersedes
+    // rather than overwrites, and carries forward anything this write omits.
+    // Empty values are stripped so they cannot clear an existing field.
     const results = { inserted: 0, errors: [] };
     for (let i = 0; i < records.length; i += 50) {
       const batch = records.slice(i, i + 50).map(r => {
-        const clean = {};
+        const clean = { source: 'manual' };
         for (const [k, v] of Object.entries(r)) { if (v != null && v !== '') clean[k] = v; }
         return clean;
       });
-      const { error } = await sb.from('inspections').upsert(batch, {
-        onConflict: 'serial_num,inspection_date',
-        ignoreDuplicates: false,
-      });
+      const { data, error } = await sb.rpc('record_inspections', { p: batch });
       if (error) {
         results.errors.push(`Rows ${i + 1}–${i + batch.length}: ${error.message}`);
       } else {
-        results.inserted += batch.length;
+        results.inserted += (data ?? batch.length);
       }
     }
     return { ok: true, ...results };

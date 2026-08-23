@@ -838,28 +838,71 @@ $('btn-change').addEventListener('click', async () => {
 });
 
 // ── Open browser + credit check ───────────────────────────────────────────────
+const MAX_WO_LEN = 64;
+
+function setCreditDisplay(credits) {
+  if (credits === null || credits === undefined) return;
+  const badge = $('credit-badge');
+  badge.textContent = credits === -1 ? 'Unlimited' : `${credits} credit${credits !== 1 ? 's' : ''}`;
+  badge.style.display = '';
+  const hc = $('home-credits');
+  hc.textContent = credits === -1
+    ? 'Unlimited imports'
+    : `${credits} import credit${credits !== 1 ? 's' : ''} remaining`;
+}
+
 $('btn-open-browser').addEventListener('click', () => {
-  const workOrderId = $('work-order-input').value.trim() || 'unknown';
+  const workOrderId = $('work-order-input').value.trim();
+
+  // The work order number is the billing key: a token is charged once per work
+  // order. This used to fall back to the literal string 'unknown', which under
+  // (account, work order) uniqueness would make the first blank-work-order
+  // import charge and every one after it free forever.
+  if (!workOrderId) {
+    show('err-card');
+    $('err-msg').textContent = 'Enter the work order number before starting — it is what the import is billed against.';
+    $('work-order-input').focus();
+    return;
+  }
+  if (workOrderId.length > MAX_WO_LEN) {
+    show('err-card');
+    $('err-msg').textContent = `That work order number is too long (max ${MAX_WO_LEN} characters).`;
+    $('work-order-input').focus();
+    return;
+  }
+
+  hide('err-card');
   window._workOrderId = workOrderId;
   hide('preview-card');
   showEl('run-card');
   show('log-section');
-  // If supabase is configured, main process will do credit check first
-  setPill(_supabaseConfigured ? 'Verifying license…' : 'Opening browser…', 'pill-wait dots');
+  setPill(_supabaseConfigured ? 'Checking your license…' : 'Opening browser…', 'pill-wait dots');
   setStep(3);
   window.api.startAutomation(window._csvPath, workOrderId);
 });
 
-window.api.onCreditOk(creditsLeft => {
+// Fires at the start. Nothing has been charged yet — this only reports whether
+// the run is allowed to proceed and whether it will cost anything.
+window.api.onPreflight(res => {
   setPill('Browser open — log in and open your work order', 'pill-wait dots');
-  if (creditsLeft !== null && creditsLeft !== undefined) {
-    const badge = $('credit-badge');
-    badge.textContent = creditsLeft === -1 ? 'Unlimited' : `${creditsLeft} credit${creditsLeft !== 1 ? 's' : ''}`;
-    badge.style.display = '';
-    // Also update home screen credits
-    const hc = $('home-credits');
-    hc.textContent = creditsLeft === -1 ? 'Unlimited imports' : `${creditsLeft} import credit${creditsLeft !== 1 ? 's' : ''} remaining`;
+  if (res) setCreditDisplay(res.credits);
+});
+
+// Fires only after the import has actually succeeded.
+window.api.onCreditOk(res => {
+  if (!res) return;
+  setCreditDisplay(res.credits);
+  if (res.charged === false && res.reason === 'already_paid') {
+    appendLog('[BILLING] This work order was already paid for — no credit used.');
+  } else if (res.charged) {
+    appendLog('[BILLING] 1 credit used for this work order. Further edits to it are free.');
   }
+});
+
+// The import landed in BSI but the charge did not go through. Say so plainly
+// rather than letting it read as a failed import.
+window.api.onBillingWarning(msg => {
+  appendLog(`[BILLING] The import completed, but recording the charge failed: ${msg}`);
 });
 
 window.api.onCreditError(msg => {
