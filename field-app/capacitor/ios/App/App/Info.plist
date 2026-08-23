@@ -25,7 +25,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Lia Field uses the camera to scan ladder serial number barcodes.</string>
+	<string>Lia Field uses the camera to scan equipment barcodes, and to photograph equipment that has failed inspection.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>Lia Field reads NFC tags attached to equipment so you can identify an item by holding your phone against it.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
