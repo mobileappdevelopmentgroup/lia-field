@@ -12,8 +12,20 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 2. `02_inspections.sql` — ladder inspection records + public view
 3. `03_accounts_billing.sql` — accounts, work orders, and one-token-per-work-order billing
 4. `04_inspections_v2.sql` — versioned, account-scoped inspections + the public view
+5. `05_rep_and_attribution.sql` — rep numbers, collector attribution, derived certificate URLs
 
 All are idempotent and safe to re-run.
+
+### Setting a lead tech's rep number
+
+The rep number identifies the Batavia tech responsible for an inspection. It is an
+attribute of the lead, snapshotted onto every inspection they are responsible for —
+a device cannot claim a different one.
+
+```sql
+UPDATE public.account_members SET rep_number = 'BTV-4471'
+ WHERE user_id = 'their-auth-uuid';
+```
 
 ### Test before applying to a live database
 
