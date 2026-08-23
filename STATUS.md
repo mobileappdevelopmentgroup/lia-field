@@ -1,6 +1,6 @@
 # Lia — Project Status
 
-**As of 2026-08-23** · branch `fall-protection` @ `194ba00`. `master` frozen at
+**As of 2026-08-23** · branch `fall-protection` @ `d642c81`. `master` frozen at
 `prod-baseline-2026-08-22` (`6db1ef3`), pushed.
 
 ---
@@ -11,15 +11,16 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 
 | Phase | State |
 |---|---|
-| 0 — Migration safety (staging Supabase) | ⛔ **Blocked on you** — needs a staging project created |
-| 1 — Shared CSV core + live bug fix | ✅ Done, tested |
-| 2 — Accounts, versioning, correct billing | ✅ Written and tested locally, **not applied to any live DB** |
-| 3 — Ladder L/C/V/P | ◐ Capture done and verified; BSI automation needs a codegen session |
-| 4 — Field app sync | ◐ Read model + on-device cache done and tested; auth and upload need staging Supabase |
-| 5 — Multi-tech merge | Not started |
-| 6 — Fall protection | ◐ Schema, status, photo retention, job scope, **capture UI** all done. Remaining: the checklist templates syncing down, and upload |
-| 7 — Cert site | ◐ `fp-site/index.html` built and verified; deploys under `/fp/` on the existing bucket |
-| 8–9 — NFC, PWA decommission | Not started |
+| 0 — Migration safety | ⛔ **Blocked on you** — needs a staging Supabase project |
+| 1 — Shared CSV core + live bug fix | ✅ Done |
+| 2 — Accounts, versioning, billing | ✅ Written and tested, **not applied to any live DB** |
+| 3 — Ladder L/C/V/P | ◐ Capture done; BSI automation needs a work order |
+| 4 — Field app sync | ✅ Auth, catalogue cache, upload queue, first-sync gate |
+| 5 — Multi-tech merge | ✅ Merge logic + review screen |
+| 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring |
+| 7 — Certificate site | ✅ Built; deploys under `/fp/` on the existing bucket |
+| 8 — NFC | ◐ Wrapper + degradation done; **native plugin not chosen** |
+| 9 — PWA decommission | ◐ Farewell page ready; removal waits on the native release |
 
 ### ⚠️ Do not ship Lia Office before applying the migrations
 
@@ -62,10 +63,16 @@ the first blank-work-order import charge and every one after it free forever.
 
 ```bash
 npm test              # 11 unit (CSV/flag logic)
-npm run test:field    # 79 browser (device cache, modules, bundles, FP capture)
+npm run test:field    # 113 browser (cache, modules, bundles, capture, sync, boot, NFC)
+npm run test:desktop  # 34 browser (catalogue authoring, merge review)
 npm run test:sql      # 155 assertions against a throwaway local Postgres
 npm run typecheck
 ```
+
+### Deviations from the plan
+
+`DEVIATIONS.md` lists every place the build differs from what was approved, and
+why. The first entry is the one worth a decision rather than a note.
 
 ### Still needed from you
 
@@ -76,11 +83,13 @@ npm run typecheck
 3. **How BSI identifies a fall-protection box.** Ladder boxes key off the serial;
    an aggregate FP box has none, so re-running an FP import would add a second box
    rather than update the first. That double-bills the customer.
-4. **The valid set of `status` values** for fall-protection items. The column is
-   deliberately free text with no CHECK constraint until that is known.
-5. ~~How the capture screen should look~~ — settled. Mockups at
-   <https://claude.ai/code/artifact/c07c621b-6767-42c0-8900-0d2f5c90f1c1>,
-   source in `design/fp-screens/`. Building it is the next piece of work.
+4. **A BSI work order that can be dirtied** — for the L/C/V/P checkbox
+   selectors, and to answer how BSI identifies the aggregate fall-protection
+   box. Get that wrong and a re-run adds a second box and double-bills.
+5. **An NFC plugin decision** — `docs/NFC-PLUGIN.md` has the two criteria and
+   the fallback. Needs a half-day spike and real tags.
+6. **Store data declarations** — `docs/STORE-DATA-DECLARATIONS.md`. Both stores
+   still say "no data collected". This blocks the first syncing release.
 
 ### Known consequence, flagged deliberately
 
