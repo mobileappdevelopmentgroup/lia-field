@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Fall Protection Inspection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f4f5f8; --surf: #ffffff; --border: #e2e6ef;
+      --text: #1a1d2e; --muted: #6b7080; --accent: #2563eb;
+      --ok: #16a34a; --ok-bg: #dcfce7;
+      --warn: #d97706; --warn-bg: #fef9c3;
+      --err: #dc2626; --err-bg: #fee2e2;
+      --r: 10px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'SF Mono', 'Fira Code', monospace;
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text);
+           min-height: 100dvh; -webkit-text-size-adjust: 100%; }
+
+    header { background: var(--text); color: #fff; padding: calc(14px + var(--safe-t)) 20px 14px; }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+    .logo-badge { font-size: 10px; font-weight: 600; opacity: .45; letter-spacing: .08em;
+                  text-transform: uppercase; margin-top: 2px; }
+
+    .search-wrap { background: var(--surf); border-bottom: 1px solid var(--border);
+                   padding: 12px 16px; display: flex; gap: 8px; }
+    #search-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--border);
+                    border-radius: 8px; font-size: 16px; font-family: var(--mono); outline: none; }
+    #search-input:focus { border-color: var(--accent); }
+    .btn-scan, .btn-go { border: 1px solid var(--border); background: var(--bg); border-radius: 8px;
+                         width: 42px; font-size: 17px; cursor: pointer; flex-shrink: 0; }
+    .btn-go { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    #results { padding: 16px; display: flex; flex-direction: column; gap: 14px;
+               padding-bottom: calc(16px + var(--safe-b)); max-width: 620px; margin: 0 auto; }
+    .msg { padding: 14px 16px; border-radius: var(--r); font-size: 14px; display: none; }
+    .msg.vis { display: block; }
+    .msg.err { background: var(--err-bg); color: var(--err); }
+    .msg.info { background: var(--surf); color: var(--muted); border: 1px solid var(--border); }
+
+    .cert-card { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+                 overflow: hidden; display: none; }
+    .cert-card.vis { display: block; }
+    .cert-header { display: flex; gap: 14px; align-items: center; padding: 16px;
+                   border-bottom: 1px solid var(--border); }
+    .cert-seal { width: 88px; height: 88px; flex-shrink: 0; }
+    .cert-seal svg { width: 100%; height: 100%; }
+    .cert-serial-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+                       color: var(--muted); font-weight: 600; }
+    .cert-serial { font-family: var(--mono); font-size: 20px; font-weight: 700;
+                   word-break: break-all; line-height: 1.2; }
+    .cert-status-text { font-size: 13px; font-weight: 600; margin-top: 4px; }
+    .cert-status-text.ok { color: var(--ok); } .cert-status-text.warn { color: var(--warn); }
+    .cert-status-text.err { color: var(--err); } .cert-status-text.none { color: var(--muted); }
+    .cert-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .condemned { background: var(--err-bg); color: var(--err); padding: 12px 16px;
+                 font-size: 13px; font-weight: 700; text-align: center;
+                 border-bottom: 1px solid var(--border); letter-spacing: .02em; }
+
+    .cert-fields { display: grid; grid-template-columns: 1fr 1fr; }
+    .f { padding: 11px 16px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+    .f:nth-child(2n) { border-right: none; }
+    .f.wide { grid-column: 1 / -1; border-right: none; }
+    .f-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+             color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+    .f-val { font-size: 14px; word-break: break-word; }
+    .f-val.mono { font-family: var(--mono); }
+
+    .checks { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+              overflow: hidden; display: none; }
+    .checks.vis { display: block; }
+    .checks-hdr { padding: 12px 16px; border-bottom: 1px solid var(--border);
+                  font-size: 12px; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .07em; color: var(--muted); }
+    .chk { display: flex; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--border);
+           align-items: flex-start; font-size: 14px; }
+    .chk:last-child { border-bottom: none; }
+    .chk-mark { font-weight: 800; flex-shrink: 0; width: 18px; text-align: center; }
+    .chk-mark.pass { color: var(--ok); } .chk-mark.fail { color: var(--err); }
+    .chk-mark.na { color: var(--muted); }
+    .chk-txt { flex: 1; }
+    .chk-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .btn-print { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
+                 padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+                 color: var(--text); display: none; }
+    .btn-print.vis { display: block; }
+
+    .scan-overlay { position: fixed; inset: 0; background: #000; z-index: 900;
+                    display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .scan-overlay.hidden { display: none; }
+    #scan-video { width: 100%; max-width: 520px; }
+    .scan-hint { color: #fff; font-size: 13px; margin-top: 14px; opacity: .8; }
+    .btn-scan-cancel { margin-top: 18px; padding: 11px 26px; border: none; border-radius: 8px;
+                       background: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+    @media print {
+      header, .search-wrap, .btn-print, .scan-overlay { display: none !important; }
+      body { background: #fff; } #results { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Fall Protection Inspection</div>
+  <div class="logo-badge">Certificate Lookup</div>
+</header>
+
+<div class="search-wrap">
+  <input type="text" id="search-input" placeholder="Serial number or tag code…"
+         maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="characters"
+         spellcheck="false">
+  <button class="btn-scan" id="btn-scan" title="Scan">📷</button>
+  <button class="btn-go" id="btn-search" title="Search">→</button>
+</div>
+
+<div id="results">
+  <div class="msg" id="err-msg"></div>
+  <div class="msg" id="info-msg"></div>
+
+  <div class="cert-card" id="cert-card">
+    <div class="cert-header">
+      <div class="cert-seal" id="cert-seal"></div>
+      <div>
+        <div class="cert-serial-lbl">Serial #</div>
+        <div class="cert-serial" id="cert-serial"></div>
+        <div class="cert-status-text" id="cert-status"></div>
+        <div class="cert-sub" id="cert-sub"></div>
+      </div>
+    </div>
+    <div class="condemned" id="condemned" style="display:none;">
+      REMOVED FROM SERVICE — THIS ITEM MUST NOT BE USED
+    </div>
+    <div class="cert-fields" id="cert-fields"></div>
+  </div>
+
+  <div class="checks" id="checks-card">
+    <div class="checks-hdr">Inspection Checks</div>
+    <div id="checks-list"></div>
+  </div>
+
+  <button class="btn-print" id="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+</div>
+
+<div class="scan-overlay hidden" id="scan-overlay">
+  <div id="scan-video"></div>
+  <div class="scan-hint">Hold the barcode in view — detection is automatic</div>
+  <button class="btn-scan-cancel" id="btn-scan-cancel">Cancel</button>
+</div>
+
+<script>
+const SUPABASE_URL      = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
+
+// window.__db lets a test harness inject a stub without a network round trip.
+const db = window.__db || supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const el = id => document.getElementById(id);
+let _html5Qr = null;
+
+// Every value below comes from the database and is written into innerHTML, so
+// it gets escaped. The ladder site interpolates these raw.
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+const normalize = s => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+function daysUntil(d) {
+  if (!d) return null;
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.round((new Date(d + 'T00:00:00') - now) / 86400000);
+}
+
+// A condemned item is never "valid", however far away its due date is — the
+// overall assessment outranks the calendar.
+function statusInfo(rec) {
+  if (!rec) return { cls: 'none', text: 'No inspection on record' };
+  if (rec.overall_pass === false) return { cls: 'err', text: 'Failed inspection — removed from service' };
+  const days = daysUntil(rec.next_due_date);
+  if (days === null) return { cls: 'ok',   text: 'No expiry recorded' };
+  if (days < 0)      return { cls: 'err',  text: `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` };
+  if (days <= 30)    return { cls: 'warn', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
+  return { cls: 'ok', text: `Valid — ${days} days remaining` };
+}
+
+function sealSVG(cls) {
+  const C = {
+    ok:   { stroke:'#16a34a', fill:'#f0fdf4', text:'#15803d', label:'VALID',     icon:'✓' },
+    warn: { stroke:'#d97706', fill:'#fffbeb', text:'#b45309', label:'DUE SOON',  icon:'!' },
+    err:  { stroke:'#dc2626', fill:'#fef2f2', text:'#b91c1c', label:'FAILED',    icon:'✕' },
+    none: { stroke:'#9ca3af', fill:'#f9fafb', text:'#6b7280', label:'NO RECORD', icon:'?' },
+  };
+  const c = C[cls] || C.none;
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="47" fill="${c.fill}" stroke="${c.stroke}" stroke-width="4.5"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="${c.stroke}" stroke-width="1"
+            stroke-dasharray="3 2.5" opacity="0.35"/>
+    <text x="50" y="27" text-anchor="middle" font-size="5.6" font-weight="700"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="1.4" opacity="0.65">FALL PROTECTION</text>
+    <text x="50" y="36" text-anchor="middle" font-size="6.5" font-weight="700"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="1.8" opacity="0.65">INSPECTION</text>
+    <text x="50" y="64" text-anchor="middle" dominant-baseline="middle"
+      font-size="26" font-weight="900" fill="${c.stroke}" font-family="system-ui,sans-serif">${c.icon}</text>
+    <text x="50" y="82" text-anchor="middle" font-size="7.5" font-weight="800"
+      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="2">${c.label}</text>
+  </svg>`;
+}
+
+const fmtDate = d => d
+  ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' })
+  : '—';
+
+const fmtMfg = (m, y) => {
+  if (!y) return '—';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return m ? `${months[m - 1] || m} ${y}` : String(y);
+};
+
+function field(label, value, opts = {}) {
+  if (!opts.always && (value === null || value === undefined || value === '')) return '';
+  return `<div class="f${opts.wide ? ' wide' : ''}">
+    <div class="f-lbl">${esc(label)}</div>
+    <div class="f-val${opts.mono ? ' mono' : ''}">${esc(value ?? '—')}</div>
+  </div>`;
+}
+
+function clearAll() {
+  ['err-msg','info-msg'].forEach(id => el(id).classList.remove('vis'));
+  el('cert-card').classList.remove('vis');
+  el('checks-card').classList.remove('vis');
+  el('btn-print').classList.remove('vis');
+  el('condemned').style.display = 'none';
+}
+
+function showMsg(id, text) {
+  el(id).textContent = text;
+  el(id).className = 'msg vis ' + (id === 'err-msg' ? 'err' : 'info');
+}
+
+function renderNotFound(term) {
+  clearAll();
+  el('cert-card').classList.add('vis');
+  el('cert-seal').innerHTML = sealSVG('none');
+  el('cert-serial').textContent = term;
+  el('cert-status').className = 'cert-status-text none';
+  el('cert-status').textContent = 'No inspection on record';
+  el('cert-sub').textContent = 'This item has not been inspected, or the code was mistyped.';
+  el('cert-fields').innerHTML = '';
+}
+
+function renderCertificate(rec, checks) {
+  clearAll();
+  const st = statusInfo(rec);
+
+  el('cert-card').classList.add('vis');
+  el('cert-seal').innerHTML = sealSVG(st.cls);
+  el('cert-serial').textContent = rec.serial_num || '—';
+  el('cert-status').className = 'cert-status-text ' + st.cls;
+  el('cert-status').textContent = st.text;
+  el('cert-sub').textContent = [rec.manufacturer, rec.model].filter(Boolean).join(' · ') || '';
+
+  if (rec.overall_pass === false) el('condemned').style.display = '';
+
+  el('cert-fields').innerHTML = [
+    field('Item Type',      rec.item_type),
+    field('Status',         rec.status),
+    field('Manufacturer',   rec.manufacturer),
+    field('Model',          rec.model),
+    field('Lot #',          rec.lot_number, { mono: true }),
+    field('Manufactured',   fmtMfg(rec.mfg_month, rec.mfg_year)),
+    field('Last Inspected', fmtDate(rec.inspection_date), { always: true }),
+    field('Next Due',       fmtDate(rec.next_due_date),   { always: true }),
+    field('Rep #',          rec.rep_number, { mono: true }),
+    field('Certificate',    rec.public_ref, { mono: true }),
+    field('Description',    rec.description, { wide: true }),
+  ].join('');
+
+  if (checks && checks.length) {
+    el('checks-list').innerHTML = checks.map(c => {
+      const mark = c.result === true ? ['pass','✓']
+                 : c.result === false ? ['fail','✕']
+                 : ['na','—'];
+      return `<div class="chk">
+        <div class="chk-mark ${mark[0]}">${mark[1]}</div>
+        <div class="chk-txt">${esc(c.prompt)}${c.note ? `<div class="chk-note">${esc(c.note)}</div>` : ''}</div>
+      </div>`;
+    }).join('');
+    el('checks-card').classList.add('vis');
+  }
+
+  el('btn-print').classList.add('vis');
+}
+
+// ── Lookup ────────────────────────────────────────────────────────────────────
+// Accepts either a certificate code (public_ref, 10 chars from a fixed
+// alphabet) or a serial number. The tag URL carries the former.
+async function lookup(term) {
+  const q = String(term || '').trim();
+  if (!q) return;
+  clearAll();
+  showMsg('info-msg', 'Searching…');
+
+  try {
+    const key = normalize(q);
+    let { data, error } = await db
+      .from('fall_protection_public').select('*')
+      .eq('public_ref', key).order('inspection_date', { ascending: false });
+    if (error) throw error;
+
+    if (!data || !data.length) {
+      ({ data, error } = await db
+        .from('fall_protection_public').select('*')
+        .eq('serial_key', key).order('inspection_date', { ascending: false }));
+      if (error) throw error;
+    }
+
+    if (!data || !data.length) { renderNotFound(q); return; }
+
+    const rec = data[0];
+    let checks = [];
+    const cr = await db.from('fall_protection_checks_public').select('*')
+      .eq('public_ref', rec.public_ref)
+      .eq('inspection_date', rec.inspection_date)
+      .order('ord', { ascending: true });
+    if (!cr.error) checks = cr.data || [];
+
+    renderCertificate(rec, checks);
+  } catch (err) {
+    clearAll();
+    showMsg('err-msg', 'Could not reach the inspection records. Check your connection and try again.');
+    console.error(err);
+  }
+}
+
+el('btn-search').addEventListener('click', () => lookup(el('search-input').value));
+el('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(el('search-input').value); });
+
+// ── Scanner ───────────────────────────────────────────────────────────────────
+el('btn-scan').addEventListener('click', async () => {
+  el('scan-overlay').classList.remove('hidden');
+  try {
+    _html5Qr = new Html5Qrcode('scan-video');
+    await _html5Qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 260, height: 160 } },
+      text => { stopScan(); el('search-input').value = text.trim(); lookup(text); },
+      () => {});
+  } catch (_) {
+    stopScan();
+    showMsg('err-msg', 'Could not open the camera. Type the code instead.');
+  }
+});
+
+function stopScan() {
+  el('scan-overlay').classList.add('hidden');
+  if (_html5Qr) { _html5Qr.stop().catch(() => {}); _html5Qr = null; }
+}
+el('btn-scan-cancel').addEventListener('click', stopScan);
+
+// ── Deep links ────────────────────────────────────────────────────────────────
+// ?t=<certificate code> is what the NFC tag carries; ?serial= is for hand-typed
+// links and for parity with the ladder site.
+(function initFromUrl() {
+  const p = new URLSearchParams(location.search);
+  const t = p.get('t') || p.get('serial');
+  if (t) { el('search-input').value = t; lookup(t); }
+})();
+</script>
+</body>
+</html>

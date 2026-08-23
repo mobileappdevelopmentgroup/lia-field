@@ -82,6 +82,27 @@ aws s3 cp inspection-site/index.html s3://batavia-ladder-inspections/index.html 
 
 ---
 
+## Fall Protection Certificate Site
+
+Same pattern as the ladder site — static HTML on the **existing** bucket and
+CloudFront distribution, under an `/fp/` prefix, so there is no new certificate,
+no new DNS, and the NFC tag URL stays same-origin with the ladder site.
+
+Source: `fp-site/index.html`. Reads the `fall_protection_public` and
+`fall_protection_checks_public` views as anon.
+
+Lookup accepts a certificate code (`?t=<public_ref>`, which is what the NFC tag
+carries) or a serial number. Serials are matched on their normalized form, so
+punctuation and case do not matter.
+
+To deploy:
+```bash
+aws s3 cp fp-site/index.html s3://batavia-ladder-inspections/fp/index.html \
+  --content-type "text/html" --cache-control "no-cache"
+```
+
+---
+
 ## Supabase
 
 - **`supabase/01_licensing.sql`** — User accounts, credits, `consume_credit` and `get_my_profile` RPC functions
