@@ -14,6 +14,11 @@ rm -rf "$WWW"
 mkdir -p "$WWW/vendor/zxing"
 
 cp "$SRC/index.html" "$WWW/index.html"
+# The app is split into classic scripts under js/ — copy the directory, and fail
+# loudly rather than shipping a bundle whose scripts are missing.
+mkdir -p "$WWW/js"
+cp "$SRC"/js/*.js "$WWW/js/"
+[ -s "$WWW/js/app.js" ] || { echo "sync-www.sh: js/ did not copy" >&2; exit 1; }
 cp "$SRC/manifest.json" "$WWW/manifest.json"
 cp "$SRC/sw.js" "$WWW/sw.js"
 cp "$SRC"/icon-*.png "$WWW/"

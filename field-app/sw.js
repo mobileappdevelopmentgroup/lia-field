@@ -1,7 +1,20 @@
-const CACHE = 'lia-field-v21';
+const CACHE = 'lia-field-v22';
 const ASSETS = [
-  './', './index.html', './manifest.json',
-  'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js'
+  './',
+  './index.html',
+  './manifest.json',
+  './js/device-cache.js',
+  './js/storage.js',
+  './js/sound.js',
+  './js/catalog.js',
+  './js/jobs.js',
+  './js/entry.js',
+  './js/list.js',
+  './js/export.js',
+  './js/scan.js',
+  './js/sheets.js',
+  './js/app.js',
+  'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js',
 ];
 
 self.addEventListener('install', e => {

@@ -9,7 +9,7 @@
     "codegen": "playwright codegen https://bsiwebapp.com",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts src/core/*.test.ts",
-    "test:field": "node field-app/test/device-cache.test.mjs",
+    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs",
     "test:sql": "./supabase/test/run.sh",
     "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
     "build:core": "esbuild src/core/index.ts --bundle --platform=node --format=cjs --outfile=dist/lia-core.cjs",
