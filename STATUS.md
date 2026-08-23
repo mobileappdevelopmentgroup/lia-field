@@ -15,7 +15,11 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 | 1 — Shared CSV core + live bug fix | ✅ Done, tested |
 | 2 — Accounts, versioning, correct billing | ✅ Written and tested locally, **not applied to any live DB** |
 | 3 — Ladder L/C/V/P | ◐ Capture done and verified; BSI automation needs a codegen session |
-| 4–9 — Sync, merge, fall protection, cert site, NFC, PWA decommission | Not started |
+| 4 — Field app sync | Not started (needs staging Supabase) |
+| 5 — Multi-tech merge | Not started |
+| 6 — Fall protection | ◐ Schema, checklists, photo retention done and tested; job scope selection done. **Capture UI needs your input** |
+| 7 — Cert site | ◐ `fp-site/index.html` built and verified; deploys under `/fp/` on the existing bucket |
+| 8–9 — NFC, PWA decommission | Not started |
 
 ### ⚠️ Do not ship Lia Office before applying the migrations
 
@@ -63,9 +67,12 @@ the first blank-work-order import charge and every one after it free forever.
 3. **How BSI identifies a fall-protection box.** Ladder boxes key off the serial;
    an aggregate FP box has none, so re-running an FP import would add a second box
    rather than update the first. That double-bills the customer.
-4. FP field semantics: valid `status` values, what "rep number" identifies, whether
-   "URL" is the NFC target or a manufacturer document link, and a photo retention
-   period for the privacy policy.
+4. **The valid set of `status` values** for fall-protection items. The column is
+   deliberately free text with no CHECK constraint until that is known.
+5. **How the fall-protection capture screen should look.** The schema is done, but
+   field order, which fields are required, how the checks are presented, and the
+   photo flow for a condemned item are all product decisions. A fall-protection
+   job currently saves and shows an honest placeholder rather than a guessed-at form.
 
 ### Known consequence, flagged deliberately
 
