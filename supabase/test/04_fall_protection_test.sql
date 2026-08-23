@@ -64,16 +64,42 @@ BEGIN
 
   PERFORM pg_temp.want('one failed check fails the whole item',
     (SELECT overall_pass FROM fp_inspections WHERE id = v_id), false);
-  PERFORM pg_temp.want('the discard reason is on record',
-    (SELECT discard_reason FROM fp_inspections WHERE id = v_id), 'impact indicator deployed');
+  -- The payload asked for a reason of its own; the composed one wins, so what a
+  -- certificate shows always matches the check that actually failed.
+  PERFORM pg_temp.want('the reason comes from the failed check, not the payload',
+    (SELECT discard_reason FROM fp_inspections WHERE id = v_id),
+    'Failed: Has the impact indicator been activated?');
 END $$;
 
--- A condemned item without a reason must be refused outright.
-DO $$ BEGIN
-  PERFORM pg_temp.want_error('a failed item cannot be saved without a discard reason',
-    $q$ SELECT record_fp_inspection(jsonb_build_object(
-          'serial_num','H-2002','manufacturer','MSA','model','V-FIT',
-          'checks', jsonb_build_array(jsonb_build_object('prompt','Labels?','result',false)))) $q$);
+-- The failed check is the explanation. The tech types nothing.
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  v_id := record_fp_inspection(jsonb_build_object(
+    'serial_num','H-2002','manufacturer','MSA','model','V-FIT',
+    'checks', jsonb_build_array(
+      jsonb_build_object('prompt','Webbing intact?','result',false),
+      jsonb_build_object('prompt','Stitching intact?','result',false))));
+
+  PERFORM pg_temp.want('the reason is composed from the checks that failed',
+    (SELECT discard_reason FROM fp_inspections WHERE id = v_id),
+    'Failed: Webbing intact?; Stitching intact?');
+  PERFORM pg_temp.want('a note is optional and absent by default',
+    (SELECT discard_note FROM fp_inspections WHERE id = v_id), NULL::text);
+END $$;
+
+-- The tech may add a note alongside the photo, but is never made to.
+DO $$
+DECLARE v_id uuid;
+BEGIN
+  v_id := record_fp_inspection(jsonb_build_object(
+    'serial_num','H-2003','manufacturer','MSA','model','V-FIT',
+    'discard_note','Tagged and pulled from truck 14',
+    'checks', jsonb_build_array(jsonb_build_object('prompt','Labels?','result',false))));
+  PERFORM pg_temp.want('the note is kept separately from the composed reason',
+    (SELECT discard_note FROM fp_inspections WHERE id = v_id), 'Tagged and pulled from truck 14');
+  PERFORM pg_temp.want('and the reason is still the failed check',
+    (SELECT discard_reason FROM fp_inspections WHERE id = v_id), 'Failed: Labels?');
 END $$;
 
 -- ── Versioning, same as ladders ──────────────────────────────────────────────
@@ -137,10 +163,9 @@ END $$;
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration keeps the catalogue intact',
     (SELECT count(*)::int FROM fp_models), 2);
-  -- H-1001, H-1002, H-2001 and H-3001. H-2002 was correctly refused for having
-  -- a failed check with no discard reason, so it is not here.
+  -- H-1001, H-1002, H-2001, H-2002, H-2003, H-3001.
   PERFORM pg_temp.want('re-running the migration keeps inspections intact',
-    (SELECT count(*)::int FROM fp_inspections WHERE is_current), 4);
+    (SELECT count(*)::int FROM fp_inspections WHERE is_current), 6);
 END $$;
 
 -- ── Isolation and what the public may see ────────────────────────────────────
@@ -163,9 +188,9 @@ DO $$ BEGIN
   PERFORM pg_temp.want('the public certificate never exposes the discard reason',
     (SELECT count(*)::int FROM information_schema.columns
       WHERE table_name='fall_protection_public'
-        AND column_name IN ('discard_reason','collected_by','collector_name','work_order_id')), 0);
+        AND column_name IN ('discard_reason','discard_note','collected_by','collector_name','work_order_id')), 0);
   PERFORM pg_temp.want('but it does show pass/fail',
-    (SELECT count(*)::int FROM fall_protection_public WHERE overall_pass = false), 1);
+    (SELECT count(*)::int FROM fall_protection_public WHERE overall_pass = false), 3);
   PERFORM pg_temp.want('and the checks as they were actually asked',
     (SELECT count(*)::int > 0 FROM fall_protection_checks_public), true);
 END $$;

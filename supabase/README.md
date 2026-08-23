@@ -14,6 +14,8 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 4. `04_inspections_v2.sql` — versioned, account-scoped inspections + the public view
 5. `05_rep_and_attribution.sql` — rep numbers, collector attribution, derived certificate URLs
 6. `06_fall_protection.sql` — fall-protection catalogue, checklists, inspections, photos
+7. `07_fp_status.sql` — status constraint and derived status
+8. `08_device_snapshot.sql` — the read model behind the on-device cache
 
 All are idempotent and safe to re-run.
 

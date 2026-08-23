@@ -108,7 +108,11 @@ CREATE TABLE IF NOT EXISTS public.fp_inspections (
   -- Any failed check fails the whole item, and a failed item must be discarded
   -- with a reason on record.
   overall_pass     boolean NOT NULL DEFAULT true,
+  -- Composed from the failed checks, not typed. The check the tech tapped
+  -- already says why the item failed; making him retype it is pure friction.
   discard_reason   text,
+  -- Optional free text he adds alongside the photo.
+  discard_note     text,
 
   version          integer NOT NULL DEFAULT 1,
   supersedes       uuid REFERENCES public.fp_inspections(id),
@@ -248,7 +252,9 @@ DECLARE
   v_checks   jsonb := coalesce(p->'checks', '[]'::jsonb);
   v_chk      jsonb;
   v_pass     boolean := true;
-  v_reason   text := nullif(trim(coalesce(p->>'discard_reason','')), '');
+  v_failed   text[] := '{}';
+  v_reason   text;
+  v_note     text := nullif(trim(coalesce(p->>'discard_note','')), '');
   v_ord      integer := 0;
 BEGIN
   IF v_user_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
@@ -267,11 +273,13 @@ BEGIN
   FOR v_chk IN SELECT * FROM jsonb_array_elements(v_checks) LOOP
     IF (v_chk->>'result') IS NOT NULL AND (v_chk->>'result')::boolean = false THEN
       v_pass := false;
+      v_failed := v_failed || coalesce(nullif(v_chk->>'prompt',''), 'Unnamed check');
     END IF;
   END LOOP;
 
-  IF NOT v_pass AND v_reason IS NULL THEN
-    RAISE EXCEPTION 'A failed item must be discarded with a reason on record';
+  -- The reason IS the failed checks. Nothing for the tech to type.
+  IF NOT v_pass THEN
+    v_reason := 'Failed: ' || array_to_string(v_failed, '; ');
   END IF;
 
   -- Catalogue entry, created on first sight of a manufacturer+model.
@@ -318,7 +326,7 @@ BEGIN
     rep_number, tech_user_id, collected_by, collector_name,
     model_id, item_type, description, manufacturer, model,
     lot_number, mfg_month, mfg_year, status, nfc_tag_serial,
-    template_id, template_version, overall_pass, discard_reason,
+    template_id, template_version, overall_pass, discard_reason, discard_note,
     version, supersedes, is_current, source, captured_at
   ) VALUES (
     v_account, v_asset,
@@ -341,7 +349,7 @@ BEGIN
     coalesce(nullif(p->>'nfc_tag_serial',''), v_prev.nfc_tag_serial),
     coalesce((p->>'template_id')::uuid,     v_prev.template_id),
     coalesce((p->>'template_version')::integer, v_prev.template_version),
-    v_pass, v_reason,
+    v_pass, v_reason, coalesce(v_note, v_prev.discard_note),
     v_version, v_prev.id, true,
     coalesce(p->>'source', 'field'),
     coalesce((p->>'captured_at')::timestamptz, now())

@@ -63,5 +63,10 @@ echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/05_status_test.sql"
 
 echo
+echo "Running snapshot assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/06_snapshot_test.sql"
+
+echo
 echo "Inspect with: psql -d $DB"
 echo "Drop with:    psql -d postgres -c 'DROP DATABASE $DB;'"
