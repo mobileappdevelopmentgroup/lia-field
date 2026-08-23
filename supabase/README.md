@@ -10,6 +10,26 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 
 1. `01_licensing.sql` — users table, credit functions, RLS
 2. `02_inspections.sql` — ladder inspection records + public view
+3. `03_accounts_billing.sql` — accounts, work orders, and one-token-per-work-order billing
+
+All are idempotent and safe to re-run.
+
+### Test before applying to a live database
+
+`03_accounts_billing.sql` migrates real credit balances. Rehearse it locally first:
+
+```bash
+./supabase/test/run.sh
+```
+
+That builds a throwaway Postgres database, stubs the pieces Supabase provides
+(`auth.users`, `auth.uid()`, the `anon` / `authenticated` roles), applies every
+migration in order over realistic pre-migration data, and asserts the billing
+behaviour — charge once per work order, free on re-run, per-account namespacing,
+account isolation under RLS, and that re-running the migration changes nothing.
+A failed assertion exits non-zero.
+
+Needs a local Postgres: `brew install postgresql@16 && brew services start postgresql@16`.
 
 ## 3. Create user accounts
 
