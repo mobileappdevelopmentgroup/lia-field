@@ -21,10 +21,89 @@
 
   // Populated by the native plugin when one is installed. Until then this stays
   // null and the Web NFC path is the only one.
+  //
+  // Two shapes are accepted. `NfcPlugin`/`Nfc` with read()/write() is the simple
+  // promise API a hand-written in-repo plugin would expose. `NFC` is
+  // @exxili/capacitor-nfc, which is listener-based — startScan then an 'nfcTag'
+  // event — and is adapted below. Keeping both means the plugin choice can
+  // change without touching anything that calls LiaNfc.
   function nativePlugin() {
     const cap = root.Capacitor;
     if (!cap || !cap.Plugins) return null;
     return cap.Plugins.NfcPlugin || cap.Plugins.Nfc || null;
+  }
+
+  function exxiliPlugin() {
+    const cap = root.Capacitor;
+    if (!cap || !cap.Plugins) return null;
+    const p = cap.Plugins.NFC;
+    return p && typeof p.startScan === 'function' ? p : null;
+  }
+
+  // Its records carry {type, payload} with RAW NDEF type codes — 'U' for a URI
+  // record and 'T' for text — where Web NFC uses the friendlier 'url'/'text'.
+  // Translate both ways so the rest of the app only ever sees one vocabulary.
+  const NDEF_TO_WEB = { U: 'url', T: 'text' };
+  const WEB_TO_NDEF = { url: 'U', text: 'T' };
+
+  function fromExxili(messages) {
+    const records = [];
+    (messages || []).forEach(function (m) {
+      (m.records || []).forEach(function (r) {
+        records.push({
+          recordType: NDEF_TO_WEB[r.type] || r.type,
+          data: r.payload,
+        });
+      });
+    });
+    return records;
+  }
+
+  // Listener API to a promise, with the listeners always torn down — a leaked
+  // 'nfcTag' listener would fire into a screen the tech has already left.
+  function exxiliRead(plugin, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var handles = [];
+      function cleanup() {
+        handles.forEach(function (h) { try { h && h.remove && h.remove(); } catch (_) {} });
+        try { plugin.cancelScan(); } catch (_) {}
+      }
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true; cleanup();
+        var e = new Error('No tag detected. Hold the phone against the tag.');
+        e.code = 'NFC_TIMEOUT';
+        reject(e);
+      }, timeoutMs || 20000);
+
+      Promise.resolve(plugin.addListener('nfcTag', function (data) {
+        if (done) return;
+        done = true; clearTimeout(timer); cleanup();
+        var parsed = parseRecords(fromExxili(data && data.messages));
+        resolve({
+          serial: parsed.serial,
+          url: parsed.url,
+          uid: normalizeUid(data && data.tagInfo && data.tagInfo.uid),
+        });
+      })).then(function (h) { handles.push(h); });
+
+      Promise.resolve(plugin.addListener('nfcError', function (err) {
+        if (done) return;
+        done = true; clearTimeout(timer); cleanup();
+        var e = new Error((err && err.error) || 'That tag could not be read.');
+        e.code = 'NFC_READ_ERROR';
+        reject(e);
+      })).then(function (h) { handles.push(h); });
+
+      Promise.resolve(plugin.startScan()).catch(function (err) {
+        if (done) return;
+        done = true; clearTimeout(timer); cleanup();
+        var e = new Error((err && err.message) || 'Could not start the tag reader.');
+        e.code = 'NFC_START_FAILED';
+        reject(e);
+      });
+    });
   }
 
   function isNative() {
@@ -34,13 +113,13 @@
   // Never assume: a device can have no NFC hardware, or have it switched off in
   // settings, and both must degrade to "not available" rather than to an error.
   function isAvailable() {
-    if (nativePlugin()) return true;
+    if (nativePlugin() || exxiliPlugin()) return true;
     if ('NDEFReader' in root) return true;
     return false;
   }
 
   function canWrite() {
-    if (nativePlugin()) return true;
+    if (nativePlugin() || exxiliPlugin()) return true;
     // Web NFC can write, but only on Chrome for Android.
     return 'NDEFReader' in root;
   }
@@ -110,6 +189,9 @@
       });
     }
 
+    const exx = exxiliPlugin();
+    if (exx) return exxiliRead(exx, opts.timeoutMs);
+
     if (!('NDEFReader' in root)) return Promise.reject(unavailable());
 
     return new Promise(function (resolve, reject) {
@@ -165,6 +247,15 @@
 
     const plugin = nativePlugin();
     if (plugin && plugin.write) return plugin.write({ records: records });
+
+    const exx = exxiliPlugin();
+    if (exx) {
+      return Promise.resolve(exx.writeNDEF({
+        records: records.map(function (r) {
+          return { type: WEB_TO_NDEF[r.recordType] || r.recordType, payload: r.data };
+        }),
+      })).then(function () { return { written: true }; });
+    }
 
     if (!('NDEFReader' in root)) return Promise.reject(unavailable());
 

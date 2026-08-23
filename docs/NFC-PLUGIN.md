@@ -8,24 +8,44 @@ error handling, and the app degrading to scan-and-type where NFC is absent.
 returns false, the Tap button is hidden, and the tech uses scan or type. That is
 deliberate: a dead button is worse than no button.
 
-## The decision still open: which plugin
+## The plugin: researched, one candidate, adapter already written
 
 `capacitor.plugins.json` is `[]` — this would be the project's first plugin.
-Judge candidates on two things, in order:
+The registry was searched on 2026-08-23 against the two bars that matter:
+**declared Capacitor 8 support**, and **NDEF write**, not just read.
 
-1. **Declared support for Capacitor 8** (`field-app/capacitor/package.json` pins
-   `^8.4.0`). Many NFC plugins are stalled on an older major.
-2. **NDEF *write*, not just read.** Writing a serial to a blank tag is half the
-   feature, and several plugins only read.
+| Package | Capacitor 8 | Writes | Last release | Verdict |
+|---|---|---|---|---|
+| `@exxili/capacitor-nfc` | ✅ `>=6 <9` | ✅ `writeNDEF` | Feb 2026 | **only viable candidate** |
+| `capacitor-nfc` | ❌ | — | Apr 2022 | abandoned |
+| `@capacitor-community/nfc` | — | — | — | does not exist |
+| `@capawesome-team/capacitor-nfc` | — | — | — | not on the public registry |
 
-If nothing clears both bars, write one in-repo. A thin wrapper over
-`NFCNDEFReaderSession` (Swift) and `NfcAdapter` reader mode (Kotlin) is a few
-hundred lines and removes abandonware risk from a feature that is core to the
-product. Budget a half-day spike before choosing — do not let plugin
-availability quietly become the architecture.
+`@exxili/capacitor-nfc` at a glance: MIT, ~30k downloads/month, 8 releases, still
+**0.0.x**. The version number is the only real reservation — the API is
+reasonable and the write path is documented.
 
-`nfc.js` already looks for `Capacitor.Plugins.NfcPlugin` or `.Nfc` and prefers
-either over Web NFC, so installing one should need no changes to the app.
+**Recommendation: use it, and keep `nfc.js` as the seam.** The residual risk is
+a single-maintainer 0.0.x package, and the mitigation is already in place:
+nothing in the app calls the plugin directly. `nfc.js` already speaks its exact
+API — listener-based `startScan` + `nfcTag` event, `writeNDEF`, and the raw NDEF
+type codes `'U'`/`'T'` that it uses where Web NFC says `'url'`/`'text'` — and
+that adapter is tested against a stub of its documented shape. If it is
+abandoned, replacing it is one file.
+
+### Installing it
+
+Not installed yet, because it touches the native projects and iOS needs an
+entitlement only you can add.
+
+```bash
+cd field-app/capacitor
+npm install @exxili/capacitor-nfc
+npx cap sync
+```
+
+Then the iOS capability and `Info.plist` string below. No app code should need
+to change — `nfc.js` detects `Capacitor.Plugins.NFC` on its own.
 
 ## iOS — constraints that shape the UX, not just the build
 

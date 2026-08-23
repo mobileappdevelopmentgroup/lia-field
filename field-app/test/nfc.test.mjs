@@ -54,6 +54,43 @@ const out = await p.evaluate(async () => {
      LiaNfc.parseRecords([]), { serial: null, url: null, uid: null });
   ok('and so does a malformed one', LiaNfc.parseRecords(null).serial, null);
 
+  // The listener-based plugin (@exxili/capacitor-nfc) adapted to the same shape.
+  let scanStarted = false, cancelled = false;
+  const listeners = {};
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { NFC: {
+    startScan: async () => { scanStarted = true;
+      setTimeout(() => listeners.nfcTag && listeners.nfcTag({
+        messages: [{ records: [
+          { type: 'U', payload: 'https://x/fp/?t=ABC1234567' },
+          { type: 'T', payload: 'H-8888' },
+        ] }],
+        tagInfo: { uid: '04:aa:bb:cc' },
+      }), 10); },
+    cancelScan: async () => { cancelled = true; },
+    writeNDEF: async (o) => { window.__wrote = o; },
+    addListener: (name, fn) => { listeners[name] = fn;
+      return Promise.resolve({ remove: () => { delete listeners[name]; } }); },
+  } } };
+  ok('a listener-based plugin is detected', LiaNfc.isAvailable(), true);
+  const lr = await LiaNfc.read();
+  ok('its tag reads back the serial', lr.serial, 'H-8888');
+  ok('and the hardware id, normalized', lr.uid, '04AABBCC');
+  ok('the scan was actually started', scanStarted, true);
+  // A leaked listener would fire into a screen the tech has already left.
+  ok('and torn down afterwards', Object.keys(listeners).length, 0);
+  ok('the scan is cancelled too', cancelled, true);
+
+  await LiaNfc.write('H-8888', 'https://x/fp/?t=ABC1234567');
+  ok('writing maps to the plugin record shape',
+     window.__wrote.records.map(r => r.type), ['U', 'T']);
+
+  // A tag that never arrives must not hang the UI forever.
+  listeners.nfcTag = null;
+  window.Capacitor.Plugins.NFC.startScan = async () => {};
+  ok('a tag that never arrives times out',
+     await LiaNfc.read({ timeoutMs: 60 }).then(() => 'resolved', e => e.code), 'NFC_TIMEOUT');
+  delete window.Capacitor;
+
   // A native plugin, once installed, must take precedence over Web NFC.
   window.Capacitor = { isNativePlatform: () => true, Plugins: { NfcPlugin: {
     read: async () => ({ id: '04:11:22:33', records: [{ recordType: 'text', data: 'H-9999' }] }),
