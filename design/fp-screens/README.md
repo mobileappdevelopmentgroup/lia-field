@@ -18,17 +18,18 @@ input radii, mono serials, 44px+ hit targets.
 
 ## The interaction this is built around
 
-Tap the tag → last year's record comes up from the device's own copy, read-only →
-every check already reads Pass → the tech confirms the part matches and taps
-**Pass & Next**. Two taps, nothing typed.
+Tap the tag — or scan, or type — and last year's record comes up from the
+device's own copy. Every check already reads Pass. The tech confirms the part
+matches and taps **Pass & Next**. Two taps, nothing typed.
 
-The identity block is deliberately read-only rather than input fields: a stray
-touch on a form field would edit last year's data on a part the tech is only
-confirming.
+The record is read-only **by default, not permanently**: a stray touch cannot
+rewrite last year's data on a part the tech is only confirming, but the Edit
+button unlocks every field when something has genuinely changed.
 
-A defective item is the only thing that costs more. Tapping Fail on any one check
-flips the whole item to FAIL and turns the button into *Why?*, which requires a
-reason and a photo — the same rule the database enforces.
+A defective item is the only thing that costs more. One Fail flips the whole item
+and the button becomes *Add Photo & Remove*. The tech does not type why — the
+check he failed is the reason, composed server-side in
+`record_fp_inspection()`. A photo is required; a note is optional.
 
 To change anything: edit the `.dc.html` files here, re-seed, and republish to the
 same URL. Do not hand-edit `lia-fall-protection-screens.html` — it is generated.

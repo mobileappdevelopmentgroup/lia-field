@@ -1,18 +1,70 @@
 {
   "artboards": [
-    { "file": "Main.dc.html",      "x": 0,    "y": 0, "w": 390, "h": 844, "title": "Inspect — the 95% case" },
-    { "file": "FailState.dc.html", "x": 510,  "y": 0, "w": 390, "h": 844, "title": "One check failed" },
-    { "file": "Condemn.dc.html",   "x": 1020, "y": 0, "w": 390, "h": 844, "title": "Removal from service" },
-    { "file": "NewItem.dc.html",   "x": 1530, "y": 0, "w": 390, "h": 844, "title": "Not on file yet" },
-    { "file": "ItemList.dc.html",  "x": 2040, "y": 0, "w": 390, "h": 844, "title": "Item list" }
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Inspect \u2014 the 95% case"
+    },
+    {
+      "file": "FailState.dc.html",
+      "x": 510,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "One check failed"
+    },
+    {
+      "file": "Condemn.dc.html",
+      "x": 1020,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Removal from service"
+    },
+    {
+      "file": "NewItem.dc.html",
+      "x": 1530,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Not on file yet"
+    },
+    {
+      "file": "ItemList.dc.html",
+      "x": 2040,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Item list"
+    }
   ],
   "annotations": [
-    { "id": "the-flow", "x": 0, "y": -210, "w": 900,
-      "text": "THE HAPPY PATH IS TWO TAPS.\n\nTap the tag → the record comes up from the device's own copy of last year's inspection, read-only, so the tech is verifying he has the right part rather than retyping it. Every check is already Pass. He looks at the harness, sees the record agrees, taps Pass & Next.\n\nNothing is typed. Nothing is a form field. The identity block is deliberately read-only with a small Edit — if it were inputs, a stray touch would edit last year's data on a part he is only confirming." },
-    { "id": "fail-path", "x": 1020, "y": -210, "w": 900,
-      "text": "A DEFECTIVE ITEM IS THE ONLY THING THAT COSTS MORE TAPS.\n\nTapping Fail on any one check flips the whole item to FAIL — the tech never sets the overall result — and the button turns into \"Why?\". Reason and photo are both required, and the database enforces the same rule, so a device that skips them is refused.\n\nNot on file yet is the uncommon path: a tag with no record. It is the only screen with input fields, and it says plainly that next year it will come up filled in." },
-    { "id": "changes", "x": 2040, "y": -210, "w": 440,
-      "text": "Changed from the last pass: form-first direction, checks reduced to one 44px row each so six fit without scrolling, everything defaulted to Pass, and the identity block turned from inputs into a verified record.\n\nSample data throughout. Check wording is placeholder — the real set comes from the model's checklist." }
+    {
+      "id": "the-flow",
+      "x": 0,
+      "y": -210,
+      "w": 900,
+      "text": "THE HAPPY PATH IS TWO TAPS.\n\nTap the tag \u2014 or scan, or type \u2014 and the record comes up from the device's own copy of last year's inspection. Every check already reads Pass. The tech looks at the harness, sees the record agrees, taps Pass & Next.\n\nThe record is read-only by DEFAULT, not permanently: a stray touch cannot rewrite last year's data on a part he is only confirming, but Edit unlocks every field when something has genuinely changed.\n\nThe device holds the whole account's catalogue \u2014 every tech's items, not just the lead's \u2014 so this works with no signal. The app refuses to start a job until it has synced once; without the catalogue every item would look new."
+    },
+    {
+      "id": "fail-path",
+      "x": 1020,
+      "y": -210,
+      "w": 900,
+      "text": "A DEFECTIVE ITEM IS THE ONLY THING THAT COSTS MORE TAPS.\n\nOne Fail flips the whole item \u2014 the tech never sets the overall result \u2014 and the button becomes Add Photo & Remove.\n\nHe does not type why. The check he failed IS the reason, and it is carried through automatically; the database composes it from the failed checks and a client cannot override it, so a certificate always matches what actually failed. A photo is required. A note is there if he wants it, and never demanded."
+    },
+    {
+      "id": "changes",
+      "x": 2040,
+      "y": -210,
+      "w": 440,
+      "text": "Changed this pass: scan and type sit beside NFC (a tag can be missing or unreadable); Edit is a real button on the record; the fail screen asks only for a photo, with an optional note.\n\nSample data. Check wording is placeholder \u2014 the real set comes from the model's checklist."
+    }
   ],
-  "launch": { "view": "canvas" }
+  "launch": {
+    "view": "canvas"
+  }
 }
