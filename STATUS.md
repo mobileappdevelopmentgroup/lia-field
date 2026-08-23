@@ -1,6 +1,6 @@
 # Lia — Project Status
 
-**As of 2026-08-22** · branch `fall-protection` @ `a7d0673`. `master` frozen at
+**As of 2026-08-23** · branch `fall-protection` @ `28da07f`. `master` frozen at
 `prod-baseline-2026-08-22` (`6db1ef3`), pushed.
 
 ---
@@ -15,9 +15,9 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 | 1 — Shared CSV core + live bug fix | ✅ Done, tested |
 | 2 — Accounts, versioning, correct billing | ✅ Written and tested locally, **not applied to any live DB** |
 | 3 — Ladder L/C/V/P | ◐ Capture done and verified; BSI automation needs a codegen session |
-| 4 — Field app sync | Not started (needs staging Supabase) |
+| 4 — Field app sync | ◐ Read model + on-device cache done and tested; auth and upload need staging Supabase |
 | 5 — Multi-tech merge | Not started |
-| 6 — Fall protection | ◐ Schema, checklists, photo retention done and tested; job scope selection done. **Capture UI needs your input** |
+| 6 — Fall protection | ◐ Schema, checklists, status, photo retention, job scope all done. Screens agreed; **capture UI not yet built** |
 | 7 — Cert site | ◐ `fp-site/index.html` built and verified; deploys under `/fp/` on the existing bucket |
 | 8–9 — NFC, PWA decommission | Not started |
 
@@ -58,6 +58,15 @@ the first blank-work-order import charge and every one after it free forever.
 - The destructive `UNIQUE (serial_num, inspection_date)` is gone; inspections are
   versioned and supersede rather than overwrite.
 
+### Test suites
+
+```bash
+npm test              # 11 unit (CSV/flag logic)
+npm run test:field    # 40 browser (device cache, module split, shipped bundles)
+npm run test:sql      # 155 assertions against a throwaway local Postgres
+npm run typecheck
+```
+
 ### Still needed from you
 
 1. **A staging Supabase project** — so the migrations can be rehearsed against a
@@ -69,10 +78,9 @@ the first blank-work-order import charge and every one after it free forever.
    rather than update the first. That double-bills the customer.
 4. **The valid set of `status` values** for fall-protection items. The column is
    deliberately free text with no CHECK constraint until that is known.
-5. **How the fall-protection capture screen should look.** The schema is done, but
-   field order, which fields are required, how the checks are presented, and the
-   photo flow for a condemned item are all product decisions. A fall-protection
-   job currently saves and shows an honest placeholder rather than a guessed-at form.
+5. ~~How the capture screen should look~~ — settled. Mockups at
+   <https://claude.ai/code/artifact/c07c621b-6767-42c0-8900-0d2f5c90f1c1>,
+   source in `design/fp-screens/`. Building it is the next piece of work.
 
 ### Known consequence, flagged deliberately
 
