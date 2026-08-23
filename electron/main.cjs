@@ -273,6 +273,76 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
   return { records, skipped };
 });
 
+// ── IPC: multi-tech merge ────────────────────────────────────────────────────
+// Several techs work one work order on their own phones. This pulls everything
+// captured under a work order so the lead can review it as one set before an
+// import — nothing is resolved without them seeing it.
+
+ipcMain.handle('merge:work-orders', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb
+      .from('work_order_submissions')
+      .select('work_order_id, collector_name, collector_role, item_count, last_captured_at')
+      .order('last_captured_at', { ascending: false });
+    if (error) return { ok: false, error: error.message };
+
+    // One row per work order, carrying who contributed to it.
+    const byWo = new Map();
+    (data || []).forEach(r => {
+      const e = byWo.get(r.work_order_id) || {
+        workOrderId: r.work_order_id, items: 0, techs: [], lastCapturedAt: r.last_captured_at,
+      };
+      e.items += Number(r.item_count) || 0;
+      e.techs.push({ name: r.collector_name, role: r.collector_role, items: Number(r.item_count) || 0 });
+      if (r.last_captured_at > e.lastCapturedAt) e.lastCapturedAt = r.last_captured_at;
+      byWo.set(r.work_order_id, e);
+    });
+    return { ok: true, workOrders: [...byWo.values()] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('merge:pull', async (_event, workOrderId) => {
+  try {
+    if (typeof workOrderId !== 'string' || !workOrderId.trim()) {
+      return { ok: false, error: 'Pick a work order first.' };
+    }
+    const sb = await getSupabase();
+    const core = require('../dist/lia-core.cjs');
+
+    const [ladders, fp] = await Promise.all([
+      sb.from('inspections')
+        .select('id, serial_num, tech_name, tech_user_id, captured_at, uploaded_at, is_deleted, brand, type, length, notes, lubricated, has_leveler, has_claw, has_vrung')
+        .eq('work_order_id', workOrderId).eq('is_current', true),
+      sb.from('fp_inspections')
+        .select('id, tech_user_id, collector_name, captured_at, uploaded_at, is_deleted, overall_pass, manufacturer, model, item_type, lot_number, mfg_month, mfg_year, assets(serial_raw)')
+        .eq('work_order_id', workOrderId).eq('is_current', true),
+    ]);
+    if (ladders.error) return { ok: false, error: ladders.error.message };
+    if (fp.error) return { ok: false, error: fp.error.message };
+
+    const records = [];
+    (ladders.data || []).forEach(r => records.push({
+      clientId: r.id, serialNum: r.serial_num, scope: 'ladder',
+      capturedAt: r.captured_at, uploadedAt: r.uploaded_at,
+      techName: r.tech_name, techUserId: r.tech_user_id, deleted: r.is_deleted,
+      brand: r.brand, type: r.type, length: r.length, notes: r.notes,
+      lubricated: r.lubricated, has_leveler: r.has_leveler,
+      has_claw: r.has_claw, has_vrung: r.has_vrung,
+    }));
+    (fp.data || []).forEach(r => records.push({
+      clientId: r.id, serialNum: (r.assets && r.assets.serial_raw) || '', scope: 'fall_protection',
+      capturedAt: r.captured_at, uploadedAt: r.uploaded_at,
+      techName: r.collector_name, techUserId: r.tech_user_id, deleted: r.is_deleted,
+      overallPass: r.overall_pass, manufacturer: r.manufacturer, model: r.model,
+      item_type: r.item_type, lot_number: r.lot_number,
+      mfg_month: r.mfg_month, mfg_year: r.mfg_year,
+    }));
+
+    return { ok: true, merge: core.mergeRecords(records), pulled: records.length };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── IPC: fall protection catalog ─────────────────────────────────────────────
 // Models and the checks techs are asked. Templates are versioned and an
 // inspection pins the version it was performed against, so editing a checklist

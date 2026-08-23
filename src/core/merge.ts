@@ -81,6 +81,11 @@ export const SUSPECT_SKEW_MS = 5 * 60 * 1000;
 const IGNORED = new Set([
   'clientId', 'capturedAt', 'uploadedAt', 'techName', 'techUserId', 'deviceId',
   'clockSkewMs', 'deleted', 'parts', 'checks', 'photo', 'id',
+  // overallPass is deliberately NOT offered as a choice. It is resolved by the
+  // FAIL-beats-PASS rule and reported through failOverrodePass; listing it as a
+  // conflict would put "pass" in front of the lead as a selectable option and
+  // let a condemned item be quietly un-condemned.
+  'overallPass',
 ]);
 
 function isEmpty(v: unknown): boolean {

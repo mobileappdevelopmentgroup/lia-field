@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('api', {
   saveSampleCsv: ()         => ipcRenderer.invoke('csv:save-sample'),
   getLogsDir:    ()         => ipcRenderer.invoke('app:get-logs-dir'),
 
+  // ── Multi-tech merge ─────────────────────────────────────────────────────
+  mergeWorkOrders: ()            => ipcRenderer.invoke('merge:work-orders'),
+  mergePull:       (workOrderId) => ipcRenderer.invoke('merge:pull', workOrderId),
+
   // ── Fall protection catalog ──────────────────────────────────────────────
   fpListModels:    ()                 => ipcRenderer.invoke('fp:list-models'),
   fpGetChecks:     (modelId)          => ipcRenderer.invoke('fp:get-checks', modelId),

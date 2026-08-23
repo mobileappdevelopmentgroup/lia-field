@@ -69,6 +69,34 @@
     .home-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
     .home-title { font-size: 22px; font-weight: 700; color: var(--text); }
     .home-sub   { font-size: 13px; color: var(--muted); margin-top: -24px; }
+    /* ── Merge review ── */
+    .mg-contrib { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .mg-tech { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
+               padding: 8px 12px; font-size: 12px; }
+    .mg-tech b { font-size: 13px; }
+    .mg-tech span { color: var(--muted); }
+    .mg-warn { background: rgba(231,76,60,.10); border: 1px solid rgba(231,76,60,.35);
+               border-radius: 8px; padding: 10px 13px; font-size: 12.5px; line-height: 1.5;
+               margin-bottom: 10px; }
+    .mg-warn.soft { background: rgba(224,160,10,.10); border-color: rgba(224,160,10,.35); }
+    .mg-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px;
+               margin-bottom: 7px; }
+    .mg-item.conflict { border-color: var(--warn); }
+    .mg-item-top { display: flex; gap: 8px; align-items: baseline; }
+    .mg-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .mg-meta { font-size: 11.5px; color: var(--muted); }
+    .mg-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+    .mg-badge.fail { color: var(--err); }
+    .mg-conflict { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border);
+                   font-size: 12px; }
+    .mg-cfield { font-weight: 700; color: var(--warn); }
+    .mg-choice { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+    .mg-opt { background: var(--surf2); border: 1px solid var(--border); border-radius: 6px;
+              padding: 5px 9px; font-size: 11.5px; cursor: pointer; font-family: inherit;
+              color: var(--text); }
+    .mg-opt.sel { background: rgba(79,110,247,.16); border-color: var(--accent); color: var(--accent-fg); }
+    .mg-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
     /* ── Fall protection catalog ── */
     .cat-wrap { display: flex; flex-direction: column; height: 100%; }
     .cat-head { display: flex; align-items: center; gap: 14px; padding: 18px 26px 14px;
@@ -367,6 +395,11 @@
         <div class="mode-name">Work History</div>
         <div class="mode-desc">View past work orders and ladders you've submitted.</div>
       </div>
+      <div class="mode-card" id="home-merge">
+        <div class="mode-icon">🔀</div>
+        <div class="mode-name">Merge Field Work</div>
+        <div class="mode-desc">Combine what several techs captured on one work order.</div>
+      </div>
       <div class="mode-card" id="home-catalog">
         <div class="mode-icon">🦺</div>
         <div class="mode-name">Fall Protection</div>
@@ -388,6 +421,38 @@
 
     <div class="home-footer">
       <a id="btn-signout">Sign out</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: MERGE FIELD WORK ═══════════════ -->
+<!-- Several techs, one work order. Nothing is resolved without the lead seeing
+     it: every disagreement is listed, and parts are never unioned automatically
+     because that double-adds them in BSI and double-bills the customer. -->
+<div id="screen-merge" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-merge-home">← Home</button>
+      <div class="cat-title">Merge Field Work</div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list">
+        <div class="cat-list-hdr"><span>Work orders</span></div>
+        <div id="merge-wos"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-empty" id="merge-empty">Pick a work order to see what the techs captured.</div>
+        <div id="merge-detail" style="display:none;">
+          <div id="merge-contributors"></div>
+          <div id="merge-warnings"></div>
+          <div class="cat-checks-hdr" style="margin-top:18px;">
+            <span>Merged items</span>
+            <span class="cat-ver" id="merge-count"></span>
+          </div>
+          <div id="merge-items"></div>
+          <div class="cat-msg" id="merge-msg"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -764,6 +829,7 @@ function goToDestination(dest) {
   else if (dest === 'inspect') { showScreen('inspect'); inspectReset(); }
   else if (dest === 'history') { showScreen('history'); loadHistory(); }
   else if (dest === 'catalog') { showScreen('catalog'); loadCatalog(); }
+  else if (dest === 'merge')   { showScreen('merge');   loadMerge(); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -794,6 +860,131 @@ async function doLogin() {
 function showLoginError(msg) {
   $('login-error').textContent = msg;
   $('login-error').classList.add('vis');
+}
+
+// ════════════════════════════════════════════════════════════════
+// Merge field work
+// ════════════════════════════════════════════════════════════════
+let _mgWos = [];
+let _mgSel = null;
+let _mgMerge = null;
+// Per-item overrides the lead has made. Nothing here is applied on its own.
+let _mgChoice = {};
+
+$('btn-merge-home').addEventListener('click', () => showScreen('home'));
+
+async function loadMerge() {
+  $('merge-msg').textContent = '';
+  const res = await window.api.mergeWorkOrders();
+  if (!res.ok) { $('merge-msg').textContent = res.error; $('merge-msg').className = 'cat-msg err'; return; }
+  _mgWos = res.workOrders || [];
+  const list = $('merge-wos');
+  list.innerHTML = '';
+  if (!_mgWos.length) {
+    list.innerHTML = '<div class="cat-empty" style="padding:16px;">Nothing captured in the field yet.</div>';
+    return;
+  }
+  _mgWos.forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'cat-item' + (_mgSel === w.workOrderId ? ' sel' : '');
+    const names = w.techs.map(t => t.name).join(', ');
+    row.innerHTML = `
+      <div class="cat-item-name">${esc(w.workOrderId)}</div>
+      <div class="cat-item-sub">${w.items} item${w.items !== 1 ? 's' : ''} · ${esc(names)}</div>`;
+    row.addEventListener('click', () => pullMerge(w.workOrderId));
+    list.appendChild(row);
+  });
+}
+
+async function pullMerge(workOrderId) {
+  _mgSel = workOrderId;
+  _mgChoice = {};
+  await loadMerge();
+  $('merge-empty').style.display = 'none';
+  $('merge-detail').style.display = '';
+  $('merge-msg').textContent = 'Pulling…';
+  $('merge-msg').className = 'cat-msg';
+
+  const res = await window.api.mergePull(workOrderId);
+  if (!res.ok) { $('merge-msg').textContent = res.error; $('merge-msg').className = 'cat-msg err'; return; }
+  _mgMerge = res.merge;
+  renderMerge();
+  $('merge-msg').textContent = '';
+}
+
+function renderMerge() {
+  const m = _mgMerge;
+  if (!m) return;
+
+  $('merge-contributors').innerHTML =
+    '<div class="mg-contrib">' + m.contributorSummary.map(c =>
+      `<div class="mg-tech"><b>${esc(c.techName)}</b><br><span>${c.captured} captured</span></div>`
+    ).join('') + '</div>';
+
+  // Anything that changes what the lead should trust goes above the list.
+  const warns = [];
+  if (m.conflicted.length) {
+    warns.push(`<div class="mg-warn"><b>${m.conflicted.length} item${m.conflicted.length !== 1 ? 's' : ''} the techs disagree on.</b> Each is marked below with both values. Nothing has been picked for you beyond the newest capture.</div>`);
+  }
+  if (m.tombstoned.length) {
+    warns.push(`<div class="mg-warn soft">${m.tombstoned.length} item${m.tombstoned.length !== 1 ? 's were' : ' was'} deleted by a tech after uploading, so ${m.tombstoned.length !== 1 ? 'they are' : 'it is'} not in this set: ${esc(m.tombstoned.join(', '))}</div>`);
+  }
+  const skewed = m.items.filter(i => i.suspectClock);
+  if (skewed.length) {
+    warns.push(`<div class="mg-warn soft"><b>A device clock is well out.</b> "Newest wins" used those timestamps on ${skewed.length} item${skewed.length !== 1 ? 's' : ''} — check them before importing.</div>`);
+  }
+  const overrides = m.items.filter(i => i.failOverrodePass);
+  if (overrides.length) {
+    warns.push(`<div class="mg-warn">${overrides.length} item${overrides.length !== 1 ? 's were' : ' was'} failed by one tech and passed by another. The FAIL stands.</div>`);
+  }
+  $('merge-warnings').innerHTML = warns.join('');
+  $('merge-count').textContent = `${m.items.length} item${m.items.length !== 1 ? 's' : ''}`;
+
+  const list = $('merge-items');
+  list.innerHTML = '';
+  m.items.forEach((item, idx) => {
+    const el = document.createElement('div');
+    el.className = 'mg-item' + (item.conflicts.length ? ' conflict' : '');
+    const w = item.winner;
+    const sub = item.scope === 'ladder'
+      ? [w.brand, w.type, w.length].filter(Boolean).join(' · ')
+      : [w.manufacturer, w.model, w.item_type].filter(Boolean).join(' · ');
+
+    let html = `
+      <div class="mg-item-top">
+        <span class="mg-sn">${esc(item.serialNum)}</span>
+        <span class="mg-meta">${esc(sub)}</span>
+        ${w.overallPass === false ? '<span class="mg-badge fail">REMOVED</span>' : ''}
+      </div>
+      <div class="mg-meta">${esc(w.techName)}${item.contributors.length > 1
+        ? ` · ${item.contributors.length} techs captured this` : ''}</div>`;
+
+    if (item.failOverrodePass) {
+      html += '<div class="mg-note">Failed by one tech, passed by another — the FAIL is kept.</div>';
+    }
+
+    item.conflicts.forEach(c => {
+      html += `<div class="mg-conflict"><span class="mg-cfield">${esc(c.field)}</span><div class="mg-choice">` +
+        c.values.map((v, vi) => {
+          const sel = (_mgChoice[idx + ':' + c.field] ?? 0) === vi ? ' sel' : '';
+          return `<button class="mg-opt${sel}" data-i="${idx}" data-f="${esc(c.field)}" data-v="${vi}">${esc(v.techName)}: ${esc(String(v.value))}</button>`;
+        }).join('') + '</div>';
+      if (c.field === 'parts') {
+        // Unioning silently would double-add parts in BSI and double-bill.
+        html += '<div class="mg-note">Parts are not combined automatically — that would add them twice in BSI.</div>';
+      }
+      html += '</div>';
+    });
+
+    el.innerHTML = html;
+    el.querySelectorAll('.mg-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _mgChoice[btn.dataset.i + ':' + btn.dataset.f] = Number(btn.dataset.v);
+        renderMerge();
+      });
+    });
+    list.appendChild(el);
+  });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -966,6 +1157,7 @@ $('home-office').addEventListener('click', () => requireAuth('office'));
 $('home-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('home-history').addEventListener('click', () => requireAuth('history'));
 $('home-catalog').addEventListener('click', () => requireAuth('catalog'));
+$('home-merge').addEventListener('click', () => requireAuth('merge'));
 $('btn-history-home').addEventListener('click', () => showScreen('home'));
 
 $('btn-signout').addEventListener('click', async () => {

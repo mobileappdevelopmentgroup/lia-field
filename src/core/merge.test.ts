@@ -177,3 +177,15 @@ test('an empty pull is not an error', () => {
   assert.deepEqual(r.items, []);
   assert.deepEqual(r.contributorSummary, []);
 });
+
+// A condemned item must not be un-condemned by picking the other value.
+test('the overall result is never offered as a choice', () => {
+  const r = mergeRecords([
+    rec({ techName: 'A', capturedAt: '2026-08-01T09:00:00Z', overallPass: false, scope: 'fall_protection' }),
+    rec({ techName: 'B', capturedAt: '2026-08-01T16:00:00Z', overallPass: true, scope: 'fall_protection' }),
+  ]);
+  assert.equal(r.items[0].conflicts.some((c) => c.field === 'overallPass'), false);
+  // It is still reported — just not as something to pick.
+  assert.equal(r.items[0].failOverrodePass, true);
+  assert.equal(r.items[0].winner.overallPass, false);
+});
