@@ -5,27 +5,7 @@
 \set ACME '11111111-1111-1111-1111-111111111111'
 \set BETA '22222222-2222-2222-2222-222222222222'
 
-CREATE OR REPLACE FUNCTION pg_temp.want(p_label text, p_got anyelement, p_expect anyelement)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-  IF p_got IS DISTINCT FROM p_expect THEN
-    RAISE EXCEPTION 'FAIL %: expected %, got %', p_label, p_expect, p_got;
-  END IF;
-  RAISE NOTICE 'ok  %', p_label;
-END;
-$$;
-
--- Refuses, and reports what the error was.
-CREATE OR REPLACE FUNCTION pg_temp.want_error(p_label text, p_sql text)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-  EXECUTE p_sql;
-  RAISE EXCEPTION 'FAIL %: expected an error, but the statement succeeded', p_label;
-EXCEPTION WHEN others THEN
-  IF SQLERRM LIKE 'FAIL %' THEN RAISE; END IF;
-  RAISE NOTICE 'ok  % (%)', p_label, SQLERRM;
-END;
-$$;
+\ir _helpers.sql
 
 -- ── Pre-migration state: existing users with balances ────────────────────────
 INSERT INTO auth.users(id, email) VALUES

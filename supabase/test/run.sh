@@ -40,6 +40,13 @@ echo "Running billing assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/01_billing_test.sql"
 
+# Likewise, 02 applies 04_inspections_v2.sql itself so the backfill runs over
+# inspection rows that were written in the old shape.
+echo
+echo "Running inspection assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/02_inspections_test.sql"
+
 echo
 echo "Inspect with: psql -d $DB"
 echo "Drop with:    psql -d postgres -c 'DROP DATABASE $DB;'"

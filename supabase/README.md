@@ -11,12 +11,14 @@ In the Supabase dashboard → SQL Editor, run these files in order:
 1. `01_licensing.sql` — users table, credit functions, RLS
 2. `02_inspections.sql` — ladder inspection records + public view
 3. `03_accounts_billing.sql` — accounts, work orders, and one-token-per-work-order billing
+4. `04_inspections_v2.sql` — versioned, account-scoped inspections + the public view
 
 All are idempotent and safe to re-run.
 
 ### Test before applying to a live database
 
-`03_accounts_billing.sql` migrates real credit balances. Rehearse it locally first:
+`03_accounts_billing.sql` migrates real credit balances and `04_inspections_v2.sql`
+restructures live inspection data. Rehearse both locally first:
 
 ```bash
 ./supabase/test/run.sh
