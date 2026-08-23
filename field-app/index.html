@@ -508,6 +508,19 @@
                       object-fit: cover; flex-shrink: 0; }
     .fp-pending { font-size: 10.5px; font-weight: 600; color: var(--muted); }
     .fp-pending.warn { color: var(--bad-fg); }
+
+    /* ── Auth + first sync ── */
+    .auth-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center;
+                 gap: 12px; padding: 28px 22px calc(28px + var(--safe-b)); max-width: 460px;
+                 margin: 0 auto; width: 100%; }
+    .auth-logo { font-size: 26px; font-weight: 800; letter-spacing: -.03em; }
+    .auth-sub { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+    .auth-msg { font-size: 12.5px; line-height: 1.45; color: var(--muted); min-height: 18px; }
+    .auth-msg.err { color: var(--bad-fg); font-weight: 600; }
+    .sync-bar { height: 6px; border-radius: 3px; background: var(--surf2); overflow: hidden; }
+    .sync-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .sync-status { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+    .sync-status.stale { color: var(--bad-fg); }
   </style>
 </head>
 <body>
@@ -515,9 +528,50 @@
 <!-- ══════════════════════════════════════════════════════
      SCREEN: JOBS
 ══════════════════════════════════════════════════════ -->
+<!-- Sign-in. Only shown when the build is configured to sync; a local-only
+     build goes straight to the jobs list, as it always did. -->
+<div id="screen-auth" class="screen">
+  <div class="auth-wrap">
+    <div class="auth-logo">Lia Field</div>
+    <div class="auth-sub">Sign in with the account your company set up.</div>
+    <div class="field-ig">
+      <div class="field-label">Email</div>
+      <div class="field-ig-wrap">
+        <input type="email" id="auth-email" class="field-input" autocomplete="username"
+               autocapitalize="none" autocorrect="off" inputmode="email">
+      </div>
+    </div>
+    <div class="field-ig">
+      <div class="field-label">Password</div>
+      <div class="field-ig-wrap">
+        <input type="password" id="auth-pass" class="field-input" autocomplete="current-password">
+      </div>
+    </div>
+    <button class="add-ladder-btn" id="btn-sign-in">Sign In</button>
+    <div class="auth-msg" id="auth-msg"></div>
+  </div>
+</div>
+
+<!-- First sync. A tech who installs in a dead zone and drives to a site would
+     otherwise have an empty catalogue: every item would look new, and he would
+     be typing all day. So a job cannot start until this has run once. -->
+<div id="screen-sync" class="screen">
+  <div class="auth-wrap">
+    <div class="auth-logo">Getting your equipment list</div>
+    <div class="auth-sub" id="sync-sub">This runs once. After it, the app works with no signal.</div>
+    <div class="sync-bar"><div class="sync-bar-fill" id="sync-fill"></div></div>
+    <div class="auth-msg" id="sync-msg"></div>
+    <button class="add-ladder-btn" id="btn-sync-start">Download</button>
+    <button class="btn-g" id="btn-sync-later" style="margin-top:8px;padding:11px;">Skip for now</button>
+  </div>
+</div>
+
 <div id="screen-jobs" class="screen active">
   <div class="topbar">
-    <span class="topbar-title">Lia Field</span>
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;">
+      <span class="topbar-title" style="flex:none;">Lia Field</span>
+      <span class="sync-status" id="sync-status"></span>
+    </div>
     <button class="btn-p" id="btn-new-job" style="font-size:14px;padding:9px 18px;">+ New Job</button>
   </div>
   <div id="jobs-body">
@@ -775,6 +829,11 @@
     </div>
 
   </div>
+  <div id="sync-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
+    <button class="btn-g" id="btn-refresh-catalog" style="padding:11px;">Refresh equipment list</button>
+    <button class="btn-g" id="btn-sign-out" style="padding:11px; color:var(--bad-fg); border-color:rgba(var(--bad-rgb),.3);">Sign out</button>
+    <div class="auth-msg" id="settings-sync-msg"></div>
+  </div>
   <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
 </div>
 
@@ -851,5 +910,6 @@
 <script src="./js/scan.js"></script>
 <script src="./js/sheets.js"></script>
 <script src="./js/app.js"></script>
+<script src="./js/boot.js"></script>
 </body>
 </html>

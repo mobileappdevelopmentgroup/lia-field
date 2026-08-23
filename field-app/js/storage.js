@@ -16,7 +16,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 function goScreen(name) {
-  ['jobs','detail'].forEach(s => $(`screen-${s}`).classList.toggle('active', s === name));
+  ['auth','sync','jobs','detail'].forEach(s => {
+    const el = $(`screen-${s}`);
+    if (el) el.classList.toggle('active', s === name);
+  });
 }
 
 // ── localStorage helpers ──────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-const CACHE = 'lia-field-v24';
+const CACHE = 'lia-field-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const ASSETS = [
   './js/scan.js',
   './js/sheets.js',
   './js/app.js',
+  './js/boot.js',
   'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js',
 ];
 
