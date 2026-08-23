@@ -9,18 +9,12 @@ const { fork } = require('child_process');
 let mainWindow = null;
 let automationChild = null;
 
-// ── Metadata columns that are not "part" columns ─────────────────────────────
-const METADATA_COLS = new Set(['Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description']);
-
-function parsePartValue(val) {
-  const v = (val ?? '').trim();
-  if (!v) return null;
-  let m = v.match(/^\((\d+)\)\s*(.+)$/);
-  if (m) { const qty = parseInt(m[1], 10); const term = m[2].trim(); return term ? { searchTerm: term, quantity: qty } : null; }
-  m = v.match(/^(.+?)\s*\((\d+)\)$/);
-  if (m) { const term = m[1].trim(); const qty = parseInt(m[2], 10); return term ? { searchTerm: term, quantity: qty } : null; }
-  return { searchTerm: v, quantity: 1 };
-}
+// ── Shared CSV column logic ──────────────────────────────────────────────────
+// Built from src/core/ by `npm run build:core`. Shared with src/csv-parser.ts so
+// the preview shown here and the import that actually runs can never disagree
+// about what counts as a part column — they used to, and "[Custom] " fields were
+// being searched for as BSI parts.
+const { partColumns, parsePartValue } = require('../dist/lia-core.cjs');
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -248,7 +242,7 @@ ipcMain.handle('csv:parse', (_event, filePath) => {
   }
 
   const headers = result.meta.fields ?? [];
-  const partCols = headers.filter((h) => !METADATA_COLS.has(h) && !h.startsWith('[Custom] '));
+  const partCols = partColumns(headers);
   const records = [];
   const skipped = [];
 
@@ -278,17 +272,22 @@ async function autoInsertInspections(sb, rows, workOrderId, techName) {
   const nextDue = new Date();
   nextDue.setFullYear(nextDue.getFullYear() + 1);
   const nextDueStr = nextDue.toISOString().split('T')[0];
-  const records = rows.map(row => ({
-    serial_num:      row.serial,
-    inspection_date: today,
-    tech_name:       techName,
-    work_order_id:   workOrderId || null,
-    next_due_date:   nextDueStr,
-    notes:           null,
-    brand:           row.brand   || null,
-    type:            row.type    || null,
-    length:          row.length  || null,
-  }));
+  // Only send keys that carry a value. Sending `notes: null` here would blank out
+  // notes a tech had already entered, because the upsert overwrites on conflict.
+  // inspections:upload does the same stripping — the two paths used to disagree.
+  const records = rows.map(row => {
+    const rec = {
+      serial_num:      row.serial,
+      inspection_date: today,
+      tech_name:       techName,
+      next_due_date:   nextDueStr,
+    };
+    if (workOrderId) rec.work_order_id = workOrderId;
+    if (row.brand)   rec.brand  = row.brand;
+    if (row.type)    rec.type   = row.type;
+    if (row.length)  rec.length = row.length;
+    return rec;
+  });
   for (let i = 0; i < records.length; i += 100) {
     await sb.from('inspections').upsert(records.slice(i, i + 100), {
       onConflict: 'serial_num,inspection_date',
@@ -389,7 +388,10 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             mainWindow.show();
             mainWindow.focus();
             app.focus({ steal: true });
-            if (_sb && _serials.length > 0) {
+            // Only log inspections for a run that actually succeeded. This used to
+            // fire on every 'complete', so a failed or cancelled run still wrote
+            // inspection records for ladders that were never imported.
+            if (event.success && _sb && _serials.length > 0) {
               autoInsertInspections(_sb, _serials, workOrderId, _techName).catch(() => {});
             }
             break;

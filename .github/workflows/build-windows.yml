@@ -60,7 +60,7 @@ jobs:
       # expands the pattern before tsx sees it.
       - name: Test
         shell: bash
-        run: npx tsx --test src/*.test.ts
+        run: npx tsx --test src/*.test.ts src/core/*.test.ts
 
       # Code signing is optional so the workflow is useful before the certificate
       # lands. Once you have a .pfx, add these two secrets and every build is signed:
