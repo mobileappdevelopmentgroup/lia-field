@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 🔴 HIGH — do first
 - [x] ~~Rotate Supabase anon key~~ — **deliberately dropped 2026-07-29, do not re-open without cause.** The key is a *publishable* browser-side identifier, hardcoded at `inspection-site/index.html:312` and deployed to CloudFront by design — the public inspection site cannot query without it. It is in git history because it was always meant to be public. The real defect was anon's grant on the `inspections` base table, fixed below. Rotating would swap one public identifier for another while requiring three coordinated redeploys (S3 site, macOS DMG, `LIA_CONFIG_JSON` CI secret). Revisit only if the Supabase project shows abnormal API volume.
 - [x] ~~Fix `inspections` table RLS~~ — `supabase/02_inspections.sql` `REVOKE ALL ON public.inspections FROM anon`; anon reads only the `ladder_inspections_public` view. **Applied against the live DB 2026-07-29.**
+- [x] ~~`inspections` policies were `USING (true)` / `WITH CHECK (true)` for every authenticated user~~ — any tech could read and overwrite any other company's records. `supabase/04_inspections_v2.sql` replaces them with account-scoped policies and removes the INSERT/UPDATE grants entirely; `record_inspection()` (SECURITY DEFINER) is the only write path. **Written and tested locally — not yet applied to the live DB.**
+- [x] ~~Add max-length check on `workOrderId`~~ — the field is now required and capped at 64 chars in `electron/index.html`, and normalized server-side by `wo_key()`.
 - [ ] `config.json` is bundled as plaintext in the DMG (`extraResources`) — consider storing the anon key in macOS Keychain via `keytar` or prompting on first launch
 
 ### 🟡 MEDIUM
@@ -18,7 +20,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [ ] Add Content Security Policy to the Electron renderer window (`session.defaultSession.webRequest` or `<meta>` tag in `electron/index.html`)
 - [ ] Add SRI hashes to CDN scripts in `field-app/index.html` and `inspection-site/index.html` (`integrity="sha384-..."`)
 - [ ] Consider storing JWT session (`~/Library/Application Support/Lia/lia-auth.json`) in macOS Keychain via `keytar` instead of plaintext JSON
-- [ ] Add max-length check on `workOrderId` in `automation:start` IPC handler before DB storage
 
 ## Release targets
 
