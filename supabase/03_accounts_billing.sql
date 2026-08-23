@@ -35,10 +35,15 @@ CREATE TABLE IF NOT EXISTS public.account_members (
   account_id     uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
   role           text NOT NULL DEFAULT 'lead' CHECK (role IN ('lead', 'tech')),
   desktop_access boolean NOT NULL DEFAULT true,
+  -- Batavia's technician number for the responsible lead. Declared here rather
+  -- than only in 05, because create_lia_user() below writes it and cannot
+  -- depend on a later migration having run.
+  rep_number     text,
   invited_by     uuid REFERENCES auth.users(id),
   created_at     timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.account_members ADD COLUMN IF NOT EXISTS rep_number text;
 CREATE INDEX IF NOT EXISTS account_members_account_idx ON public.account_members(account_id);
 
 -- ── Backfill: one account per existing user, carrying their balance across ────
@@ -66,6 +71,64 @@ END $$;
 -- would break that install. accounts.credits is the authority.
 COMMENT ON COLUMN public.users.credits IS
   'LEGACY as of 03_accounts_billing.sql — accounts.credits is the authority. Kept for older clients.';
+
+-- ── Provisioning a user, after this migration ────────────────────────────────
+-- The backfill above only covers users who already existed. create_lia_user()
+-- as written in 01_licensing.sql inserts a users row and nothing else, so every
+-- tech onboarded AFTER this migration would have no account, my_account_id()
+-- would be NULL, and nothing would work for them — no billing, no catalogue, no
+-- inspections. Replace it so provisioning always produces a usable account.
+--
+-- p_account_id joins an existing account (a sub-tech under a lead). Omitted, the
+-- user gets their own account and is its lead.
+-- The 01_licensing.sql version takes four arguments. CREATE OR REPLACE with a
+-- different signature creates a SECOND function rather than replacing it, and
+-- then every four-argument call is ambiguous and fails. Drop it explicitly.
+DROP FUNCTION IF EXISTS public.create_lia_user(uuid, text, text, integer);
+
+CREATE OR REPLACE FUNCTION public.create_lia_user(
+  p_id         uuid,
+  p_email      text,
+  p_name       text    DEFAULT NULL,
+  p_credits    integer DEFAULT 0,
+  p_account_id uuid    DEFAULT NULL,
+  p_role       text    DEFAULT 'lead',
+  p_rep_number text    DEFAULT NULL
+)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_account uuid;
+BEGIN
+  INSERT INTO public.users(id, email, name, credits)
+  VALUES (p_id, p_email, p_name, p_credits)
+  ON CONFLICT (id) DO UPDATE
+    SET email = EXCLUDED.email, name = EXCLUDED.name, credits = EXCLUDED.credits;
+
+  SELECT account_id INTO v_account FROM public.account_members WHERE user_id = p_id;
+
+  IF v_account IS NULL THEN
+    IF p_account_id IS NOT NULL THEN
+      v_account := p_account_id;
+    ELSE
+      INSERT INTO public.accounts (name, credits)
+      VALUES (coalesce(nullif(p_name, ''), p_email), p_credits)
+      RETURNING id INTO v_account;
+    END IF;
+
+    INSERT INTO public.account_members (user_id, account_id, role, desktop_access)
+    VALUES (p_id, v_account, coalesce(p_role, 'lead'),
+            coalesce(p_role, 'lead') = 'lead')
+    ON CONFLICT (user_id) DO NOTHING;
+  END IF;
+
+  -- Only set on a new membership or when explicitly supplied, so re-running
+  -- provisioning cannot silently clear a rep number.
+  IF p_rep_number IS NOT NULL THEN
+    UPDATE public.account_members SET rep_number = p_rep_number WHERE user_id = p_id;
+  END IF;
+
+  RETURN v_account;
+END;
+$$;
 
 -- ── Work order normalization ──────────────────────────────────────────────────
 -- The billing key. Must match the client-side normalization exactly, or the

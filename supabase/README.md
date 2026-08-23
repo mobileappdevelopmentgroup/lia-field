@@ -57,13 +57,31 @@ Each tech gets an account. In Supabase:
 2. Copy their **UUID** from the Auth users table.
 3. In SQL Editor, run:
    ```sql
+   -- A lead: gets their own account and desktop access.
    SELECT create_lia_user(
      'paste-uuid-here',
      'tech@company.com',
      'Tech Name',
-     10   -- number of import credits (use -1 for unlimited)
+     10,          -- import credits on the account (-1 for unlimited)
+     NULL,        -- no existing account: create one
+     'lead',
+     'BTV-0001'   -- their Batavia technician number
+   );
+
+   -- A sub-tech under that lead: shares the account and its credits, and has
+   -- no Lia Office access. Pass the account id the call above returned.
+   SELECT create_lia_user(
+     'sub-tech-uuid',
+     'sub@company.com',
+     'Sub Name',
+     0,
+     'account-uuid-from-above',
+     'tech'
    );
    ```
+
+   The function returns the account id. Re-running it for an existing user is
+   safe and will not clear their rep number.
 
 ## 4. Adjust credit balances
 

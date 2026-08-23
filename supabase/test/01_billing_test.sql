@@ -123,3 +123,43 @@ RESET ROLE;
 
 \echo ''
 \echo 'All billing assertions passed.'
+
+-- ── Provisioning after the migration ─────────────────────────────────────────
+-- The backfill only covers users who already existed. A tech onboarded later
+-- must get a usable account too, or nothing works for them.
+INSERT INTO auth.users(id, email) VALUES
+  ('44444444-4444-4444-4444-444444444444', 'new@lead.com'),
+  ('55555555-5555-5555-5555-555555555555', 'new@sub.com')
+ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE v_acct uuid; v_sub uuid;
+BEGIN
+  v_acct := create_lia_user('44444444-4444-4444-4444-444444444444', 'new@lead.com', 'New Lead', 7);
+  PERFORM pg_temp.want('a newly provisioned user gets an account', v_acct IS NOT NULL, true);
+  PERFORM pg_temp.want('and is its lead',
+    (SELECT role FROM account_members WHERE user_id='44444444-4444-4444-4444-444444444444'), 'lead');
+  PERFORM pg_temp.want('with their credits on the account',
+    (SELECT credits FROM accounts WHERE id = v_acct), 7);
+
+  PERFORM set_config('lia.uid', '44444444-4444-4444-4444-444444444444', false);
+  PERFORM pg_temp.want('and can immediately be billed',
+    (charge_work_order('WO-NEW')->>'charged')::boolean, true);
+
+  -- A sub-tech joins the lead's account rather than getting their own.
+  v_sub := create_lia_user('55555555-5555-5555-5555-555555555555', 'new@sub.com', 'New Sub', 0,
+                           v_acct, 'tech');
+  PERFORM pg_temp.want('a sub-tech joins the existing account', v_sub, v_acct);
+  PERFORM pg_temp.want('and has no desktop access',
+    (SELECT desktop_access FROM account_members WHERE user_id='55555555-5555-5555-5555-555555555555'), false);
+  PERFORM pg_temp.want('no extra account was created for them',
+    (SELECT count(*)::int FROM accounts), 3);
+
+  -- Re-running provisioning must not wipe a rep number.
+  PERFORM create_lia_user('44444444-4444-4444-4444-444444444444', 'new@lead.com', 'New Lead', 7,
+                          NULL, 'lead', 'BTV-7777');
+  PERFORM create_lia_user('44444444-4444-4444-4444-444444444444', 'new@lead.com', 'New Lead', 7);
+  PERFORM pg_temp.want('re-provisioning keeps the rep number',
+    (SELECT rep_number FROM account_members WHERE user_id='44444444-4444-4444-4444-444444444444'), 'BTV-7777');
+  PERFORM set_config('lia.uid', '11111111-1111-1111-1111-111111111111', false);
+END $$;
