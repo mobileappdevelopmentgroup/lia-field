@@ -22,37 +22,53 @@ Supabase dashboard → **Database** → **Backups** → take one.
 It is one click and it covers the case nobody predicted. Skipping it saves
 nothing.
 
-## 3. Apply, in order, in the SQL Editor
+## 3. Apply
 
-| File | What it does |
-|---|---|
-| `03_accounts_billing.sql` | Accounts, work orders, one-token-per-work-order billing |
-| `04_inspections_v2.sql` | Versioned inspections; drops the destructive unique constraint |
-| `05_rep_and_attribution.sql` | Rep numbers, collector attribution, certificate URLs |
-| `06_fall_protection.sql` | Fall-protection catalogue, checklists, inspections, photos |
-| `07_fp_status.sql` | Status constraint and derived status |
-| `08_device_snapshot.sql` | The read model behind the on-device cache |
-| `09_fp_authoring.sql` | Catalogue authoring (leads only) |
+Everything is concatenated into **`supabase/dist/apply-all.sql`** (1,858 lines).
+Open it, copy all of it, paste into the Supabase **SQL Editor**, and run once.
 
-All are idempotent — a half-applied file can be re-run after fixing the cause.
+That is `03` through `09` in order — accounts and billing, versioned inspections,
+rep numbers, fall protection, status, the device snapshot, and catalogue
+authoring. Every statement is idempotent, so a partial run can be fixed and
+re-run.
+
+Regenerate it with `./supabase/build-combined.sh` after editing any migration.
 
 Read the NOTICEs. `04` reports any inspection whose account it could not work
-out; those rows are invisible to the app until assigned by hand.
+out — step 3a is almost certainly what you want next.
 
-### If you would rather start clean
+## 3a. Put everyone on one account — read this, it matters
 
-Since the data is disposable, wiping is also a supported route and is verified
-end to end:
+**The backfill gives every existing user their OWN account.** From inside the
+database there is no way to tell whether two users are colleagues or two
+unrelated customers, so it assumes the safe thing. For Batavia that assumption
+is wrong, and wrong in ways that break quietly:
+
+- each tech gets a separate credit balance, so one work order can be charged
+  more than once
+- techs cannot see each other's equipment catalogue
+- **multi-tech merge does not work at all** — it is account-scoped, and two techs
+  on one work order would be sitting in different accounts
+
+It is also why `04` reports ownerless inspections: with several accounts it can
+only attribute the rows whose work order appears in `usage_log`. On a rehearsal
+with 120 inspections and 2 users, **96 came out ownerless** and invisible to the
+app.
+
+So unless the users in this database genuinely belong to different companies,
+run this too:
 
 ```sql
-DROP SCHEMA public CASCADE;
-CREATE SCHEMA public;
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
+-- Paste supabase/10_consolidate_account.sql, then:
+SELECT consolidate_to_one_account('your-auth-uuid', 'Batavia');
 ```
 
-Then run `01` through `09` in order. Auth users survive this — but every user
-needs re-provisioning with `create_lia_user` (step 4), because `public.users` is
-gone.
+It puts every user on one account, makes the one you name the lead and the rest
+collection-only, adopts every ownerless record, folds duplicate work order
+numbers without charging twice, and merges assets that now share a serial. It is
+re-runnable and it loses nothing.
+
+It returns a summary — check `inspections_moved` and that `credits` looks right.
 
 ## 4. Provision yourself
 
@@ -69,12 +85,12 @@ no Lia Office access.
 ## 5. Check it took
 
 ```sql
--- Every user has an account, and balances carried across.
+-- One account, everyone on it, balances carried across.
 SELECT u.email, a.name, a.credits, m.role, m.rep_number
   FROM users u JOIN account_members m ON m.user_id = u.id
                JOIN accounts a ON a.id = m.account_id;
 
--- Both should be 0.
+-- Both should be 0. If no_account is not, step 3a was skipped.
 SELECT count(*) FILTER (WHERE asset_id IS NULL)   AS no_asset,
        count(*) FILTER (WHERE account_id IS NULL) AS no_account
   FROM inspections;
