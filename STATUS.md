@@ -7,20 +7,26 @@ needs the `mobileappdevelopmentgroup` account.
 
 ---
 
-## The one thing blocking everything
+## Where it stands — 2026-08-24
 
-**The migrations are still not applied to the live database.** Verified against
-the live REST API on 2026-08-24: `accounts`, `work_orders`, `assets`,
-`app_settings` and `fp_inspections` all return 404, and `anon` still reads the
-`inspections` base table (200, 1,724 rows).
+**The migrations are applied and the anon leak is closed.** The thing that
+blocked everything is done. Full write-up, and the one decision still open:
+**`docs/PICK-UP-HERE.md`**.
 
-Until this is done: Lia Office cannot run a single import, fall protection has
-no schema behind it, and the anon leak stays open. It is ~20 minutes in the
-Supabase SQL Editor — **`docs/SHIP-RUNBOOK.md`**, Route B.
+Verified from outside the database with the publishable key:
+`GET /rest/v1/inspections` → **401 `42501`** (was 200 with 1,724 rows);
+`ladder_inspections_public` still serves all 1,724; a real certificate URL
+(`/?t=RTPTXK9PJK`) returns 200 on the new domain.
 
-⚠️ **Do not use Route A (reset).** The live data is production, not test data:
-1,724 inspections, 1,619 of them another tech's, backing certificates customers
-look up by the serial on a physical ladder tag.
+One account — `265882ec-…`, **Batavia** — 1,724 inspections adopted, 0
+ownerless, unlimited credits preserved.
+
+### ⚠️ Open decision: rep numbers do not scale to more importers
+
+`record_inspection` stamps the responsible rep from the account's *lead*, so
+with several techs importing, every certificate they produce names one person.
+More importers are coming. Two models and a recommendation are written up in
+`docs/PICK-UP-HERE.md` — this is the thing to decide next.
 
 ---
 
@@ -32,12 +38,12 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 |---|---|
 | 0 — Migration safety | ✅ Superseded — staging skipped deliberately; Route B rehearsed against production-shaped data |
 | 1 — Shared CSV core + live bug fix | ✅ Done |
-| 2 — Accounts, versioning, billing | ✅ Written and tested, **not applied to the live DB** |
+| 2 — Accounts, versioning, billing | ✅ **Applied to the live DB 2026-08-24** |
 | 3 — Ladder L/C/V/P | ◐ Capture done; BSI automation needs a work order |
 | 4 — Field app sync | ✅ Auth, catalogue cache, upload queue, first-sync gate |
 | 5 — Multi-tech merge | ✅ Merge logic + review screen |
 | 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring |
-| 7 — Certificate site | ✅ Live on `lia.mobileappdevelopmentgroup.com`, `/fp/` included |
+| 7 — Certificate site | ✅ Live on `lia.mobileappdevelopmentgroup.com`; `/fp/` deployed 2026-08-24 (it had never been uploaded) |
 | 8 — NFC | ◐ Shipped in TestFlight build 3; needs hardware testing |
 | 9 — PWA decommission | ◐ Farewell page ready; removal waits on the native release |
 
@@ -74,7 +80,8 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 
 ### Still needed from you
 
-1. **Apply the migrations** — `docs/SHIP-RUNBOOK.md`. Everything else waits on it.
+1. **Decide the rep-number model** — `docs/PICK-UP-HERE.md`. Everything else is
+   mechanical.
 2. **A BSI work order that can be dirtied** — for the L/C/V/P checkbox selectors,
    and to answer **how BSI identifies an aggregate fall-protection box**. Ladder
    boxes key off the serial; an FP box has none, so a re-run adds a second box

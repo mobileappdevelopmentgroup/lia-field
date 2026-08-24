@@ -1,5 +1,17 @@
 # Ship runbook — migrations, then Lia Office
 
+> ## ✅ Steps 1–5a were completed on 2026-08-24
+>
+> The migrations are applied, the anon leak is closed, and the account is
+> consolidated. This document is kept as the record of how it was done and for
+> re-running against another database. **What happens next is in
+> `docs/PICK-UP-HERE.md`.**
+>
+> One correction learned in the field: step 3 needs the lead's **user** UUID
+> from `auth.users`, not an account id. Passing an account id fails with
+> "That user has no account", which reads like a provisioning problem and is
+> not.
+
 Rehearsed 2026-08-24 against a production-shaped database. Every command below
 was run locally first; the results are recorded inline.
 
