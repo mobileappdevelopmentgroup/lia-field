@@ -82,10 +82,10 @@ BEGIN
   SELECT public_ref INTO v_ref FROM assets WHERE serial_key = 'SN500';
   v_url := certificate_url(v_ref, 'ladder');
   PERFORM pg_temp.want('the ladder certificate URL is built from public_ref',
-    v_url, 'https://d1uwg2boqwq3l6.cloudfront.net/?t=' || v_ref);
+    v_url, 'https://lia.mobileappdevelopmentgroup.com/?t=' || v_ref);
   PERFORM pg_temp.want('fall protection gets its own path prefix',
     certificate_url(v_ref, 'fall_protection'),
-    'https://d1uwg2boqwq3l6.cloudfront.net/fp/?t=' || v_ref);
+    'https://lia.mobileappdevelopmentgroup.com/fp/?t=' || v_ref);
   PERFORM pg_temp.want('no public_ref means no URL rather than a broken one',
     certificate_url(NULL), NULL::text);
 

@@ -53,9 +53,15 @@ though Route B is non-destructive.
 
 ## Step 2 — apply 03–09
 
-Open `supabase/dist/apply-all.sql` (1,858 lines — verified current against
-`build-combined.sh` on 2026-08-24), copy all of it, paste into the Supabase
-**SQL Editor**, run once.
+Open `supabase/dist/apply-all.sql` (1,858 lines), copy all of it, paste into the
+Supabase **SQL Editor**, run once.
+
+`supabase/dist/` is gitignored, so on a fresh clone regenerate it first —
+it takes a second and guarantees it matches the migrations:
+
+```bash
+./supabase/build-combined.sh
+```
 
 **You will see this NOTICE, and it is expected:**
 
@@ -132,6 +138,26 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 And load the live certificate site, search a real serial, confirm it still
 resolves.
+
+## Step 5a — confirm the certificate base URL
+
+`05_rep_and_attribution.sql` seeds `app_settings.certificate_base_url` with
+`https://lia.mobileappdevelopmentgroup.com` (changed from the raw CloudFront
+address on 2026-08-24, before any NFC tag was ever written). The seed uses
+`ON CONFLICT DO NOTHING`, so on a database where the row already exists it will
+**not** be updated. Check it, and correct it if needed:
+
+```sql
+SELECT value FROM app_settings WHERE key = 'certificate_base_url';
+-- want: https://lia.mobileappdevelopmentgroup.com
+
+UPDATE app_settings SET value = 'https://lia.mobileappdevelopmentgroup.com'
+ WHERE key = 'certificate_base_url';
+```
+
+This value is written onto physical NFC tags and printed on certificates. It is
+effectively permanent once tags are in the field — get it right before the first
+tag is written.
 
 ## Step 6 — ship Lia Office
 

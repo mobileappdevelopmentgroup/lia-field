@@ -38,7 +38,7 @@ const out = await p.evaluate(async () => {
 
   // What certificate_url() writes onto a tag has to be readable back.
   const parsed = LiaNfc.parseRecords([
-    { recordType: 'url', data: 'https://d1uwg2boqwq3l6.cloudfront.net/fp/?t=B7K2M9QRXZ' },
+    { recordType: 'url', data: 'https://lia.mobileappdevelopmentgroup.com/fp/?t=B7K2M9QRXZ' },
     { recordType: 'text', data: 'H-4471-A' },
   ]);
   // Record order on a tag is not guaranteed, and the text record is the more

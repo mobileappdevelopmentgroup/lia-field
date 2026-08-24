@@ -68,7 +68,7 @@ To deploy updates:
 
 ## Ladder Inspection Site
 
-Hosted on AWS: **https://d1uwg2boqwq3l6.cloudfront.net** (HTTPS via CloudFront → S3)
+Hosted on AWS: **https://lia.mobileappdevelopmentgroup.com** (HTTPS via CloudFront → S3)
 
 Lookup by serial number or work order. Shows a color-coded inspection certificate with SVG seal. Works on phone — includes barcode scanner.
 

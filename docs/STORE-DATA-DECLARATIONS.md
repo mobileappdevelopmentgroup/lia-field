@@ -11,7 +11,7 @@ as the first syncing build.
 Nothing below needs a judgement call. It is written so it can be followed
 straight through.
 
-Policy URL: <https://d1uwg2boqwq3l6.cloudfront.net/privacy.html>
+Policy URL: <https://lia.mobileappdevelopmentgroup.com/privacy.html>
 (source `inspection-site/privacy.html` — deploy it with the command in README.md
 **before** submitting, so the reviewer sees the rewritten version)
 

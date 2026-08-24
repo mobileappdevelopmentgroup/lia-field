@@ -31,7 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Lia Office (macOS) | Direct download (DMG) | — | `npm run electron:build` |
 | Lia Office (Windows) | Direct download (NSIS) | — | Built in CI — `.github/workflows/build-windows.yml`. **Not** shipped via Microsoft Store. |
 
-Privacy policy (required by both stores): <https://d1uwg2boqwq3l6.cloudfront.net/privacy.html>,
+Privacy policy (required by both stores): <https://lia.mobileappdevelopmentgroup.com/privacy.html>,
 source at `inspection-site/privacy.html`. It covers **Lia Field only**; Lia Office is a separate
 data model and is not in scope.
 

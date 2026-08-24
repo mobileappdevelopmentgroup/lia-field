@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 );
 
 INSERT INTO public.app_settings(key, value)
-VALUES ('certificate_base_url', 'https://d1uwg2boqwq3l6.cloudfront.net')
+VALUES ('certificate_base_url', 'https://lia.mobileappdevelopmentgroup.com')
 ON CONFLICT (key) DO NOTHING;
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
