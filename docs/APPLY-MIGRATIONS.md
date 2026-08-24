@@ -1,29 +1,48 @@
 # Applying the migrations to the live database
 
-Staging was skipped deliberately: the inspection data is test data, and losing
-it is acceptable. This is the shorter path that replaces `STAGING-SETUP.md`.
+Staging was skipped deliberately. This is the shorter path that replaces
+`STAGING-SETUP.md`.
 
 **Auth is never touched.** No migration writes to the `auth` schema —
 `auth.users` is only ever referenced. Logins survive whatever happens here.
 
+> ## ⚠️ Corrected 2026-08-24 — Route B, not Route A
+>
+> This document previously chose Route A on the premise that the live
+> inspection data was test data. **That premise was wrong.** Profiling the live
+> REST API on 2026-08-24:
+>
+> - 1,724 rows spanning 2026-05-24 → **2026-08-11** (the newest 13 days old)
+> - **1,619 of them by tech Nate Dobbs**, 105 by Alex Hinojosa
+> - `next_due_date` out to 2027 — these are live annual certificates
+>
+> The certificate site looks records up **by serial number**
+> (`inspection-site/index.html:391`), and those serials are on physical tags on
+> customer ladders. A reset turns 1,724 certificate lookups into
+> "not registered", mostly erasing another tech's last three months of work.
+>
+> **Use Route B.** Route A is kept below only for a genuinely empty database.
+> The rehearsed step-by-step is `docs/SHIP-RUNBOOK.md`.
+
 ## Two routes
 
-**Reset and reinstall** — chosen, because the existing data is disposable. A
-clean install starts with one account, so ownerless inspections and the
-consolidation step do not arise at all. Jump to "Route A".
+**Migrate in place** ← **chosen.** Keeps the 1,724 existing inspection records.
+The account backfill needs consolidating afterwards, and that step is **not
+optional** — see Route B step 3a. That is "Route B".
 
-**Migrate in place** — keeps the ~1,724 existing inspection records. More steps,
-and the account backfill needs consolidating afterwards. That is "Route B".
+**Reset and reinstall** — destroys every inspection record. Only appropriate on
+a database whose contents are genuinely disposable, which this one's are not.
+That is "Route A".
 
 Either way: **no migration writes to the `auth` schema.** Logins survive.
 
 ---
 
-## Route A — reset and start clean
+## Route A — reset and start clean  *(NOT for this database — see the notice above)*
 
-⚠️ **This deletes every Lia table and everything in them**, including ~1,724
-inspection records. Take the Supabase backup first (Database → Backups) even
-though the data is disposable — it costs one click.
+⚠️ **This deletes every Lia table and everything in them**, including the 1,724
+inspection records that back live customer certificates. Take the Supabase
+backup first (Database → Backups) — it costs one click.
 
 `public.users` is dropped along with everything else, so every user needs
 re-provisioning afterwards. Their **logins are unaffected**; only their Lia
@@ -43,7 +62,8 @@ profile and credits go.
 
 This also closes a live leak: `anon` can currently read the `inspections` base
 table directly, despite `CLAUDE.md` recording that the REVOKE was applied on
-2026-07-29. It was not. A clean install applies it properly, and
+2026-07-29. It was not — re-confirmed 2026-08-24 (`GET /rest/v1/inspections`
+returns 200 with 1,724 rows). Route B closes it too, via `02_inspections.sql`. A clean install applies it properly, and
 `run-reset.sh` asserts it.
 
 ---
@@ -58,6 +78,16 @@ table directly, despite `CLAUDE.md` recording that the REVOKE was applied on
 
 Builds a throwaway Postgres, applies every migration over realistic
 pre-migration data, and runs 178 assertions. **If this fails, stop.**
+All eight suites passed on 2026-08-24.
+
+> **What a production-shaped rehearsal showed (2026-08-24).** Seeded with the
+> live profile — 2 users, 1,724 inspections, every `work_order_id` the literal
+> `'unknown'` — `apply-all.sql` leaves **all 1,724 rows ownerless**, not some of
+> them. Two users become two accounts, and with no real work order numbers
+> nothing is attributable from inside the database. The app sees zero
+> inspections at that point. Step 3a then moves all 1,724, sums the credits, and
+> drops the spare account. **Do not stop between step 3 and step 3a, and do not
+> assign anything by hand.**
 
 ### 2. Take the backup anyway
 
