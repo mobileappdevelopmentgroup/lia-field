@@ -1,7 +1,26 @@
 # Lia — Project Status
 
-**As of 2026-08-23** · branch `fall-protection` @ `d642c81`. `master` frozen at
-`prod-baseline-2026-08-22` (`6db1ef3`), pushed.
+**As of 2026-08-24** · branch `fall-protection` @ `f200e6b`+. `master` frozen at
+`prod-baseline-2026-08-22` (`6db1ef3`), pushed. **The `fall-protection` branch
+has never been pushed** — 47 commits live only on this machine, and pushing
+needs the `mobileappdevelopmentgroup` account.
+
+---
+
+## The one thing blocking everything
+
+**The migrations are still not applied to the live database.** Verified against
+the live REST API on 2026-08-24: `accounts`, `work_orders`, `assets`,
+`app_settings` and `fp_inspections` all return 404, and `anon` still reads the
+`inspections` base table (200, 1,724 rows).
+
+Until this is done: Lia Office cannot run a single import, fall protection has
+no schema behind it, and the anon leak stays open. It is ~20 minutes in the
+Supabase SQL Editor — **`docs/SHIP-RUNBOOK.md`**, Route B.
+
+⚠️ **Do not use Route A (reset).** The live data is production, not test data:
+1,724 inspections, 1,619 of them another tech's, backing certificates customers
+look up by the serial on a physical ladder tag.
 
 ---
 
@@ -11,93 +30,90 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 
 | Phase | State |
 |---|---|
-| 0 — Migration safety | ⛔ **Blocked on you** — needs a staging Supabase project |
+| 0 — Migration safety | ✅ Superseded — staging skipped deliberately; Route B rehearsed against production-shaped data |
 | 1 — Shared CSV core + live bug fix | ✅ Done |
-| 2 — Accounts, versioning, billing | ✅ Written and tested, **not applied to any live DB** |
+| 2 — Accounts, versioning, billing | ✅ Written and tested, **not applied to the live DB** |
 | 3 — Ladder L/C/V/P | ◐ Capture done; BSI automation needs a work order |
 | 4 — Field app sync | ✅ Auth, catalogue cache, upload queue, first-sync gate |
 | 5 — Multi-tech merge | ✅ Merge logic + review screen |
 | 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring |
-| 7 — Certificate site | ✅ Built; deploys under `/fp/` on the existing bucket |
-| 8 — NFC | ◐ Plugin installed, both platforms build; needs the iOS App ID capability + hardware testing |
+| 7 — Certificate site | ✅ Live on `lia.mobileappdevelopmentgroup.com`, `/fp/` included |
+| 8 — NFC | ◐ Shipped in TestFlight build 3; needs hardware testing |
 | 9 — PWA decommission | ◐ Farewell page ready; removal waits on the native release |
 
-### ⚠️ Do not ship Lia Office before applying the migrations
+### Done 2026-08-24
 
-The current build calls `preflight_work_order` and `charge_work_order`, which only
-exist after `supabase/03_accounts_billing.sql` and `04_inspections_v2.sql` are
-applied. Without them every import is blocked. Ship the SQL and the app together.
+- **Store paperwork closed.** Apple App Privacy and Play Data safety both filled
+  in. Privacy policy rewritten and deployed — the live one had still said
+  "does not collect, transmit, or share any personal data", which stopped being
+  true when sync landed.
+- **Moved onto a real domain.** `lia.mobileappdevelopmentgroup.com` now serves
+  the certificate site, `/fp/`, the privacy policy and the new data-deletion
+  page. ACM cert + CloudFront alias + Route 53 records applied. The old
+  `d1uwg2boqwq3l6.cloudfront.net` address still works.
+  `app_settings.certificate_base_url` was repointed **before any NFC tag was
+  written** — that URL is permanent once tags are in the field.
+- **Data deletion page** (`inspection-site/data-deletion.html`) — Play's Data
+  safety form requires a deletion *URL*; the policy only offered an email.
+- **TestFlight build 3 uploaded and VALID**, export compliance answered,
+  available to internal testers.
 
-Rehearse the migrations first — they carry real credit balances and restructure
-live inspection rows:
+### Two things the build 3 upload uncovered
 
-```bash
-./supabase/test/run.sh      # throwaway local Postgres, 61 assertions
-```
-
-### What the billing rework changed
-
-A token is now charged **once per work order, only after the import succeeds**.
-Previously it was consumed the moment Start was clicked — before Chrome launched
-and before the diff card where the user can still cancel — and re-running the same
-work order charged again. Cancelling, a missing Chrome, and crashes are now free,
-and editing or merging more techs' data into a paid work order is free.
-
-The work order field is now **required**. It used to default to the literal string
-`'unknown'`; under the new `(account, work order)` uniqueness that would have made
-the first blank-work-order import charge and every one after it free forever.
-
-### Bugs fixed along the way
-
-- `src/csv-parser.ts` was importing every `[Custom] ` field into BSI as a part to
-  search for. The renderer preview filtered them; the code that actually ran did
-  not. Both now share `src/core/`.
-- `autoInsertInspections` fired on failed runs, and wrote `notes: null`, blanking
-  notes on every re-import.
-- `inspections` RLS was `USING (true)` for every authenticated user — any tech
-  could read and overwrite any other company's records.
-- The destructive `UNIQUE (serial_num, inspection_date)` is gone; inspections are
-  versioned and supersede rather than overwrite.
-
-### Test suites
-
-```bash
-npm test              # 11 unit (CSV/flag logic)
-npm run test:field    # 113 browser (cache, modules, bundles, capture, sync, boot, NFC)
-npm run test:desktop  # 34 browser (catalogue authoring, merge review)
-npm run test:sql      # 155 assertions against a throwaway local Postgres
-npm run typecheck
-```
-
-### Deviations from the plan
-
-`DEVIATIONS.md` lists every place the build differs from what was approved, and
-why. The first entry is the one worth a decision rather than a note.
+1. **The regenerated provisioning profile was the wrong type.** What was created
+   in the portal was a `MAC_APP_STORE` profile (`.provisionprofile`), which
+   cannot sign an iOS app, and it carried no NFC entitlement. The correct
+   `IOS_APP_STORE` profile — "Lia Field App Store NFC" — was created through the
+   App Store Connect API and is what `ExportOptions.plist` now names.
+2. **`NDEF` is no longer a valid NFC entitlement format.** Apple rejected the
+   first upload: *"The sdk version '26.2' and min OS version '15.0' are not
+   compatible ... 'NDEF is disallowed'"*. `App.entitlements` now declares `TAG`.
+   ⚠️ The plugin uses `NFCNDEFReaderSession`; that it still reads NDEF tags under
+   a `TAG`-only entitlement is **unverified** and is now the first thing hardware
+   testing must check.
 
 ### Still needed from you
 
-1. **A staging Supabase project** — so the migrations can be rehearsed against a
-   restored production snapshot before touching the real one.
-2. **A BSI work order that can be dirtied** — for the codegen session that finds
-   the four L/C/V/P checkbox selectors, and later the fall-protection box.
-3. **How BSI identifies a fall-protection box.** Ladder boxes key off the serial;
-   an aggregate FP box has none, so re-running an FP import would add a second box
-   rather than update the first. That double-bills the customer.
-4. **A BSI work order that can be dirtied** — for the L/C/V/P checkbox
-   selectors, and to answer how BSI identifies the aggregate fall-protection
-   box. Get that wrong and a re-run adds a second box and double-bills.
-5. **The iOS "Near Field Communication Tag Reading" capability** on the App ID,
-   in the Apple Developer portal. Everything else for NFC is done and building;
-   the entitlement file cannot grant itself. Then real tags on real phones —
-   the list is in `docs/NFC-PLUGIN.md`.
-6. **Store data declarations** — `docs/STORE-DATA-DECLARATIONS.md`. Both stores
-   still say "no data collected". This blocks the first syncing release.
+1. **Apply the migrations** — `docs/SHIP-RUNBOOK.md`. Everything else waits on it.
+2. **A BSI work order that can be dirtied** — for the L/C/V/P checkbox selectors,
+   and to answer **how BSI identifies an aggregate fall-protection box**. Ladder
+   boxes key off the serial; an FP box has none, so a re-run adds a second box
+   and double-bills the customer. This is the only unanswered design question
+   left in the project.
+3. **NFC hardware testing** — real tags, real phones. List in `docs/NFC-PLUGIN.md`,
+   plus the `TAG`-entitlement question above.
+4. **Windows code-signing certificate**, and a first NSIS build — it has never
+   been built even once, and cannot be from macOS.
+5. **Push the branch** — needs the org account.
+
+### Decided 2026-08-24
+
+`DEVIATIONS.md` item 1 is settled: the merge UI keeps **no** pass/fail override.
+A FAIL beating a PASS is a safety rule, not a default to click past. Reasoning
+is recorded there.
 
 ### Known consequence, flagged deliberately
 
 Ladders and fall protection are always separate work orders, and a token is charged
 per work order — so **a job site with both scopes costs two tokens**. That follows
 from the two rules and is probably intended, but it had not been written down.
+
+### Test suites
+
+```bash
+npm test              # 30 unit (CSV/flag logic)
+npm run test:field    # browser (cache, modules, bundles, capture, sync, boot, NFC)
+npm run test:desktop  # browser (catalogue authoring, merge review)
+npm run test:sql      # 8 suites against a throwaway local Postgres
+npm run typecheck
+```
+
+All green as of 2026-08-24.
+
+### Deviations from the plan
+
+`DEVIATIONS.md` lists every place the build differs from what was approved, and
+why.
 
 ---
 

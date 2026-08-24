@@ -21,7 +21,28 @@ rule, not a default. It is still reported on the row and in the warnings; it is
 just not something to pick. `merge.ts` excludes `overallPass` from conflicts and
 a test asserts no true/false option is ever rendered.
 
-**Reversible:** yes, one line — but I would push back.
+**Decided 2026-08-24 — kept as built.** You asked me to call it, so: the merge
+UI does not offer overall pass/fail as a choice, and should not.
+
+A conflict picker exists to resolve disagreements of *fact* — two techs typing
+different lengths, different manufacture dates. Pass/fail is not a disagreement
+of fact. One tech looked at the equipment and condemned it. Rendering that as a
+two-option toggle beside "pass" invites a lead under schedule pressure to click
+the convenient one, and the whole point of the condemn flow — photo required,
+reason composed from the failed checks rather than typed — is that the failure
+is evidence, not opinion. A UI that lets one click overturn it makes the rest
+of that ceremony decorative.
+
+The FAIL still surfaces: on the row, in the warnings, and in the composed
+reason. What is missing is only the ability to silently flip it, and that
+absence is the feature. If a condemnation is genuinely wrong, the fix is a new
+inspection with its own evidence and its own author — which the versioned
+schema already supports and which leaves an audit trail. Overriding in the
+merge screen would leave none.
+
+`merge.ts` excludes `overallPass` from conflicts and a test asserts no
+true/false option is ever rendered. Reversible in one line if a real job ever
+demands it — but it should take a deliberate decision, not a default.
 
 ## 2. The condemn screen asks for a photo, not a reason
 

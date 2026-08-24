@@ -8,7 +8,11 @@
 	     that part cannot be done from the repo. -->
 	<key>com.apple.developer.nfc.readersession.formats</key>
 	<array>
-		<string>NDEF</string>
+		<!-- TAG, not NDEF. The iOS 26 SDK rejects NDEF at App Store validation:
+		     "NDEF is disallowed ... TAG is missing in the entitlement" (409
+		     STATE_ERROR.VALIDATION_ERROR, hit on the build 3 upload
+		     2026-08-24). TAG is the superset and covers NDEF reads. -->
+		<string>TAG</string>
 	</array>
 </dict>
 </plist>

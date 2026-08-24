@@ -13,7 +13,7 @@
 	<key>provisioningProfiles</key>
 	<dict>
 		<key>com.mobileappdevelopmentgroup.liafield</key>
-		<string>Lia Field App Store</string>
+		<string>Lia Field App Store NFC</string>
 	</dict>
 </dict>
 </plist>

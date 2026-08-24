@@ -24,6 +24,11 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Lia Field encrypts only via standard OS-provided TLS, which is exempt.
+	     Without this key every upload lands in "Missing Compliance" and cannot
+	     reach testers until answered by hand in App Store Connect. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Lia Field uses the camera to scan equipment barcodes, and to photograph equipment that has failed inspection.</string>
 	<key>NFCReaderUsageDescription</key>
