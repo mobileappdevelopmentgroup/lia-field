@@ -19,7 +19,7 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 | 5 — Multi-tech merge | ✅ Merge logic + review screen |
 | 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring |
 | 7 — Certificate site | ✅ Built; deploys under `/fp/` on the existing bucket |
-| 8 — NFC | ◐ Wrapper + degradation done; **native plugin not chosen** |
+| 8 — NFC | ◐ Plugin installed, both platforms build; needs the iOS App ID capability + hardware testing |
 | 9 — PWA decommission | ◐ Farewell page ready; removal waits on the native release |
 
 ### ⚠️ Do not ship Lia Office before applying the migrations
@@ -86,8 +86,10 @@ why. The first entry is the one worth a decision rather than a note.
 4. **A BSI work order that can be dirtied** — for the L/C/V/P checkbox
    selectors, and to answer how BSI identifies the aggregate fall-protection
    box. Get that wrong and a re-run adds a second box and double-bills.
-5. **An NFC plugin decision** — `docs/NFC-PLUGIN.md` has the two criteria and
-   the fallback. Needs a half-day spike and real tags.
+5. **The iOS "Near Field Communication Tag Reading" capability** on the App ID,
+   in the Apple Developer portal. Everything else for NFC is done and building;
+   the entitlement file cannot grant itself. Then real tags on real phones —
+   the list is in `docs/NFC-PLUGIN.md`.
 6. **Store data declarations** — `docs/STORE-DATA-DECLARATIONS.md`. Both stores
    still say "no data collected". This blocks the first syncing release.
 
