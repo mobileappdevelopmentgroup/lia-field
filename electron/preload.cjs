@@ -36,6 +36,58 @@ contextBridge.exposeInMainWorld('api', {
   fpGetChecks:     (modelId)          => ipcRenderer.invoke('fp:get-checks', modelId),
   fpSaveModel:     (model)            => ipcRenderer.invoke('fp:save-model', model),
   fpPublishChecks: (modelId, checks)  => ipcRenderer.invoke('fp:publish-checks', modelId, checks),
+  // Fall protection records — browse, correct, delete. Corrections supersede
+  // and are audited; nothing here overwrites a certificate.
+  fprList:        (opts)     => ipcRenderer.invoke('fpr:list', opts),
+  fprDetail:      (assetId)  => ipcRenderer.invoke('fpr:detail', assetId),
+  fprAmend:       (payload)  => ipcRenderer.invoke('fpr:amend', payload),
+  fprDelete:      (payload)  => ipcRenderer.invoke('fpr:delete', payload),
+  fprRestore:     (payload)  => ipcRenderer.invoke('fpr:restore', payload),
+  fprUpdateAsset: (payload)  => ipcRenderer.invoke('fpr:update-asset', payload),
+  fprPendingBsi:  (wo)       => ipcRenderer.invoke('fpr:pending-bsi', wo),
+  fprMarkPushed:  (payload)  => ipcRenderer.invoke('fpr:mark-pushed', payload),
+
+  // Pushing fall protection work onto a BSI work order. Its own child process
+  // and its own channels, so it cannot collide with a ladder import in flight.
+  fpPushStart: (items) => ipcRenderer.send('fp:push-start', items),
+  fpPushReady: ()      => ipcRenderer.send('fp:push-ready'),
+  fpPushStop:  ()      => ipcRenderer.send('fp:push-stop'),
+  onFpPushLog:      (cb) => on('fp-push:log',      (_e, msg) => cb(msg)),
+  onFpPushWaiting:  (cb) => on('fp-push:waiting',  ()        => cb()),
+  onFpPushPushed:   (cb) => on('fp-push:pushed',   (_e, rec) => cb(rec)),
+  onFpPushComplete: (cb) => on('fp-push:complete', (_e, res) => cb(res)),
+  onFpPushError:    (cb) => on('fp-push:error',    (_e, msg) => cb(msg)),
+  onFpPushExited:   (cb) => on('fp-push:exited',   (_e, code) => cb(code)),
+
+  // Job assignment — the lead's plan for the day. Writes are lead-gated in the
+  // database; these just carry the payload.
+  jobsBoard:  (status)  => ipcRenderer.invoke('jobs:board', status),
+  jobsDetail: (jobId)   => ipcRenderer.invoke('jobs:detail', jobId),
+  jobsTeam:   ()        => ipcRenderer.invoke('jobs:team'),
+  jobsSave:   (payload) => ipcRenderer.invoke('jobs:save', payload),
+  jobsClose:  (payload) => ipcRenderer.invoke('jobs:close', payload),
+  jobsDelete: (payload) => ipcRenderer.invoke('jobs:delete', payload),
+
+  // Certificate views — who has been reading certificates, and the network
+  // labels that decide office versus field.
+  viewsSummary:       (days)   => ipcRenderer.invoke('views:summary', days),
+  viewsNetworks:      ()       => ipcRenderer.invoke('views:networks'),
+  viewsSaveNetwork:   (net)    => ipcRenderer.invoke('views:save-network', net),
+  viewsDeleteNetwork: (id)     => ipcRenderer.invoke('views:delete-network', id),
+  viewsMyNetwork:     ()       => ipcRenderer.invoke('views:my-network'),
+
+  // Support inbox — developer only. The gate is server-side (see
+  // supabase/13_support.sql); this flag only decides whether the card is drawn.
+  supportAmIDeveloper: ()                    => ipcRenderer.invoke('support:am-i-developer'),
+  supportInbox:        (status)              => ipcRenderer.invoke('support:inbox', status),
+  supportCounts:       ()                    => ipcRenderer.invoke('support:counts'),
+  supportReply:        (ticketId, body)      => ipcRenderer.invoke('support:reply', ticketId, body),
+  supportSetStatus:    (ticketId, status)    => ipcRenderer.invoke('support:set-status', ticketId, status),
+  supportMarkRead:     (ticketId)            => ipcRenderer.invoke('support:mark-read', ticketId),
+
+  fpListTypes:     ()                 => ipcRenderer.invoke('fp:list-types'),
+  fpSaveType:      (type)             => ipcRenderer.invoke('fp:save-type', type),
+  fpPublishTypeChecks: (typeId, checks) => ipcRenderer.invoke('fp:publish-type-checks', typeId, checks),
 
   // ── Automation lifecycle ─────────────────────────────────────────────────
   startAutomation:  (csvPath, workOrderId) => ipcRenderer.send('automation:start', csvPath, workOrderId),

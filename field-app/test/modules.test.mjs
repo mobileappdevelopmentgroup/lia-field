@@ -50,6 +50,12 @@ await p.evaluate(()=>closeSettings());
 await p.evaluate(()=>openLibrary()); await p.waitForTimeout(150);
 ok('library sheet opens', await p.$$eval('#lib-list .part-lib-row',e=>e.length>0), true);
 // The shipped bundles are copies and can drift from source.
+// How many modules the source actually loads — the number every bundle must
+// match. Read from field-app/index.html so adding a module cannot pass here
+// while never reaching a handset.
+const sourceScriptCount = await p.evaluate(() =>
+  document.querySelectorAll('script[src^="./js/"]').length);
+
 for (const dir of ['field-app/capacitor/www',
                    'field-app/capacitor/ios/App/App/public',
                    'field-app/capacitor/android/app/src/main/assets/public']) {
@@ -63,7 +69,11 @@ for (const dir of ['field-app/capacitor/www',
     entry:typeof buildLadderFromForm,
   }));
   const name = dir.split('/').slice(-3).join('/');
-  ok(`${name}: every module shipped`, r.scripts, 15);
+  // Counted against the source rather than hardcoded: the bundles are copies,
+  // and the failure this catches is a module that was added to field-app/ and
+  // never reached the phone. A fixed number here just goes stale in the same
+  // way the bundles did — it was 16 while three modules were quietly missing.
+  ok(`${name}: every module shipped`, r.scripts, sourceScriptCount);
   // connect-src 'self' blocks every Supabase call — and only on device, so a
   // browser test passes while the phone silently fails. Assert the origin is
   // named rather than trusting the sync script ran.

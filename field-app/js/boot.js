@@ -65,6 +65,15 @@
     if (!el || !window.LiaCache) return;
     window.LiaCache.status().then(function (s) {
       if (!s.ready) { el.textContent = 'Not synced'; el.className = 'sync-status stale'; return; }
+      // An app update added a column the stored rows do not carry, so the device
+      // owes one full pull. It is queued and runs on its own the next time there
+      // is signal — say so rather than showing a reassuring "synced today" for a
+      // catalogue that is a column short.
+      if (s.needsFullSync) {
+        el.textContent = `${s.count} items · updating when you have signal`;
+        el.className = 'sync-status stale';
+        return;
+      }
       const days = Math.floor((Date.now() - new Date(s.lastSyncAt)) / 86400000);
       el.textContent = days <= 0 ? `${s.count} items · synced today`
                      : `${s.count} items · synced ${days}d ago`;
@@ -82,6 +91,7 @@
       const pw = $('auth-pass'); if (pw) pw.value = '';
       return window.LiaCache.status();
     }).then(function (s) {
+      refreshAssignments();
       if (s.ready) { goScreen('jobs'); renderJobList(); renderSyncStatus(); }
       else goScreen('sync');
     }).catch(function (err) {
@@ -104,6 +114,21 @@
     });
   }
 
+  // The lead's plan for the day, checked on every start.
+  //
+  // Deliberately NOT awaited by anything and deliberately unable to fail: it
+  // runs alongside the screen decision, and when there is no signal the app
+  // carries on with the list it already had. A tech standing in a plant room
+  // must not be looking at a spinner because the office network is down.
+  function refreshAssignments() {
+    if (!window.LiaAssignments) return;
+    window.LiaAssignments.refresh().then(function () {
+      if (typeof renderAssignedList === 'function') renderAssignedList();
+      if (typeof renderJobList === 'function') renderJobList();
+    });
+  }
+  window.refreshAssignments = refreshAssignments;
+
   function boot() {
     wire();
     const sync = window.LiaSync;
@@ -116,6 +141,7 @@
       if (!configured) { goScreen('jobs'); return; }
       return sync.session().then(function (sess) {
         if (!sess) { goScreen('auth'); return; }
+        refreshAssignments();
         return window.LiaCache.status().then(function (s) {
           if (s.ready) { goScreen('jobs'); renderSyncStatus(); }
           else goScreen('sync');

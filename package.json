@@ -1,6 +1,6 @@
 {
   "name": "lia-ladder-import-assistant",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -9,9 +9,12 @@
     "codegen": "playwright codegen https://bsiwebapp.com",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts src/core/*.test.ts",
-    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs && node field-app/test/fp-capture.test.mjs && node field-app/test/sync.test.mjs && node field-app/test/boot.test.mjs && node field-app/test/nfc.test.mjs && node field-app/test/farewell.test.mjs",
+    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs && node field-app/test/fp-types.test.mjs && node field-app/test/fp-capture.test.mjs && node field-app/test/sync.test.mjs && node field-app/test/boot.test.mjs && node field-app/test/nfc.test.mjs && node field-app/test/tag-link.test.mjs && node field-app/test/tag-write.test.mjs && node field-app/test/help.test.mjs && node field-app/test/assignments.test.mjs && node field-app/test/fp-batch.test.mjs && node field-app/test/farewell.test.mjs",
     "test:sql": "./supabase/test/run.sh",
-    "test:desktop": "node electron/test/catalog.test.mjs && node electron/test/merge-screen.test.mjs",
+    "capture:help": "node field-app/tools/capture-help-shots.mjs",
+    "sync:www": "node field-app/capacitor/scripts/sync-www.mjs",
+    "check:www": "node field-app/capacitor/scripts/sync-www.mjs --check",
+    "test:desktop": "node electron/test/catalog.test.mjs && node electron/test/merge-screen.test.mjs && node electron/test/support-inbox.test.mjs && node electron/test/cert-views.test.mjs && node electron/test/fp-records.test.mjs && node electron/test/fp-push.test.mjs && node electron/test/job-board.test.mjs",
     "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
     "build:core": "esbuild src/core/index.ts --bundle --platform=node --format=cjs --outfile=dist/lia-core.cjs",
     "build:all": "npm run build:runner && npm run build:core",
@@ -40,7 +43,7 @@
   "build": {
     "appId": "com.batavia.lia",
     "productName": "Lia",
-    "copyright": "Copyright © 2026 Batavia",
+    "copyright": "Copyright \u00a9 2026 Batavia",
     "mac": {
       "category": "public.app-category.productivity",
       "target": [

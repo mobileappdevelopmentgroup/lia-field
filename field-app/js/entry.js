@@ -22,6 +22,12 @@ function openJob(id) {
   if (!_job) { goScreen('jobs'); return; }
   $('job-name').value = _job.name || '';
   $('job-wo').value   = _job.workOrderNum || '';
+  // On an assigned job the work order number came from the lead. A tech
+  // retyping it — 'WO 1234' for 'WO-1234' — is exactly what stopped the office
+  // matching up a day's work, so it is fixed here rather than merely suggested.
+  const assigned = !!_job.assignedId;
+  $('job-wo').readOnly = assigned;
+  $('job-wo').title = assigned ? 'Set by your lead for this job' : '';
   setSaveStatus('');
   clearFormAll();
   goScreen('detail');
@@ -49,7 +55,9 @@ function saveNow() {
   if (!_job) return;
   clearTimeout(_saveTimer);
   _job.name         = $('job-name').value.trim();
-  _job.workOrderNum = $('job-wo').value.trim();
+  // Never taken from the box on an assigned job: a readOnly input is a UI
+  // convention, not a guarantee, and the number is the lead's.
+  if (!_job.assignedId) _job.workOrderNum = $('job-wo').value.trim();
   _job.updatedAt    = new Date().toISOString();
   const all = loadJobs(); all[_job.id] = _job; saveJobs(all);
   setSaveStatus('saved');
@@ -276,6 +284,8 @@ let _currentFlags = NO_FLAGS();
 // and the parts catalogue are both wrong for it.
 function applyScopeToDetail(job) {
   const isFp = jobScope(job) === 'fall_protection';
+  // Any run belonged to the job being left, whatever the new one is.
+  if (typeof fpBatchStop === 'function') fpBatchStop(false);
   ['form-panel', 'parts-panel', 'add-btn-panel', 'recent-panel']
     .forEach(id => { const el = $(id); if (el) el.style.display = isFp ? 'none' : ''; });
   // fp.js decides which of its own panels are showing, since that depends on
@@ -283,7 +293,8 @@ function applyScopeToDetail(job) {
   const fpInput = $('fp-input-panel');
   if (fpInput) fpInput.style.display = isFp ? '' : 'none';
   if (!isFp) {
-    ['fp-record', 'fp-edit-form', 'fp-checks-panel', 'fp-save-panel', 'fp-items-panel']
+    ['fp-record', 'fp-edit-form', 'fp-checks-panel', 'fp-save-panel', 'fp-items-panel',
+     'fp-batch-panel']
       .forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
   } else if (typeof fpReset === 'function') {
     fpReset();

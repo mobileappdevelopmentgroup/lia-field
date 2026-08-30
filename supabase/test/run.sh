@@ -72,6 +72,41 @@ echo "Running authoring assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/07_authoring_test.sql"
 
+echo
+echo "Running equipment type assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/09_equipment_types_test.sql"
+
+echo
+echo "Running tag link assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/10_tag_links_test.sql"
+
+echo
+echo "Running support assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/11_support_test.sql"
+
+echo
+echo "Running certificate view assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/12_certificate_views_test.sql"
+
+echo
+echo "Running fp record assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/13_fp_records_test.sql"
+
+echo
+echo "Running job assignment assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/14_assignments_test.sql"
+
+echo
+echo "Running tag write assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/15_tag_write_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

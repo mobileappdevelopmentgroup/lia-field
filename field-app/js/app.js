@@ -66,3 +66,12 @@ if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform()) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderJobList();
 renderFlags();
+
+// An answer to a ticket arrives while the app is shut. Check on the way in, so
+// the dot is already there rather than appearing once he happens to open Help.
+if (typeof helpBadgeRender === 'function') {
+  helpBadgeRender();
+  if (window.LiaSupport) {
+    window.LiaSupport.refresh().then(helpBadgeRender).catch(() => {});
+  }
+}

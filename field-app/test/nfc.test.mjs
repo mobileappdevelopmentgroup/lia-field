@@ -51,18 +51,81 @@ const out = await p.evaluate(async () => {
   ok('a url-only tag still identifies the item', urlOnly.serial, 'CCDD11FFGG');
 
   ok('an empty tag yields nothing rather than throwing',
-     LiaNfc.parseRecords([]), { serial: null, url: null, uid: null });
+     LiaNfc.parseRecords([]), { serial: null, url: null, uid: null, ref: null, foreign: false });
   ok('and so does a malformed one', LiaNfc.parseRecords(null).serial, null);
 
-  // The listener-based plugin (@exxili/capacitor-nfc) adapted to the same shape.
+  // ── Tags this app did not write ──────────────────────────────────────────
+  // Most gear arrives already tagged by whoever supplied it. Two shapes turn
+  // up, and both have to work.
+  //
+  // First: a link into somebody else's system. It carries no certificate code
+  // and no serial — and the one thing it must NOT do is hand back something
+  // that LOOKS like a serial, because whatever comes back gets written onto a
+  // safety record as the item's serial number.
+  const foreign = LiaNfc.parseRecords([
+    { recordType: 'url', data: 'https://docs.google.com/spreadsheets/u/0/d/SHEET/htmlview' },
+  ]);
+  ok('a third-party link is not passed off as a serial', foreign.serial, null);
+  ok('nor as a certificate code', foreign.ref, null);
+  ok('but the link itself is kept — it is all the tag gave us',
+     foreign.url, 'https://docs.google.com/spreadsheets/u/0/d/SHEET/htmlview');
+  ok('and is flagged as somebody else’s', foreign.foreign, true);
+
+  // Second: a plain serial written on the tag, no link at all. This is the
+  // ordinary case and must keep resolving exactly as it did.
+  const plain = LiaNfc.parseRecords([{ recordType: 'text', data: 'FP158354' }]);
+  ok('a tag carrying only a serial still yields it', plain.serial, 'FP158354');
+  ok('with nothing to fetch', [plain.url, plain.foreign], [null, false]);
+
+  // A tag carrying BOTH: the serial wins as the identifier, and the link is
+  // still recorded, because the record has to say which link was read.
+  const both = LiaNfc.parseRecords([
+    { recordType: 'url', data: 'https://acme.example/tag/FP158354' },
+    { recordType: 'text', data: 'FP158354' },
+  ]);
+  ok('a tag with a serial AND a foreign link identifies by the serial', both.serial, 'FP158354');
+  ok('and still records the link', both.url, 'https://acme.example/tag/FP158354');
+
+  // Our own tags are not foreign, however they were read.
+  ok('a certificate link is not flagged as foreign', parsed.foreign, false);
+
+  // A url-only tag also hands back the certificate code on its own, so a caller
+  // can look it up as a public_ref rather than guessing it is a serial.
+  ok('and exposes it as a certificate ref', urlOnly.ref, 'CCDD11FFGG');
+
+  // ── @exxili/capacitor-nfc ─────────────────────────────────────────────────
+  // Its payloads are base64 of the RAW NDEF payload bytes on both platforms, so
+  // the stub has to produce exactly that or the test proves nothing. A URI
+  // record leads with its prefix code (0x04 = 'https://'); a text record with a
+  // status byte and a language code.
+  const b64 = bytes => btoa(String.fromCharCode.apply(null, bytes));
+  const utf8 = str => Array.from(new TextEncoder().encode(str));
+  const uriPayload = rest => b64([0x04].concat(utf8(rest)));
+  const textPayload = str => b64([0x02].concat(utf8('en'), utf8(str)));
+
+  ok('a real https URI payload decodes back to the url it was written from',
+     LiaNfc.parseRecords(LiaNfc.fromExxili([{ records: [
+       { type: 'U', payload: uriPayload('x/fp/?t=ABC1234567') },
+     ] }])).url, 'https://x/fp/?t=ABC1234567');
+  ok('and a real text payload sheds its status byte and language code',
+     LiaNfc.parseRecords(LiaNfc.fromExxili([{ records: [
+       { type: 'T', payload: textPayload('H-8888') },
+     ] }])).serial, 'H-8888');
+  // If a future plugin version stops encoding, the string must still be usable.
+  ok('an unencoded payload is still read as-is',
+     LiaNfc.parseRecords(LiaNfc.fromExxili([{ records: [
+       { type: 'U', payload: 'https://x/fp/?t=ZZ11223344' },
+     ] }])).ref, 'ZZ11223344');
+
+  // The listener-based plugin adapted to the same shape.
   let scanStarted = false, cancelled = false;
   const listeners = {};
-  window.Capacitor = { isNativePlatform: () => true, Plugins: { NFC: {
+  window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'ios', Plugins: { NFC: {
     startScan: async () => { scanStarted = true;
       setTimeout(() => listeners.nfcTag && listeners.nfcTag({
         messages: [{ records: [
-          { type: 'U', payload: 'https://x/fp/?t=ABC1234567' },
-          { type: 'T', payload: 'H-8888' },
+          { type: 'U', payload: uriPayload('x/fp/?t=ABC1234567') },
+          { type: 'T', payload: textPayload('H-8888') },
         ] }],
         tagInfo: { uid: '04:aa:bb:cc' },
       }), 10); },
@@ -74,21 +137,89 @@ const out = await p.evaluate(async () => {
   ok('a listener-based plugin is detected', LiaNfc.isAvailable(), true);
   const lr = await LiaNfc.read();
   ok('its tag reads back the serial', lr.serial, 'H-8888');
+  ok('and the certificate ref from the same tag', lr.ref, 'ABC1234567');
+  ok('and the url, decoded rather than base64', lr.url, 'https://x/fp/?t=ABC1234567');
   ok('and the hardware id, normalized', lr.uid, '04AABBCC');
   ok('the scan was actually started', scanStarted, true);
   // A leaked listener would fire into a screen the tech has already left.
   ok('and torn down afterwards', Object.keys(listeners).length, 0);
   ok('the scan is cancelled too', cancelled, true);
 
+  // A tag carrying no NDEF message at all: the plugin substitutes an 'ID'
+  // record holding the hex uid. That identifies the item; it is not a serial.
+  window.Capacitor.Plugins.NFC.startScan = async () => {
+    setTimeout(() => listeners.nfcTag && listeners.nfcTag({
+      messages: [{ records: [{ type: 'ID', payload: b64(utf8('04A1B2C3')) }] }],
+    }), 10);
+  };
+  const idOnly = await LiaNfc.read();
+  ok('a tag with no NDEF message still yields its hardware id', idOnly.uid, '04A1B2C3');
+  ok('and does not pass that off as a serial', idOnly.serial, null);
+
+  // Android turns on foreground dispatch when the activity resumes and rejects
+  // startScan outright; treating that as fatal meant no tap ever arrived.
+  window.Capacitor.getPlatform = () => 'android';
+  window.Capacitor.Plugins.NFC.startScan = async () => {
+    setTimeout(() => listeners.nfcTag && listeners.nfcTag({
+      messages: [{ records: [{ type: 'T', payload: textPayload('H-7777') }] }],
+      tagInfo: { uid: '04:11:22:33' },
+    }), 10);
+    throw new Error("Android NFC scanning does not require 'startScan' method.");
+  };
+  // Android implements no cancelScan either — a rejected promise, not a throw.
+  window.Capacitor.Plugins.NFC.cancelScan = () =>
+    Promise.reject(new Error('not implemented'));
+  ok('a tap still lands on Android, where startScan rejects by design',
+     await LiaNfc.read({ timeoutMs: 500 }).then(r => r.serial, e => 'rejected: ' + e.code), 'H-7777');
+  window.Capacitor.Plugins.NFC.cancelScan = async () => { cancelled = true; };
+  window.Capacitor.getPlatform = () => 'ios';
+
   await LiaNfc.write('H-8888', 'https://x/fp/?t=ABC1234567');
   ok('writing maps to the plugin record shape',
      window.__wrote.records.map(r => r.type), ['U', 'T']);
 
   // A tag that never arrives must not hang the UI forever.
-  listeners.nfcTag = null;
+  delete listeners.nfcTag;
   window.Capacitor.Plugins.NFC.startScan = async () => {};
   ok('a tag that never arrives times out',
      await LiaNfc.read({ timeoutMs: 60 }).then(() => 'resolved', e => e.code), 'NFC_TIMEOUT');
+
+  // ── readStream: many tags, one arming gesture ─────────────────────────────
+  let streamStarts = [], streamTags = [], streamErrs = [];
+  window.Capacitor.getPlatform = () => 'ios';
+  window.Capacitor.Plugins.NFC.startScan = async (o) => { streamStarts.push(o); };
+  window.Capacitor.Plugins.NFC.cancelScan = async () => { cancelled = true; };
+  const stream = LiaNfc.readStream({
+    onTag: t => streamTags.push(t.serial), onError: e => streamErrs.push(e.code),
+  });
+  await new Promise(r => setTimeout(r, 20));
+  ok('a stream asks the plugin for continuous reading', streamStarts, [{ continuous: true }]);
+  ok('and tells the caller iOS may need re-arming', stream.needsArming, true);
+
+  // Three tags, one session: the patched plugin restarts polling rather than
+  // invalidating, so nothing re-arms in between.
+  ['H-1','H-2','H-3'].forEach(sn => listeners.nfcTag({
+    messages: [{ records: [{ type: 'T', payload: textPayload(sn) }] }] }));
+  ok('every tap reaches the caller', streamTags, ['H-1','H-2','H-3']);
+  ok('without re-opening the reader for each one', streamStarts.length, 1);
+
+  // iOS ends a session on its own after about a minute; that is not something
+  // the tech should have to act on.
+  listeners.nfcError({ error: 'Session timeout' });
+  await new Promise(r => setTimeout(r, 500));
+  ok('a session that timed out is re-armed rather than reported', streamErrs, []);
+  ok('which re-opens the reader', streamStarts.length, 2);
+
+  // A reader failing for a real reason must not retry forever.
+  for (let i = 0; i < 5; i++) { listeners.nfcError({ error: 'broken' }); await new Promise(r => setTimeout(r, 450)); }
+  ok('but a reader that keeps failing is reported rather than retried forever',
+     streamErrs.length > 0, true);
+
+  stream.stop();
+  ok('stopping tears the listeners down', Object.keys(listeners).length, 0);
+  streamTags = [];
+  ok('and no later tap reaches a stopped stream', streamTags, []);
+
   delete window.Capacitor;
 
   // A native plugin, once installed, must take precedence over Web NFC.

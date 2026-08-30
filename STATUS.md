@@ -42,10 +42,40 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 | 3 — Ladder L/C/V/P | ◐ Capture done; BSI automation needs a work order |
 | 4 — Field app sync | ✅ Auth, catalogue cache, upload queue, first-sync gate |
 | 5 — Multi-tech merge | ✅ Merge logic + review screen |
-| 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring |
+| 6 — Fall protection | ✅ Schema, capture UI, catalogue authoring, the fourteen equipment types |
 | 7 — Certificate site | ✅ Live on `lia.mobileappdevelopmentgroup.com`; `/fp/` deployed 2026-08-24 (it had never been uploaded) |
-| 8 — NFC | ◐ Shipped in TestFlight build 3; needs hardware testing |
+| 8 — NFC | ◐ Read path fixed + tap-through built; **TestFlight build 4 (2026-08-27)**, VALID, live to internal testers. Still needs hardware testing |
 | 9 — PWA decommission | ◐ Farewell page ready; removal waits on the native release |
+
+### Done 2026-08-25
+
+- **The fourteen equipment types are in**, with the per-type pass/fail
+  parameters from Batavia's sheet. `supabase/11_fp_equipment_types.sql` seeds
+  them; `field-app/js/fp-types.js` is the device-side copy, generated from the
+  same table with a test that fails if they drift.
+- **The checklist moved from the model to the equipment type.** It had hung off
+  manufacturer+model, which is wrong: a body harness is checked as a body
+  harness whoever made it. A model can still be given its own list, which
+  overrides its type's and is seeded from it.
+- **Equipment type is now a picker, not free text.** The checklist is selected
+  by it, so "lanyard" vs "lanyards" typed by hand would have quietly produced
+  the wrong questions on a safety record.
+- **Checks carry how they are answered.** Two are yes/no questions and one is
+  inverted — "has the impact indicator been activated?" fails on *Yes*. Storing
+  that as a plain pass/fail would have printed the opposite of the truth on a
+  certificate. `record_fp_inspection` now takes the polarity from the template
+  rather than the payload, and refuses a record with an unanswered required
+  check.
+- **`supabase/build-combined.sh` globbed `0[3-9]_*.sql`**, so anything numbered
+  10 or higher was silently missing from the paste script. Fixed.
+
+#### Still open
+
+- Two prompts expand abbreviations from the source sheet and are worth
+  confirming before the first real inspection, since they print on a
+  certificate: "arrester encloser ext" → **"Arrester enclosure exterior"**, and
+  "warning center not ext" → **"Warning center not extended"**.
+- `11_fp_equipment_types.sql` has **not** been applied to the live database yet.
 
 ### Done 2026-08-24
 
@@ -88,10 +118,17 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
    and double-bills the customer. This is the only unanswered design question
    left in the project.
 3. **NFC hardware testing** — real tags, real phones. List in `docs/NFC-PLUGIN.md`,
-   plus the `TAG`-entitlement question above.
-4. **Windows code-signing certificate**, and a first NSIS build — it has never
+   plus the `TAG`-entitlement question above. Build 4 is the one to test: it is
+   the first build whose read path could ever have worked (payloads were never
+   being decoded), and the first with tap-through.
+4. **Android build 3 is signed but not uploaded.** `bundleRelease` produced
+   `field-app/capacitor/android/app/build/outputs/bundle/release/app-release.aab`
+   (versionCode 3). It cannot be pushed from here: Play uploads need a Google
+   Cloud service-account JSON key and one has never been created — see
+   `CLAUDE.md` under Google Play. Upload it by hand, or create the key.
+5. **Windows code-signing certificate**, and a first NSIS build — it has never
    been built even once, and cannot be from macOS.
-5. **Push the branch** — needs the org account.
+6. **Push the branch** — needs the org account.
 
 ### Decided 2026-08-24
 
@@ -303,6 +340,39 @@ site, the macOS DMG, and the `LIA_CONFIG_JSON` CI secret — with a broken produ
 surface if any one is missed. Revisit only if the Supabase project shows
 abnormal API volume, i.e. someone scraping the key to burn quota. That is a
 monitoring trigger, not a backlog item.
+
+**✅ Migrations 11 through 17 are applied.** Run on 2026-08-30 from
+`supabase/dist/apply-11-17.sql`. Verified from outside afterwards with the
+publishable key:
+
+- `ladder_inspections_public` still serves **1,724 rows**, and a certificate
+  still resolves both ways the public site looks one up — by certificate code
+  (`RTPTXK9PJK` → 1000090) and by serial.
+- `GET /rest/v1/inspections` still returns **401** — the base-table grant stays
+  closed.
+- `fall_protection_public` carries `tag_url`, `tag_label`, `tag_label_key` and
+  `tag_write_url`, so 12 and 17 both landed on the view.
+- Every new function from 11–17 answers **42501** to anon (present, no EXECUTE),
+  and `record_certificate_view` — the one function 14 grants anon on purpose —
+  accepts a call and correctly skips a view whose source is not `web`.
+
+Getting there took two attempts and the reason is worth keeping: the first
+bundle started at **14**, on the wrong belief that the live database was at 13.
+It is at 10 — 11, 12 and 13 were written on this branch after the 2026-08-24
+apply. 14's RLS policy calls `is_developer()`, which 13 defines, so the run died
+there and left a half-applied database. `./supabase/test/run-apply.sh` now
+reproduces that exact failure and proves the correct bundle recovers from it.
+
+**Check what is live before writing a bundle, rather than trusting this file.**
+`git ls-files supabase/*.sql` shows what pre-dates the branch, and the REST
+schema shows what the database actually has.
+
+**The BSI fall-protection form has not been confirmed.** `FP_FORM` in
+`src/fp-automation.ts` is a guess based on the ladder form. The preflight
+deliberately refuses the run and names the missing controls rather than filling
+boxes with wrong values on a live customer work order, so this is safe as it
+stands — but Push to BSI will refuse every run until somebody with the real form
+in front of them corrects those selectors.
 
 Remaining lower-priority items are in `CLAUDE.md` → Security TODOs.
 

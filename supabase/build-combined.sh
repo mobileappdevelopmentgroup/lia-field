@@ -18,6 +18,9 @@ OUT=supabase/dist/apply-all.sql
 --
 -- Applies: 03 accounts/billing · 04 versioned inspections · 05 rep numbers
 --          06 fall protection · 07 status · 08 device snapshot · 09 authoring
+--          11 equipment types and their per-type checklists
+--          12 tag hyperlinks · 13 support · 14 certificate views
+--          15 fp record corrections · 16 job assignment · 17 tag writing
 --
 -- 10_consolidate_account.sql is deliberately NOT included. It is optional, it
 -- only suits a single-company deployment, and it needs a user id — see
@@ -27,7 +30,11 @@ OUT=supabase/dist/apply-all.sql
 -- not work out; those rows stay invisible to the app until assigned.
 -- ═══════════════════════════════════════════════════════════════════
 HDR
-  for f in supabase/0[3-9]_*.sql; do
+  # 10_consolidate_account.sql is skipped on purpose (see the header); every
+  # other migration from 03 on is included. Listed explicitly rather than
+  # globbed to 09, which silently dropped everything numbered 10 and up.
+  for f in supabase/0[3-9]_*.sql supabase/1[1-9]_*.sql supabase/2[0-9]_*.sql; do
+    [ -f "$f" ] || continue   # the 2x range is empty until there is a migration 20
     printf '\n-- ┌───────────────────────────────────────────────────────────────────\n'
     printf -- '-- │ %s\n' "$(basename "$f")"
     printf -- '-- └───────────────────────────────────────────────────────────────────\n\n'

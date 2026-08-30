@@ -109,6 +109,37 @@
     .job-empty { text-align: center; color: var(--muted); padding: 80px 24px;
                  font-size: 14px; line-height: 1.7; }
     .job-empty strong { color: var(--text); }
+    /* Jobs the lead pushed to this phone. Visibly a different thing from a job
+       the tech made himself, because "who decided this" is the question he asks
+       when a work order number does not look right. */
+    .asg-hdr { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+               color: var(--muted); padding: 2px 2px 0; display: flex; align-items: center; gap: 8px; }
+    .asg-hdr .asg-stale { font-weight: 600; letter-spacing: 0; text-transform: none; margin-left: auto; }
+    .job-card.assigned { border-color: rgba(var(--accent-rgb),.45);
+                         background: linear-gradient(0deg, rgba(var(--accent-rgb),.05), rgba(var(--accent-rgb),.05)), var(--surf); }
+    .job-card.assigned.closed { opacity: .62; }
+    .asg-badge { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+                 text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px;
+                 vertical-align: 1px; background: rgba(var(--accent-rgb),.18); color: var(--accent-fg); }
+    .asg-badge.team { background: rgba(var(--muted-rgb,120,120,120),.18); color: var(--muted); }
+    .asg-note { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45;
+                white-space: normal; }
+    .asg-peers { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+    .asg-peer { display: flex; gap: 8px; font-size: 12.5px; padding: 4px 0; align-items: baseline; }
+    .asg-peer .asg-who { color: var(--muted); margin-left: auto; font-size: 11.5px; }
+    .asg-ro { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    /* Writing a tag */
+    .tw-preview { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; word-break: break-all;
+                  background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 9px 11px; color: var(--muted); }
+    .tw-preview b { color: var(--text); font-weight: 700; }
+    .tw-warn { border-radius: 8px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+               background: rgba(var(--bad-rgb),.12); color: var(--bad-fg);
+               border: 1px solid rgba(var(--bad-rgb),.35); }
+    .tw-warn.err { background: rgba(var(--err-rgb),.12); color: var(--err-fg);
+                   border-color: rgba(var(--err-rgb),.35); }
+    .fp-rec-write { background: none; border: 1px solid var(--border); border-radius: 6px;
+                    font-size: 11.5px; padding: 4px 9px; color: var(--text); margin-left: 6px; }
 
     /* ══════════════════════════════════════════════════════
        JOB DETAIL — fixed panel layout, no page scroll
@@ -439,6 +470,167 @@
     .fp-hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
     .fp-hint.warn { color: var(--bad-fg); font-weight: 600; }
 
+    /* Tap-through */
+    .fp-batch-start { width: 100%; min-height: 38px; border-radius: 8px;
+                      background: var(--surf2); border: 1px dashed var(--border);
+                      color: var(--muted); font-size: 12px; font-weight: 700;
+                      font-family: var(--font); cursor: pointer;
+                      display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .fp-batch-start svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .fp-batch-start:active { opacity: .7; }
+    #fp-batch-panel { flex-shrink: 0; background: var(--surf); padding: 9px 12px;
+                      border-bottom: 1px solid var(--border);
+                      display: flex; flex-direction: column; gap: 7px; }
+    .fp-batch-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fp-batch-live { display: flex; align-items: center; gap: 6px; font-size: 12px;
+                     font-weight: 800; color: var(--accent-fg); text-transform: uppercase;
+                     letter-spacing: .05em; }
+    .fp-batch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+                    animation: fp-batch-pulse 1.4s ease-in-out infinite; }
+    @keyframes fp-batch-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+    @media (prefers-reduced-motion: reduce) { .fp-batch-dot { animation: none; } }
+    .fp-batch-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .fp-batch-last { min-height: 42px; border-radius: 8px; background: var(--surf2);
+                     border: 1px solid var(--border); padding: 7px 11px; font-size: 12.5px;
+                     display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+    .fp-batch-last.ok { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
+    .fp-batch-last.flag { border-color: var(--bad); background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-last .sn { font-family: var(--mono); font-size: 14px; font-weight: 700; }
+    .fp-batch-last .sub { font-size: 11.5px; color: var(--muted); }
+    .fp-batch-last .lnk { font-size: 10.5px; color: var(--muted); word-break: break-all;
+                          font-family: var(--mono); }
+    /* ── Help ──────────────────────────────────────────────────────────────
+       Read one-handed, in a truck, often in sunlight. So: bigger body text than
+       the capture screens use, generous tap targets, and real contrast rather
+       than the muted greys that look smart indoors and vanish outside. */
+    .help-btn { position: relative; }
+    .help-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+                border-radius: 50%; background: var(--bad); }
+    .help-badge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px;
+                  padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff;
+                  font-size: 10px; font-weight: 800; line-height: 15px; text-align: center; }
+    #help-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                   padding: 10px 12px 28px; }
+    .help-search-wrap { margin-bottom: 10px; }
+    .help-hero { border-radius: 10px; padding: 11px 13px; margin-bottom: 12px;
+                 background: rgba(var(--accent-rgb), .10);
+                 border: 1px solid rgba(var(--accent-rgb), .28); }
+    .help-hero-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-hero-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    .help-group-hdr { font-size: 11px; font-weight: 800; letter-spacing: .06em;
+                      text-transform: uppercase; color: var(--muted);
+                      margin: 16px 0 7px; }
+    .help-item { display: flex; flex-direction: column; gap: 2px; width: 100%;
+                 text-align: left; background: var(--surf); border: 1px solid var(--border);
+                 border-radius: 10px; padding: 12px 13px; margin-bottom: 7px;
+                 font-family: var(--font); cursor: pointer; color: inherit; }
+    .help-item-ttl { font-size: 14px; font-weight: 700; }
+    .help-item-sub { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .help-doc { font-size: 14.5px; line-height: 1.62; }
+    .help-p { margin: 0 0 11px; }
+    .help-when { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+    .help-steps { margin: 0 0 13px; padding-left: 22px; }
+    .help-steps li { margin-bottom: 7px; }
+    .help-steps.big li { margin-bottom: 11px; }
+    .help-note { border-left: 3px solid var(--accent); padding: 8px 11px;
+                 margin: 0 0 12px; border-radius: 0 8px 8px 0; font-size: 13.5px;
+                 background: rgba(var(--accent-rgb), .08); }
+    /* Reserved for what costs money or safety. Kept rare so it keeps working. */
+    .help-warn { border-left: 3px solid var(--bad); padding: 8px 11px; margin: 0 0 12px;
+                 border-radius: 0 8px 8px 0; font-size: 13.5px;
+                 background: rgba(var(--bad-rgb), .09); }
+    .help-shot { margin: 0 0 14px; }
+    .help-shot img { width: 100%; border-radius: 10px; border: 1px solid var(--border);
+                     display: block; }
+    .help-shot figcaption { font-size: 12px; color: var(--muted); margin-top: 5px;
+                            text-align: center; }
+    .help-empty { text-align: center; padding: 26px 14px; color: var(--muted);
+                  font-size: 13.5px; }
+    .help-empty-sub { font-size: 12.5px; margin-top: 6px; }
+    .help-ask { margin-top: 20px; border-radius: 10px; padding: 13px;
+                background: var(--surf2); border: 1px solid var(--border); }
+    .help-ask-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-ask-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5;
+                    margin-bottom: 10px; }
+    .help-ask-btn { width: 100%; padding: 12px; font-size: 14px; }
+    .help-textarea { min-height: 96px; resize: vertical; line-height: 1.5;
+                     padding: 10px 12px; font-family: var(--font); }
+    .help-attached { font-size: 11.5px; color: var(--muted); line-height: 1.6;
+                     margin: 2px 0 12px; }
+    .help-attached span { display: inline-block; background: var(--surf2);
+                          border: 1px solid var(--border); border-radius: 5px;
+                          padding: 1px 6px; margin: 3px 4px 0 0;
+                          font-family: var(--mono); font-size: 10.5px; }
+    .help-hint { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+    .help-hint.warn { color: var(--bad-fg); font-weight: 600; }
+    .help-ticket { display: block; width: 100%; text-align: left; background: var(--surf);
+                   border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px;
+                   margin-bottom: 7px; font-family: var(--font); cursor: pointer; color: inherit; }
+    .help-ticket.unread { border-color: var(--accent); }
+    .help-ticket-top { display: flex; align-items: center; gap: 7px; }
+    .help-ticket-ttl { flex: 1; font-size: 13.5px; font-weight: 700; }
+    .help-ticket-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad);
+                       flex-shrink: 0; }
+    .help-ticket-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+    .help-status { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+                   background: var(--surf2); color: var(--muted); }
+    .help-status.open, .help-status.answered { background: rgba(var(--accent-rgb), .16);
+                                               color: var(--accent); }
+    .help-status.resolved { background: rgba(var(--ok-rgb), .16); color: var(--ok-fg); }
+    .help-status.waiting { background: rgba(var(--bad-rgb), .12); color: var(--bad-fg); }
+    .help-ref { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    /* The confirmation. A banner that stays put, not a toast that vanishes
+       before the tech has looked up from the item in his hand. */
+    .help-confirm { border-radius: 10px; padding: 11px 13px; margin-bottom: 14px; }
+    .help-confirm.ok { background: rgba(var(--ok-rgb), .12);
+                       border: 1px solid rgba(var(--ok-rgb), .40); }
+    .help-confirm.wait { background: rgba(var(--bad-rgb), .09);
+                         border: 1px solid rgba(var(--bad-rgb), .30); }
+    .help-confirm-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-confirm-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    .help-thread { display: flex; flex-direction: column; gap: 9px; }
+    .help-msg { border-radius: 10px; padding: 10px 12px; max-width: 92%; }
+    .help-msg.me { align-self: flex-end; background: rgba(var(--accent-rgb), .12);
+                   border: 1px solid rgba(var(--accent-rgb), .28); }
+    .help-msg.dev { align-self: flex-start; background: var(--surf2);
+                    border: 1px solid var(--border); }
+    .help-msg-who { font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 3px; }
+    .help-msg-body { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; }
+    .help-msg-when { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+
+    /* The unmatched-tag sheet. The link is monospace and wraps rather than
+       truncating: a tech reads it off the screen or dictates it down a phone,
+       so an ellipsis in the middle of it would be useless. */
+    .fp-link-url { font-family: var(--mono); font-size: 11.5px; word-break: break-all;
+                   background: var(--surf2); border: 1px solid var(--border);
+                   border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+                   -webkit-user-select: text; user-select: text; }
+    /* Amber, not green and not red: what the link claims is neither confirmed
+       nor rejected, and colouring it like a result would be a lie about it. */
+    .fp-link-claim { border: 1px solid var(--warn, #c98a12); border-radius: 8px;
+                     padding: 9px 11px; margin-bottom: 8px;
+                     background: rgba(201,138,18,.09); }
+    .fp-link-claim-hdr { font-size: 11px; font-weight: 800; letter-spacing: .04em;
+                         text-transform: uppercase; color: var(--warn, #c98a12);
+                         margin-bottom: 6px; }
+    .fp-link-rows .fp-kv { font-size: 12.5px; }
+    .fp-link-v { font-weight: 800; font-size: 12px; }
+    .fp-link-v.pass { color: var(--ok-fg); }
+    .fp-link-v.fail { color: var(--bad-fg); }
+    .fp-link-v.unk  { color: var(--muted); font-weight: 700; }
+    .fp-rec-link { font-family: var(--mono); font-size: 10.5px; word-break: break-all;
+                   -webkit-user-select: text; user-select: text; }
+    .fp-batch-acts { display: flex; gap: 5px; }
+    .fp-batch-act { flex: 1; min-height: 42px; border-radius: 8px; background: var(--surf2);
+                    border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+                    font-weight: 700; font-family: var(--font); cursor: pointer; padding: 0 4px; }
+    .fp-batch-act.fail { color: var(--bad-fg); border-color: rgba(var(--bad-rgb),.32);
+                         background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-act.done { color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.35);
+                         background: rgba(var(--accent-rgb),.12); }
+    .fp-batch-act:disabled { opacity: .38; }
+    .fp-batch-act:active { opacity: .7; }
+
     /* The record card. Matched = green; anything else stays neutral. */
     #fp-record { flex-shrink: 0; margin: 10px 12px 0; background: var(--surf);
                  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -466,7 +658,15 @@
     /* One check per row so the whole list fits without scrolling. */
     #fp-checks-panel { flex-shrink: 0; padding: 10px 12px 0; display: flex;
                        flex-direction: column; gap: 5px; }
-    .fp-checks-hdr { display: flex; align-items: center; justify-content: space-between; }
+    .fp-checks-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fp-checks-note { font-size: 10.5px; color: var(--muted); text-align: right; }
+    /* The equipment type picker. Native select so it uses the OS wheel — far
+       faster with gloves on than a custom list. */
+    #fp-edit-form select.field-input { appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b8b' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+    /* Two answers side by side; a yes/no question needs more room than Pass. */
+    .fp-seg button { padding: 0 6px; }
     #fp-checks-list { display: flex; flex-direction: column; gap: 5px; }
     .fp-chk { display: flex; align-items: center; gap: 10px; background: var(--surf);
               border: 1px solid var(--border); border-radius: 8px; padding: 6px 6px 6px 11px; }
@@ -572,9 +772,11 @@
       <span class="topbar-title" style="flex:none;">Lia Field</span>
       <span class="sync-status" id="sync-status"></span>
     </div>
+    <button class="btn-icon help-btn" id="btn-help-jobs" title="Help">?<span class="help-dot" id="help-dot-jobs" style="display:none;"></span></button>
     <button class="btn-p" id="btn-new-job" style="font-size:14px;padding:9px 18px;">+ New Job</button>
   </div>
   <div id="jobs-body">
+    <div id="assigned-body"></div>
     <div class="job-empty" id="jobs-empty" style="display:none;">
       No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.
     </div>
@@ -594,6 +796,7 @@
       <input type="text" id="job-wo"   class="topbar-input wo" placeholder="Work Order #" autocomplete="off">
     </div>
     <span class="save-status" id="save-status"></span>
+    <button class="btn-icon help-btn" id="btn-help-detail" title="Help">?<span class="help-dot" id="help-dot-detail" style="display:none;"></span></button>
     <button class="btn-icon" id="btn-settings" title="Custom fields">⚙</button>
   </div>
 
@@ -682,7 +885,7 @@
        scanning and typing stay first-class — and New adds an item outright,
        rather than making the tech scan something and be told it is not on file. -->
   <div id="fp-input-panel" style="display:none;">
-    <div class="fp-ways">
+    <div class="fp-ways" id="fp-ways-row">
       <button class="fp-way primary" id="fp-btn-tap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>Tap
       </button>
@@ -696,12 +899,38 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
       </button>
     </div>
+    <!-- Tapping through a rack the tech has already inspected by hand. Offered
+         alongside single tap, never instead of it: some techs work item by item
+         and see the checks every time, and that flow is unchanged. -->
+    <button class="fp-batch-start" id="fp-btn-batch" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M9 17h6M12 14v6"/></svg>
+      Tap through — record passes as you go
+    </button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
              autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
       <button class="btn-p" id="fp-btn-lookup" style="font-size:13px;padding:8px 14px;">Find</button>
     </div>
     <div class="fp-hint" id="fp-hint"></div>
+  </div>
+
+  <!-- Tap-through. Replaces the four ways while it is running so there is only
+       one thing to do: present the next item. Every tap records a PASS, because
+       the inspection already happened in the tech's hands — anything the app
+       cannot resolve, or anything he wants to fail, stops the run. -->
+  <div id="fp-batch-panel" style="display:none;">
+    <div class="fp-batch-hdr">
+      <span class="fp-batch-live"><span class="fp-batch-dot"></span>Tap through</span>
+      <span class="fp-batch-count" id="fp-batch-count">0 recorded</span>
+    </div>
+    <div class="fp-batch-last" id="fp-batch-last"></div>
+    <div class="fp-batch-acts">
+      <button class="fp-batch-act" id="fp-btn-batch-arm" style="display:none;">Keep tapping</button>
+      <button class="fp-batch-act fail" id="fp-btn-batch-fail">Fail last</button>
+      <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last</button>
+      <button class="fp-batch-act done" id="fp-btn-batch-stop">Done</button>
+    </div>
+    <div class="fp-hint" id="fp-batch-hint"></div>
   </div>
 
   <!-- The record, from the device's own copy of last year's inspection.
@@ -712,7 +941,8 @@
 
   <div id="fp-checks-panel" style="display:none;">
     <div class="fp-checks-hdr">
-      <span class="recent-hdr-label">Checks — all pass unless you say otherwise</span>
+      <span class="recent-hdr-label" id="fp-checks-label">Checks</span>
+      <span class="fp-checks-note">All pass unless you say otherwise</span>
     </div>
     <div id="fp-checks-list"></div>
   </div>
@@ -762,6 +992,24 @@
   </div>
 
 </div><!-- /screen-detail -->
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: HELP
+     The manual, the sample workflows, and the ticket thread with the
+     developer. One screen with several views — see help-ui.js — so that
+     reading a topic and then asking about it does not lose your place, and
+     so Back means one obvious thing.
+══════════════════════════════════════════════════════ -->
+<div id="screen-help" class="screen">
+  <div class="topbar">
+    <button class="back-btn" id="help-back">← Back</button>
+    <span class="topbar-title" id="help-title" style="flex:1;min-width:0;">Help</span>
+    <button class="btn-icon help-btn" id="help-btn-tickets" title="My messages">✉<span class="help-badge" id="help-tickets-badge" style="display:none;"></span></button>
+  </div>
+  <div id="help-scroll">
+    <div id="help-body"></div>
+  </div>
+</div>
 
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
@@ -870,6 +1118,43 @@
   <button class="btn-g sheet-done" id="fp-btn-cancel-condemn" style="margin-top:6px;">Back to checks</button>
 </div>
 
+<!-- A tag whose hyperlink matched nothing. The link is shown first because it is
+     the one thing the tech can act on unaided; whatever we managed to fetch from
+     it is shown as a CLAIM, never as an inspection. The three buttons are the
+     whole decision: inspect it, keep the link for later, or set it aside. -->
+<div class="settings-sheet hidden" id="fp-link-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="fp-link-ttl">Tag not on file</div>
+  <div class="sheet-fields" id="fp-link-body"></div>
+  <button class="btn-p sheet-done" id="fp-btn-link-inspect">Inspect this item</button>
+  <button class="btn-g sheet-done" id="fp-btn-link-save" style="margin-top:6px;">Save the link only</button>
+  <button class="btn-g sheet-done" id="fp-btn-link-ignore" style="margin-top:6px;">Skip this one</button>
+</div>
+
+<!-- Writing our own tag onto a piece of equipment.
+     Everything about to be written is shown BEFORE the phone touches the tag:
+     the write is a physical, one-shot act on a customer's harness, and a tech
+     who finds out afterwards that the label was wrong has to peel a tag off. -->
+<div class="settings-sheet hidden" id="tw-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="tw-ttl">Write tag</div>
+  <div class="sheet-desc" id="tw-desc"></div>
+  <div class="sheet-fields">
+    <div class="field-ig">
+      <div class="field-label">Label printed on the tag</div>
+      <div class="field-ig-wrap">
+        <input type="text" id="tw-label" class="field-input" placeholder="e.g. FP158354"
+               autocomplete="off" autocapitalize="characters" autocorrect="off">
+        <button class="field-clear-x" data-clear="tw-label">×</button>
+      </div>
+    </div>
+    <div class="tw-warn" id="tw-warn" style="display:none;"></div>
+    <div class="tw-preview" id="tw-preview"></div>
+  </div>
+  <button class="btn-p sheet-done" id="tw-btn-write">Hold phone to tag</button>
+  <button class="btn-g sheet-done" id="tw-btn-cancel" style="margin-top:6px;">Cancel</button>
+</div>
+
 <div class="settings-sheet hidden" id="scope-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">New job</div>
@@ -885,6 +1170,17 @@
   <button class="btn-g sheet-done" id="btn-cancel-scope">Cancel</button>
 </div>
 
+<!-- What the rest of the team has already done on this job. Read-only, and
+     only reaches this phone when the lead turned sharing on — the filtering is
+     in job_detail() on the server, not here. -->
+<div class="settings-sheet hidden" id="team-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="team-ttl">On this job</div>
+  <div class="sheet-desc" id="team-desc"></div>
+  <div class="sheet-fields" id="team-list"></div>
+  <button class="btn-g sheet-done" id="btn-close-team">Done</button>
+</div>
+
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
@@ -897,6 +1193,7 @@
   <button class="btn-ok sheet-done" id="btn-close-library">Done</button>
 </div>
 
+<script src="./js/tag-link.js"></script>
 <script src="./js/device-cache.js"></script>
 <script src="./js/storage.js"></script>
 <script src="./js/sound.js"></script>
@@ -906,7 +1203,13 @@
 <script src="./js/list.js"></script>
 <script src="./js/nfc.js"></script>
 <script src="./js/sync.js"></script>
+<script src="./js/fp-types.js"></script>
 <script src="./js/fp.js"></script>
+<script src="./js/help.js"></script>
+<script src="./js/support.js"></script>
+<script src="./js/assignments.js"></script>
+<script src="./js/tag-write.js"></script>
+<script src="./js/help-ui.js"></script>
 <script src="./js/export.js"></script>
 <script src="./js/scan.js"></script>
 <script src="./js/sheets.js"></script>

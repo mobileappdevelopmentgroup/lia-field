@@ -76,10 +76,14 @@
   }
 
   function signOut() {
+    // The lead's plan names sites and work orders belonging to one company, so
+    // it goes first and unconditionally: a sign-out that could not reach the
+    // server, or a build whose client would not construct, must still not leave
+    // one company's job list on the phone for whoever signs in next.
+    try { localStorage.removeItem('lia-assigned-jobs'); } catch (_) {}
     return client().then(function (sb) {
       if (!sb) return null;
-      // The catalogue is account data. Leaving it behind would show one
-      // company's items to whoever signs in next on the same phone.
+      // The catalogue is account data too, for the same reason.
       return sb.auth.signOut().then(function () {
         return root.LiaCache ? root.LiaCache.clear() : null;
       });
@@ -101,8 +105,25 @@
   function pullCatalog(opts) {
     return client().then(function (sb) {
       if (!sb) throw new Error('This build is not configured to sync.');
-      return root.LiaCache.sync(sb, opts || {});
+      // The checklists come down with the items. A lead can change a type's
+      // pass/fail parameters or add to them at any time, and a phone that
+      // syncs its items but not its checklists would keep asking the old
+      // questions all day. Small enough to refetch whole every time.
+      return pullTypes(sb).then(function () {
+        return root.LiaCache.sync(sb, opts || {});
+      });
     });
+  }
+
+  // Never fatal: a stale or built-in checklist still lets a tech work, whereas
+  // failing the whole sync over it would strand him with no catalogue at all.
+  function pullTypes(sb) {
+    if (!root.LiaFpTypes) return Promise.resolve(false);
+    return sb.rpc('fp_type_catalog').then(function (r) {
+      if (r.error || !r.data) return false;
+      var list = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+      return root.LiaFpTypes.setCatalog(list);
+    }).catch(function () { return false; });
   }
 
   // ── Upload queue ──────────────────────────────────────────────────────────
@@ -136,10 +157,28 @@
     return q.length;
   }
 
+  // Pull an entry back out before it is sent. Used when a tap-through pass is
+  // undone or reopened to be failed: the record must not reach the server
+  // saying it passed, and the drain may not have run yet. A no-op once the
+  // entry has already gone up — the drain removes it on success, and by then
+  // the correction is a new version rather than a withdrawal.
+  function dequeue(clientId) {
+    if (!clientId) return false;
+    var q = readQueue();
+    var out = q.filter(function (e) { return e.clientId !== clientId; });
+    if (out.length === q.length) return false;
+    writeQueue(out);
+    return true;
+  }
+
   function queueLength() { return readQueue().length; }
 
+  // Counts CAPTURED WORK waiting to go up, which is what the badge on the
+  // capture screens means. Support traffic is excluded on purpose: a ticket
+  // that has not gone yet is not an inspection at risk, and showing it here
+  // would tell a tech he has unsent records when he does not.
   function pendingSummary() {
-    var q = readQueue();
+    var q = readQueue().filter(function (e) { return !isDeferrable(e); });
     return {
       total: q.length,
       failing: q.filter(function (e) { return e.attempts >= 3; }).length,
@@ -154,7 +193,62 @@
     if (entry.kind === 'ladder') {
       return sb.rpc('record_inspection', { p: entry.payload });
     }
+    // What a tag's hyperlink claimed about an item. Not an inspection — see the
+    // header of tag-link.js — so it goes to its own function, which files it as
+    // external and never lets it reach fp_inspections.
+    if (entry.kind === 'fp_external') {
+      return sb.rpc('record_fp_external', { p: entry.payload });
+    }
+    // A tag seen but not inspected: the link, and whatever identified the tag.
+    // Uploading it is what makes the next tap on it resolve, on any phone.
+    if (entry.kind === 'fp_tag_link') {
+      return sb.rpc('record_fp_tag_link', { p: entry.payload });
+    }
+    // A tag this tech WROTE. Not optional and not deferrable — see the classes
+    // below. The tag is physically on the equipment; if this never lands, the
+    // item resolves for nobody but the phone that wrote it, and the next tech
+    // to tap it is told the equipment is unregistered.
+    if (entry.kind === 'fp_tag_write') {
+      return sb.rpc('record_fp_tag_write', { p: entry.payload });
+    }
+    // Support traffic. Idempotent on client_id at the server, so a retry after a
+    // timeout returns the original ticket rather than filing a second one.
+    if (entry.kind === 'support_ticket') {
+      return sb.rpc('submit_support_ticket', { p: entry.payload });
+    }
+    if (entry.kind === 'support_reply') {
+      return sb.rpc('reply_support_ticket', { p: entry.payload });
+    }
     return Promise.resolve({ error: { message: 'Unknown record type: ' + entry.kind } });
+  }
+
+  // An inspection is never dropped and never reordered — see drain(). Three
+  // kinds of entry, and the difference is what a failure is allowed to cost:
+  //
+  //   inspections   block the queue on failure. Order and completeness matter
+  //                 more than throughput; a rejected record must be seen.
+  //   tag writes    treated like an inspection, deliberately. A tag write is a
+  //                 change to physical equipment, and a queue that gave up on it
+  //                 would leave a tag in the field that only one phone can
+  //                 resolve. It blocks, and it is never dropped.
+  //   optional      supplementary notes ABOUT an item. Stepped aside, and given
+  //                 up on after a few tries — losing a claim off somebody's
+  //                 spreadsheet is a far smaller harm than holding a day of real
+  //                 inspections off the server. The commonest cause is an app
+  //                 shipped ahead of its migration, where the RPC does not exist.
+  //   deferrable    support tickets. Also stepped aside — a ticket must never be
+  //                 what strands a day's inspections — but NEVER dropped. A tech
+  //                 who reported something and was told it went has to be right.
+  var OPTIONAL_KINDS = ['fp_external', 'fp_tag_link'];
+  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply'];
+  var OPTIONAL_ATTEMPTS = 3;
+
+  function isOptional(entry) {
+    return OPTIONAL_KINDS.indexOf(entry && entry.kind) >= 0;
+  }
+
+  function isDeferrable(entry) {
+    return DEFERRABLE_KINDS.indexOf(entry && entry.kind) >= 0;
   }
 
   // Drains in order and STOPS at the first failure rather than skipping past it.
@@ -174,6 +268,7 @@
       });
     }).then(function (sb) {
       var sent = 0;
+      var deferred = 0;
 
       function step() {
         var q = readQueue();
@@ -184,6 +279,22 @@
           if (res && res.error) {
             entry.attempts = (entry.attempts || 0) + 1;
             entry.lastError = res.error.message;
+
+            // Anything that is not an inspection steps aside rather than
+            // blocking. Optional entries are given up on after a few tries;
+            // deferrable ones are kept forever, because a tech was told his
+            // ticket would be sent.
+            if (isOptional(entry) || isDeferrable(entry)) {
+              q2.shift();
+              if (isDeferrable(entry) || entry.attempts < OPTIONAL_ATTEMPTS) q2.push(entry);
+              writeQueue(q2);
+              // Bounded by the queue length so a queue of nothing but failing
+              // optional entries cannot spin: each pass either drops one or
+              // moves it behind something new.
+              if (deferred++ >= q2.length) return;
+              return step();
+            }
+
             q2[0] = entry;
             writeQueue(q2);
             // Never dropped. A record the server rejects is surfaced to the
@@ -216,11 +327,53 @@
   // "When they are back on wifi the data gets sent" — without the tech doing
   // anything.
 
+  // A catalogue pull the device owes because a schema upgrade added a column
+  // its existing rows do not carry. It rides the same triggers as the upload
+  // queue rather than waiting for a tech to find the Refresh button — he has no
+  // way of knowing he owes one, and until it runs a tag's link resolves nothing.
+  //
+  // Guarded by a flag rather than by the queue, because a full pull of a large
+  // account takes long enough for the two-minute timer to fire underneath it.
+  var _resyncing = false;
+
+  function catchUpCatalog() {
+    if (_resyncing || !root.LiaCache) return;
+    root.LiaCache.status().then(function (s) {
+      if (_resyncing || !s.needsFullSync) return;
+      _resyncing = true;
+      return pullCatalog({}).then(function () {
+        if (typeof root.renderSyncStatus === 'function') root.renderSyncStatus();
+      }).catch(function () {
+        // Left flagged on purpose: a pull that failed is still owed, and the
+        // next trigger tries again.
+      }).then(function () { _resyncing = false; });
+    }).catch(function () {});
+  }
+
+  // The lead's plan, re-checked when there is signal. Rate-limited rather than
+  // run on every trigger: the plan changes a few times a day, the triggers fire
+  // every two minutes and on every unlock, and a tech's data allowance is his.
+  var ASSIGNMENT_INTERVAL = 10 * 60 * 1000;
+  var _assignmentsAt = 0;
+
+  function catchUpAssignments() {
+    if (!root.LiaAssignments) return;
+    if (Date.now() - _assignmentsAt < ASSIGNMENT_INTERVAL) return;
+    _assignmentsAt = Date.now();
+    root.LiaAssignments.refresh().then(function (r) {
+      // Only redrawn on a real answer — a failed pull must not flicker the
+      // list or reset the "as of" line to now.
+      if (r && r.ok && typeof root.renderAssignedList === 'function') root.renderAssignedList();
+    });
+  }
+
   function startAutoDrain() {
     if (root._liaAutoDrain) return;
     root._liaAutoDrain = true;
     var attempt = function () {
       if (!root.navigator || root.navigator.onLine === false) return;
+      catchUpCatalog();
+      catchUpAssignments();
       if (!queueLength()) return;
       drain({}).then(function (r) {
         if (r && r.sent && typeof root.fpOnUploaded === 'function') root.fpOnUploaded(r);
@@ -244,7 +397,11 @@
     signOut: signOut,
     profile: profile,
     pullCatalog: pullCatalog,
+    catchUpCatalog: catchUpCatalog,
+    catchUpAssignments: catchUpAssignments,
+    pullTypes: pullTypes,
     enqueue: enqueue,
+    dequeue: dequeue,
     queueLength: queueLength,
     pendingSummary: pendingSummary,
     drain: drain,

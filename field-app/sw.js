@@ -1,8 +1,9 @@
-const CACHE = 'lia-field-v26';
+const CACHE = 'lia-field-v33';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './js/tag-link.js',
   './js/device-cache.js',
   './js/storage.js',
   './js/sound.js',
@@ -12,7 +13,13 @@ const ASSETS = [
   './js/list.js',
   './js/nfc.js',
   './js/sync.js',
+  './js/fp-types.js',
   './js/fp.js',
+  './js/help.js',
+  './js/support.js',
+  './js/help-ui.js',
+  './js/assignments.js',
+  './js/tag-write.js',
   './js/export.js',
   './js/scan.js',
   './js/sheets.js',

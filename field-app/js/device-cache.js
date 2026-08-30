@@ -15,7 +15,7 @@
   'use strict';
 
   var DB_NAME = 'lia-field';
-  var DB_VERSION = 1;
+  var DB_VERSION = 4;
   var STORE = 'assets';
   var META = 'meta';
 
@@ -32,6 +32,33 @@
     return String(s == null ? '' : s).toUpperCase().replace(/[^A-F0-9]/g, '');
   }
 
+  // The certificate code an NFC tag's URL carries (?t=<public_ref>). Generated
+  // by gen_public_ref() in supabase/04_inspections_v2.sql from a vowel-free
+  // base32 alphabet, so it arrives already normalized; this only has to undo
+  // whatever a tag or a human put around it.
+  function refKey(s) {
+    return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  // The hyperlink a tag carries. Most tags on a customer's existing rack were
+  // written by whoever supplied the gear and point into their system, not ours —
+  // no serial, no certificate code, just a link. Once that link has been seen on
+  // an item it identifies it as well as anything else does, so it is indexed.
+  //
+  // Canonicalization lives in tag-link.js so that the device and the server
+  // agree on when two links are the same link; this falls back to a plain
+  // lowercase trim if that file has not loaded, which only costs a miss.
+  function urlKey(s) {
+    var raw = String(s == null ? '' : s).trim();
+    if (!raw) return '';
+    var tl = root.LiaTagLink;
+    return tl && tl.urlKey ? tl.urlKey(raw) : raw.toLowerCase();
+  }
+
+  function looksLikeUrl(s) {
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(String(s || '').trim());
+  }
+
   function open() {
     return new Promise(function (resolve, reject) {
       if (!root.indexedDB) {
@@ -41,15 +68,65 @@
       var req = root.indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = function (e) {
         var db = e.target.result;
+        var s;
         if (!db.objectStoreNames.contains(STORE)) {
-          var s = db.createObjectStore(STORE, { keyPath: 'asset_id' });
-          // Three ways in, because a tech has three ways to identify an item.
+          s = db.createObjectStore(STORE, { keyPath: 'asset_id' });
+          // Four ways in, because a tech has four ways to identify an item.
           s.createIndex('by_serial', 'serial_key', { unique: false });
           s.createIndex('by_tag', 'tag_key', { unique: false });
           s.createIndex('by_kind', 'kind', { unique: false });
+        } else {
+          s = e.target.transaction.objectStore(STORE);
+        }
+        // v2 — the certificate code. Indexed on public_ref directly rather than
+        // on a normalized copy, because the server generates it already
+        // normalized: that means devices upgrading from v1 get their existing
+        // rows indexed by IndexedDB itself, with no backfill and no re-sync.
+        if (!s.indexNames.contains('by_ref')) {
+          s.createIndex('by_ref', 'public_ref', { unique: false });
+        }
+        // v3 — the tag's hyperlink. Unlike public_ref this one DOES need a
+        // normalized copy (the same link is written a dozen ways), so a device
+        // upgrading from v2 has rows with no tag_url_key until its next sync.
+        // That is a miss, not a fault: the item still resolves by serial or uid,
+        // and the key lands the moment the row is refreshed.
+        if (!s.indexNames.contains('by_url')) {
+          s.createIndex('by_url', 'tag_url_key', { unique: false });
+        }
+        // v4 — the label printed on the tag itself. Not the same thing as the
+        // serial: the serial belongs to the equipment, the label belongs to the
+        // tag stuck on it, and a harness can outlive three tags. A tech holding
+        // either one has to get the record. Needs a normalized copy for the
+        // same reason the serial does, so v3 rows carry none until they resync.
+        if (!s.indexNames.contains('by_label')) {
+          s.createIndex('by_label', 'tag_label_key', { unique: false });
         }
         if (!db.objectStoreNames.contains(META)) {
           db.createObjectStore(META, { keyPath: 'key' });
+        }
+        // Adding the index is not enough to make it useful: rows already on the
+        // device were synced before the server had a tag_url to send, so every
+        // one of them indexes as empty. The incremental sync would never revisit
+        // them — `since` has moved past — and the link lookup would quietly work
+        // only for items touched after the upgrade.
+        //
+        // A full pull is the only thing that backfills it. But the mark is NOT
+        // cleared to force one: `since` and `at` are what requireFirstSync reads,
+        // and blanking them would lock a tech out of starting a job because his
+        // phone happened to update at a customer's site. The catalogue he has is
+        // still good — it is one column short. So the need is flagged separately,
+        // and honoured on the next sync he is online for.
+        if (e.oldVersion && e.oldVersion < 4 && db.objectStoreNames.contains(META)) {
+          try {
+            var ms = e.target.transaction.objectStore(META);
+            var mreq = ms.get('sync');
+            mreq.onsuccess = function () {
+              var m = mreq.result;
+              if (!m) return;
+              m.needsFullSync = true;
+              ms.put(m);
+            };
+          } catch (_) {}
         }
       };
       req.onsuccess = function () { resolve(req.result); };
@@ -107,6 +184,11 @@
       return getMeta(db);
     }).then(function (m) {
       meta = m;
+      // A schema upgrade that added a column nobody has yet: ignore the mark for
+      // this one pull so every row comes back and gets it. Cleared only once the
+      // pull has finished, so an interrupted one runs again rather than leaving
+      // half the catalogue without its link.
+      if (meta.needsFullSync) meta.since = null;
       return sb.rpc('account_snapshot_meta', { p_since: meta.since });
     }).then(function (res) {
       if (res.error) throw new Error(res.error.message);
@@ -135,6 +217,10 @@
               if (row.is_deleted) { store.delete(row.asset_id); return; }
               row.serial_key = serialKey(row.serial_raw || row.serial_key);
               row.tag_key = tagKey(row.nfc_tag_uid);
+              row.tag_url_key = urlKey(row.tag_url);
+              // Normalized with serialKey, not tagKey: a label is printed
+              // alphanumerics like a serial, not hex like a chip id.
+              row.tag_label_key = serialKey(row.tag_label);
               store.put(row);
             });
           }).then(function () {
@@ -150,6 +236,8 @@
 
       return page().then(function () {
         // Only now is the mark safe to advance.
+        // needsFullSync is not carried into the new meta — putMeta writes a
+        // fresh object, so getting this far clears the flag by construction.
         return count(db).then(function (n) {
           return putMeta(db, { since: nextSince, at: new Date().toISOString(), count: n })
             .then(function () { return { synced: done, total: n }; });
@@ -198,10 +286,69 @@
     });
   }
 
+  // A tag whose only record is the certificate URL identifies the item by its
+  // public_ref, not by a serial the cache has ever seen. Tried last, and after
+  // the serial, so that a real serial always wins if one ever collides with a
+  // ref.
+  function findByRef(ref) {
+    var k = refKey(ref);
+    if (!k) return Promise.resolve(null);
+    return open().then(function (db) { return firstFromIndex(db, 'by_ref', k); })
+      .then(function (r) { return r || null; });
+  }
+
+  // The code printed on the tag in the tech's hand. Tried after the serial,
+  // because a serial is the equipment's own identity and must win any collision
+  // — a label is only ever a pointer to it.
+  function findByLabel(label) {
+    var k = serialKey(label);
+    if (!k) return Promise.resolve(null);
+    return open().then(function (db) { return firstFromIndex(db, 'by_label', k); })
+      .then(function (r) { return r || null; });
+  }
+
+  // A tag whose link points into somebody else's system — the common case on a
+  // rack the customer already owned. There is no serial in it and no ref, so the
+  // link itself is the handle, matched on the canonical form so that the same
+  // link written two ways still resolves to one item.
+  function findByUrl(url) {
+    var k = urlKey(url);
+    if (!k) return Promise.resolve(null);
+    return open().then(function (db) { return firstFromIndex(db, 'by_url', k); })
+      .then(function (r) { return r || null; });
+  }
+
   // Anything the tech might have in hand.
+  //
+  // A URL is dispatched straight to the link index rather than run through the
+  // other three. tagKey() strips a link down to whichever letters happen to be
+  // hex — 'https://acme.example/EF/12' becomes 'EFEACEEE' — and that is a key
+  // that can collide with a real tag uid. Guessing wrong here does not fail
+  // safely: it returns the WRONG ITEM's record, on fall protection.
   function find(value, kind) {
+    if (looksLikeUrl(value)) {
+      return findByUrl(value).then(function (hit) {
+        // A certificate link is ours and still resolves by what is inside it,
+        // even on a phone that has never seen this particular tag. Our links
+        // carry both a certificate code and the serial — see 17_tag_write.sql
+        // for why both — so either gets there.
+        if (hit) return hit;
+        var tl = root.LiaTagLink;
+        if (!tl) return null;
+        var ref = tl.refFrom ? tl.refFrom(value) : null;
+        return (ref ? findByRef(ref) : Promise.resolve(null)).then(function (h) {
+          if (h) return h;
+          var sn = tl.serialFrom ? tl.serialFrom(value) : null;
+          return sn ? findBySerial(sn, kind) : null;
+        });
+      });
+    }
     return findByTag(value).then(function (hit) {
       return hit || findBySerial(value, kind);
+    }).then(function (hit) {
+      return hit || findByLabel(value);
+    }).then(function (hit) {
+      return hit || findByRef(value);
     });
   }
 
@@ -216,10 +363,14 @@
           count: n,
           lastSyncAt: meta.at,
           since: meta.since,
+          // Set by a schema upgrade that added a column the existing rows do
+          // not carry. Exposed so the app can run that pull on its own rather
+          // than waiting for a tech to think of it — see startAutoDrain().
+          needsFullSync: !!meta.needsFullSync,
         };
       });
     }).catch(function () {
-      return { ready: false, count: 0, lastSyncAt: null, since: null };
+      return { ready: false, count: 0, lastSyncAt: null, since: null, needsFullSync: false };
     });
   }
 
@@ -248,13 +399,42 @@
     });
   }
 
+  // Writes one row straight into the cache, keys and all.
+  //
+  // Used when the DEVICE learns something before the server does — writing a
+  // tag is the case: the tech tags a rack in a basement, and if the cache did
+  // not learn the new label immediately, tapping one of those tags to check his
+  // work would come back "not registered" off his own phone. That reads as the
+  // write having failed, and he re-writes a tag that was already correct.
+  //
+  // Overwritten by the next sync, which is the right precedence: the server is
+  // the authority, this is only bridging the gap until the queue drains.
+  function put(row) {
+    if (!row || !row.asset_id) return Promise.resolve(false);
+    var r = {};
+    Object.keys(row).forEach(function (k) { r[k] = row[k]; });
+    r.serial_key = serialKey(r.serial_raw || r.serial_key);
+    r.tag_key = tagKey(r.nfc_tag_uid);
+    r.tag_url_key = urlKey(r.tag_url);
+    r.tag_label_key = serialKey(r.tag_label);
+    return open().then(function (db) {
+      return tx(db, STORE, 'readwrite', function (store) { store.put(r); });
+    }).then(function () { return true; }).catch(function () { return false; });
+  }
+
   var api = {
+    put: put,
     serialKey: serialKey,
     tagKey: tagKey,
+    refKey: refKey,
+    urlKey: urlKey,
     sync: sync,
     find: find,
     findByTag: findByTag,
+    findByLabel: findByLabel,
     findBySerial: findBySerial,
+    findByRef: findByRef,
+    findByUrl: findByUrl,
     status: status,
     requireFirstSync: requireFirstSync,
     clear: clear,

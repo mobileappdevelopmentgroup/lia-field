@@ -360,9 +360,17 @@ ipcMain.handle('fp:list-models', async () => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// A model's own checks if it has been given any, otherwise its equipment
+// type's — so "add a check to this model" starts from the standard checklist
+// rather than a blank page. `inherited` says which of the two came back.
 ipcMain.handle('fp:get-checks', async (_event, modelId) => {
   try {
     const sb = await getSupabase();
+    const { data: checks, error: ce } = await sb.rpc('fp_checks_for_authoring', {
+      p_model_id: modelId,
+    });
+    if (ce) return { ok: false, error: ce.message };
+
     const { data: tpls, error: te } = await sb
       .from('fp_check_templates')
       .select('id, version, published_at')
@@ -370,20 +378,224 @@ ipcMain.handle('fp:get-checks', async (_event, modelId) => {
       .order('version', { ascending: false })
       .limit(1);
     if (te) return { ok: false, error: te.message };
-    if (!tpls || !tpls.length) return { ok: true, version: 0, published: false, checks: [] };
 
-    const { data: checks, error: ce } = await sb
-      .from('fp_template_checks')
-      .select('ord, code, prompt, required')
-      .eq('template_id', tpls[0].id)
-      .order('ord');
-    if (ce) return { ok: false, error: ce.message };
     return {
       ok: true,
-      version: tpls[0].version,
-      published: !!tpls[0].published_at,
+      version: tpls && tpls.length ? tpls[0].version : 0,
+      published: !!(tpls && tpls.length && tpls[0].published_at),
+      inherited: !!(checks || []).length && !!(checks || [])[0].inherited,
       checks: checks || [],
     };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// ── Fall protection records ────────────────────────────────────────────────
+// Browsing, correcting and deleting what the field recorded. Every write goes
+// through a SECURITY DEFINER function that supersedes rather than overwrites
+// and demands a reason — see supabase/15_fp_records.sql for why a certificate
+// is never destroyed.
+ipcMain.handle('fpr:list', async (_event, opts) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_records', {
+      p_search: (opts && opts.search) || null,
+      p_status: (opts && opts.status) || null,
+      p_limit: (opts && opts.limit) || 100,
+      p_offset: (opts && opts.offset) || 0,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fpr:detail', async (_event, assetId) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_record_detail', { p_asset_id: assetId });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, detail: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+function fprWrite(channel, rpc) {
+  ipcMain.handle(channel, async (_event, payload) => {
+    try {
+      const sb = await getSupabase();
+      const { data, error } = await sb.rpc(rpc, { p: payload });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+    } catch (err) { return { ok: false, error: String(err) }; }
+  });
+}
+fprWrite('fpr:amend',       'amend_fp_inspection');
+fprWrite('fpr:delete',      'delete_fp_inspection');
+fprWrite('fpr:restore',     'restore_fp_inspection');
+fprWrite('fpr:update-asset', 'update_fp_asset');
+fprWrite('fpr:mark-pushed', 'mark_fp_bsi_pushed');
+
+ipcMain.handle('fpr:pending-bsi', async (_event, workOrder) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_pending_bsi', { p_work_order: workOrder || null });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, pending: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// ── Certificate views ──────────────────────────────────────────────────────
+// Who has been reading certificates. The interesting question is office versus
+// field, and that is answered by the network the view came from — so labelling
+// networks is part of the same screen. See supabase/14_certificate_views.sql
+// for why an address is never stored.
+ipcMain.handle('views:summary', async (_event, days) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('certificate_view_summary', { p_days: days || 30 });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, summary: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('views:networks', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('known_networks')
+      .select('*').order('label', { ascending: true });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, networks: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('views:save-network', async (_event, net) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('save_known_network', { p: net });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, network: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('views:delete-network', async (_event, id) => {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.rpc('delete_known_network', { p_id: id });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// What this machine's address looks like from the server. The only reliable way
+// for a lead to label his own office is to be told what to type.
+ipcMain.handle('views:my-network', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('my_network');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, network: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// ── Support inbox ──────────────────────────────────────────────────────────
+// What techs have reported from the field app. Visible only to whoever is
+// flagged is_developer in the database — see supabase/13_support.sql. That is a
+// property of the signed-in user, checked server-side by every one of these
+// functions, so hiding the screen here is presentation and not the security
+// boundary.
+//
+// `am-i-developer` exists so the home screen can leave the card out entirely
+// for everybody else, rather than showing a button that always errors.
+ipcMain.handle('support:am-i-developer', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('is_developer');
+    if (error) return { ok: true, developer: false };
+    return { ok: true, developer: data === true };
+  } catch (_) { return { ok: true, developer: false }; }
+});
+
+ipcMain.handle('support:inbox', async (_event, status) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('developer_support_inbox', { p_status: status || null });
+    if (error) return { ok: false, error: error.message };
+    const tickets = typeof data === 'string' ? JSON.parse(data) : data;
+    return { ok: true, tickets: tickets || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('support:counts', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('developer_support_counts');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, counts: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('support:reply', async (_event, ticketId, body) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('reply_support_ticket', {
+      p: { ticket_id: ticketId, body: body },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, ticket: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('support:set-status', async (_event, ticketId, status) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('set_support_ticket_status', {
+      p: { ticket_id: ticketId, status: status },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, ticket: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('support:mark-read', async (_event, ticketId) => {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.rpc('mark_support_ticket_read', { p: { ticket_id: ticketId } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// ── Equipment types ────────────────────────────────────────────────────────
+// The type owns the checklist: a body harness is checked as a body harness
+// whoever made it. fp_type_catalog() already returns each type with its current
+// checks, which is exactly what this screen needs.
+ipcMain.handle('fp:list-types', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_type_catalog');
+    if (error) return { ok: false, error: error.message };
+    const types = typeof data === 'string' ? JSON.parse(data) : data;
+    return { ok: true, types: types || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fp:save-type', async (_event, type) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('save_fp_equipment_type', { p: type });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fp:publish-type-checks', async (_event, typeId, checks) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('publish_fp_type_checks', {
+      p_type_id: typeId,
+      p_checks: checks,
+    });
+    if (error) return { ok: false, error: error.message };
+    const res = typeof data === 'string' ? JSON.parse(data) : data;
+    return { ok: true, version: res && res.version };
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
@@ -618,6 +830,162 @@ ipcMain.on('automation:pause', () => {
 
 ipcMain.on('automation:resume', () => {
   if (automationChild?.stdin) automationChild.stdin.write(JSON.stringify({ type: 'resume' }) + '\n');
+});
+
+// ── Job assignment ─────────────────────────────────────────────────────────
+// The lead's plan for the day: which work orders exist, who is on each, and
+// how much has landed. Every write is lead-gated server-side in
+// supabase/16_assignments.sql — the desktop only decides what to draw.
+ipcMain.handle('jobs:board', async (_event, status) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('job_board', { p_status: status || null });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, jobs: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('jobs:detail', async (_event, jobId) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('job_detail', { p_job_id: jobId });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, detail: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('jobs:team', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('team_members');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, team: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+for (const [channel, rpc] of [['jobs:save', 'save_job'],
+                              ['jobs:close', 'close_job'],
+                              ['jobs:delete', 'delete_job']]) {
+  ipcMain.handle(channel, async (_event, payload) => {
+    try {
+      const sb = await getSupabase();
+      const { data, error } = await sb.rpc(rpc, { p: payload });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+    } catch (err) { return { ok: false, error: String(err) }; }
+  });
+}
+
+// ── Fall protection → BSI ──────────────────────────────────────────────────
+// A second automation run, separate from the ladder importer's child so that
+// starting one cannot kill the other mid-import.
+//
+// The important behaviour is in the 'fp-pushed' branch below: each box is
+// marked pushed in the database THE MOMENT IT LANDS, not when the run finishes.
+// BSI drops connections and kills popups, and a run that dies at item 20 of 40
+// must leave the database knowing those 20 went in. Otherwise the re-run adds
+// them a second time and the customer is billed twice for the same inspection.
+let fpChild = null;
+
+ipcMain.on('fp:push-start', async (_event, items) => {
+  if (fpChild) return;
+
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fp-push:error', 'Nothing to push.');
+    }
+    return;
+  }
+
+  let payloadPath;
+  try {
+    payloadPath = path.join(app.getPath('temp'), `lia-fp-push-${Date.now()}.json`);
+    fs.writeFileSync(payloadPath, JSON.stringify(list), { mode: 0o600 });
+  } catch (err) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fp-push:error', 'Could not stage the records: ' + String(err));
+    }
+    return;
+  }
+
+  const unpackedModules = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+  const nodePath = [unpackedModules, process.env.NODE_PATH].filter(Boolean).join(path.delimiter);
+
+  fpChild = fork(getRunnerPath(), ['--fp', payloadPath], {
+    execPath: process.execPath,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PLAYWRIGHT_BROWSERS_PATH: getPlaywrightBrowsersPath(),
+      BATAVIA_LOGS_DIR: getLogsDir(),
+      NODE_PATH: nodePath,
+    },
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+  });
+
+  const cleanup = () => { try { fs.unlinkSync(payloadPath); } catch {} };
+
+  let buffer = '';
+  fpChild.stdout.on('data', (chunk) => {
+    buffer += chunk.toString();
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+      switch (event.type) {
+        case 'log':               win && win.webContents.send('fp-push:log', event.message); break;
+        case 'waiting-for-ready': win && win.webContents.send('fp-push:waiting'); break;
+        case 'fp-pushed':
+          // Persist first, tell the screen second. If this write fails the run
+          // keeps going — but the operator is told, because an unrecorded box
+          // is exactly what causes a double push later.
+          (async () => {
+            try {
+              const sb = await getSupabase();
+              const { error } = await sb.rpc('mark_fp_bsi_pushed', {
+                p: { items: [{ inspection_id: event.inspectionId, box_ref: event.boxRef }] },
+              });
+              if (error) throw new Error(error.message);
+              win && win.webContents.send('fp-push:pushed', event);
+            } catch (err) {
+              win && win.webContents.send('fp-push:log',
+                `[WARN] ${event.serialNum} was added to BSI but could not be recorded here (` +
+                `${String(err)}). Re-running may add it again — check the work order first.`);
+            }
+          })();
+          break;
+        case 'complete':
+          win && win.webContents.send('fp-push:complete', event);
+          if (win) { win.show(); win.focus(); app.focus({ steal: true }); }
+          break;
+        case 'error':             win && win.webContents.send('fp-push:error', event.message); break;
+      }
+    }
+  });
+
+  fpChild.stderr.on('data', (chunk) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('fp-push:log', '[STDERR] ' + chunk.toString());
+    }
+  });
+
+  fpChild.on('exit', (code) => {
+    fpChild = null;
+    cleanup();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('fp-push:exited', code);
+  });
+});
+
+ipcMain.on('fp:push-ready', () => {
+  if (fpChild?.stdin) fpChild.stdin.write(JSON.stringify({ type: 'ready' }) + '\n');
+});
+
+ipcMain.on('fp:push-stop', () => {
+  if (fpChild) { fpChild.kill(); fpChild = null; }
 });
 
 ipcMain.handle('app:get-logs-dir', () => getLogsDir());

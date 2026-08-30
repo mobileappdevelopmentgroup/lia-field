@@ -6,3 +6,14 @@ logs/*.json
 logs/*.png
 .DS_Store
 .playwright-mcp/
+
+# Native build output. None of it is tracked; this stops it being added by
+# accident and keeps `git status` readable while a store build is running.
+field-app/capacitor/android/build/
+field-app/capacitor/android/.gradle/
+field-app/capacitor/android/app/build/
+field-app/capacitor/ios/App/build/
+field-app/capacitor/ios/App/Pods/
+DerivedData/
+*.ipa
+*.dSYM.zip

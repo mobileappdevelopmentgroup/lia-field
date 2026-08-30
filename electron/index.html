@@ -98,6 +98,17 @@
     .mg-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
     /* ── Fall protection catalog ── */
+    .cat-tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .cat-tab { flex: 1; padding: 9px 6px; background: none; border: none; cursor: pointer;
+      font: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+      border-bottom: 2px solid transparent; }
+    .cat-tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+    /* A check row is prompt + how it is answered. The answer style has to be
+       visible: "has the impact indicator been activated?" fails on Yes, and a
+       lead editing that list needs to see the polarity, not guess it. */
+    .cat-check-row select { font: inherit; font-size: 11px; padding: 4px 6px;
+      border: 1px solid var(--border); border-radius: 5px; background: var(--surf);
+      color: var(--fg); flex-shrink: 0; }
     .cat-wrap { display: flex; flex-direction: column; height: 100%; }
     .cat-head { display: flex; align-items: center; gap: 14px; padding: 18px 26px 14px;
                 border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -144,6 +155,187 @@
                 padding: 7px 12px; cursor: pointer; }
     .btn-mini:hover { border-color: var(--accent); }
     .cat-actions { display: flex; gap: 10px; margin-top: 22px; }
+    /* ── Fall protection records ─────────────────────────────────────────── */
+    .fpr-search { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    .fpr-search input { width: 100%; padding: 7px 10px; border-radius: 5px; font-size: 12.5px;
+              border: 1px solid var(--border); background: var(--surf2); color: var(--fg);
+              font-family: inherit; }
+    .fpr-sn { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 13px;
+              font-weight: 700; }
+    .fpr-st { font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
+              padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.07);
+              color: var(--muted); }
+    .fpr-st.pass { background: rgba(37,162,68,.18); color: #5fd08a; }
+    .fpr-st.fail { background: rgba(217,45,32,.18); color: #ff6b5e; }
+    .fpr-st.inspection-overdue { background: rgba(240,165,0,.18); color: #f5c842; }
+    .fpr-link { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+                word-break: break-all; color: var(--muted); margin-top: 8px; }
+    /* The code printed on the tag face. Shown beside the serial because when
+       somebody rings up they are reading one of the two, and rarely say which. */
+    .fpr-lbl { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+               padding: 2px 6px; border-radius: 4px; color: var(--muted);
+               border: 1px solid var(--border); }
+    /* Job board */
+    .jb-item { display: block; width: 100%; text-align: left; background: none;
+               border: none; border-bottom: 1px solid var(--border); padding: 11px 13px;
+               cursor: pointer; color: var(--text); }
+    .jb-item:hover { background: var(--surf2); }
+    .jb-item.on { background: var(--surf2); }
+    .jb-top { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+    .jb-wo { font-family: var(--mono); font-size: 12.5px; font-weight: 700; }
+    .jb-title { font-size: 13px; margin-bottom: 3px; }
+    .jb-meta { font-size: 11px; color: var(--muted); }
+    .jb-chip { font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
+               padding: 2px 6px; border-radius: 4px; background: var(--surf2);
+               border: 1px solid var(--border); color: var(--muted); }
+    .jb-chip.open { border-color: var(--accent); color: var(--accent); }
+    .jb-chip.closed { border-color: var(--ok); color: var(--ok); }
+    .jb-count { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+    .jb-form { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+    .jb-row { display: flex; gap: 9px; flex-wrap: wrap; }
+    .jb-row > label { flex: 1; min-width: 150px; font-size: 11.5px; color: var(--muted); }
+    .jb-row input, .jb-row select, .jb-form textarea {
+      width: 100%; margin-top: 3px; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surf); color: var(--text); font-size: 13px; }
+    .jb-form textarea { min-height: 58px; resize: vertical; font-family: inherit; }
+    .jb-who { display: flex; flex-wrap: wrap; gap: 7px; }
+    .jb-who label { display: flex; align-items: center; gap: 6px; font-size: 12.5px;
+                    border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; }
+    .jb-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.5; }
+    .jb-toggle .jb-hint { color: var(--muted); font-size: 11.5px; }
+    .jb-prog { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; overflow: hidden; }
+    .jb-prog-row { display: flex; gap: 9px; padding: 8px 12px; font-size: 12.5px;
+                   border-top: 1px solid var(--border); }
+    .jb-prog-row:first-child { border-top: none; }
+    .jb-prog-row .jb-n { margin-left: auto; font-weight: 700; }
+    .jb-prog-row .jb-last { color: var(--muted); font-size: 11.5px; }
+
+    /* Push to BSI */
+    .fpp-wo { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .fpp-wo-hd { display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+                 background: var(--surf2); font-size: 12.5px; font-weight: 700; }
+    .fpp-wo-hd .fpp-n { margin-left: auto; font-weight: 500; color: var(--muted); font-size: 11.5px; }
+    .fpp-item { display: flex; align-items: center; gap: 9px; padding: 7px 12px;
+                border-top: 1px solid var(--border); font-size: 12.5px; }
+    .fpp-item .fpp-sn { font-family: var(--mono); }
+    .fpp-item .fpp-meta { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+    .fpp-rm { color: var(--warn); font-weight: 700; font-size: 11px; }
+    .fpp-log { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap;
+               background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
+               padding: 10px 12px; height: 300px; overflow-y: auto; }
+    .fpp-wait { border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px;
+                margin-bottom: 10px; font-size: 13px; }
+    .fpp-done { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+                margin-bottom: 10px; font-size: 13px; line-height: 1.6; }
+    .fpr-mini { background: none; border: 1px solid var(--border); border-radius: 5px;
+                color: var(--muted); font-size: 11px; padding: 3px 9px; cursor: pointer;
+                font-family: inherit; }
+    .fpr-mini:hover { color: var(--fg); }
+    .fpr-mini.danger:hover { color: var(--err); border-color: var(--err); }
+    .fpr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+    .fpr-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11px;
+                      color: var(--muted); }
+    .fpr-grid .fpr-wide { grid-column: 1 / -1; }
+    .fpr-grid input { padding: 7px 9px; border-radius: 5px; font-size: 12.5px;
+                      border: 1px solid var(--border); background: var(--surf2);
+                      color: var(--fg); font-family: inherit; }
+    /* Superseded and deleted rows are dimmed but present. The audit trail
+       exists to be read; a history that omits what changed is not one. */
+    .fpr-hist { border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px;
+                margin-bottom: 7px; }
+    .fpr-hist.superseded { opacity: .58; border-style: dashed; }
+    .fpr-hist.deleted { opacity: .5; border-style: dashed; border-color: var(--err); }
+    .fpr-hist-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .fpr-hist-date { font-weight: 700; font-size: 13px; }
+    .fpr-hist-state { margin-left: auto; font-size: 10.5px; text-transform: uppercase;
+                      letter-spacing: .04em; color: var(--muted); }
+    .fpr-hist-reason { font-size: 11.5px; color: #ff6b5e; margin-top: 4px; }
+    .fpr-hist-acts { display: flex; gap: 5px; margin-top: 7px; }
+    .fpr-inline { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .fpr-claim { display: flex; gap: 10px; font-size: 11.5px; padding: 5px 0;
+                 border-bottom: 1px solid var(--border); color: var(--muted); }
+    .fpr-claim span:last-child { flex: 1; word-break: break-all;
+                                 font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; }
+    .fpr-audit { font-size: 11.5px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .fpr-audit span { color: var(--muted); margin-left: 6px; }
+    /* ── Certificate views ───────────────────────────────────────────────── */
+    .vw-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+              border-bottom: 1px solid var(--border); font-size: 12.5px; }
+    .vw-row-label { flex: 1; min-width: 0; }
+    .vw-cidr { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+               color: var(--muted); }
+    .vw-row-n { font-weight: 700; }
+    .vw-del { background: none; border: none; color: var(--muted); cursor: pointer;
+              font-size: 17px; line-height: 1; padding: 0 4px; }
+    .vw-del:hover { color: var(--err); }
+    .vw-add { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px 12px; }
+    .vw-add input, .vw-add select { padding: 7px 9px; border-radius: 5px; font-size: 12px;
+              border: 1px solid var(--border); background: var(--surf2); color: var(--fg);
+              font-family: inherit; }
+    .vw-add button { grid-column: 1 / -1; }
+    .vw-hint { font-size: 11px; color: var(--muted); padding: 0 12px 12px; }
+    /* A bar per day. Deliberately not a charting library: the only question is
+       whether the line is going up, and forty divs answer it. */
+    .vw-spark { display: flex; align-items: flex-end; gap: 2px; height: 50px;
+                padding: 2px 0; }
+    .vw-bar { flex: 1; min-width: 2px; background: var(--accent); border-radius: 1px 1px 0 0;
+              opacity: .75; }
+    .vw-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .vw-tbl th { text-align: left; font-size: 10.5px; text-transform: uppercase;
+                 letter-spacing: .04em; color: var(--muted); font-weight: 700;
+                 padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border); }
+    .vw-tbl td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border); }
+    .vw-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+    .sup-sev.office   { background: rgba(79,110,247,.18); color: #8fa4ff; }
+    .sup-sev.field    { background: rgba(37,162,68,.18);  color: #5fd08a; }
+    .sup-sev.customer { background: rgba(240,165,0,.16);  color: #f5c842; }
+    /* ── Support inbox ────────────────────────────────────────────────────
+       Severity is the organising idea, so it is the loudest thing in the row.
+       A tech saying he cannot finish the job is the only red on this screen. */
+    .sup-filters { margin-left: auto; display: flex; gap: 2px; }
+    .sup-filters .cat-tab { flex: none; padding: 6px 12px; font-size: 12px;
+                            border-bottom: 2px solid transparent; }
+    .sup-item { display: block; width: 100%; text-align: left; background: none;
+                border: none; border-bottom: 1px solid var(--border); cursor: pointer;
+                padding: 10px 12px; color: inherit; font-family: inherit; }
+    .sup-item:hover { background: rgba(255,255,255,.03); }
+    .sup-item.on { background: rgba(255,255,255,.06); }
+    .sup-item.unread .sup-item-subj { font-weight: 700; }
+    .sup-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .sup-item-subj { font-size: 13px; margin-bottom: 3px; }
+    .sup-item-meta { font-size: 11px; color: var(--muted); }
+    .sup-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+               margin-left: auto; }
+    .sup-sev { font-size: 10px; font-weight: 800; letter-spacing: .03em;
+               text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+               background: rgba(255,255,255,.07); color: var(--muted); }
+    .sup-sev.blocking { background: rgba(217,45,32,.18); color: #ff6b5e; }
+    .sup-sev.annoying { background: rgba(240,165,0,.16); color: #f5c842; }
+    .sup-head-subj { font-size: 16px; font-weight: 700; margin-bottom: 7px; }
+    .sup-head-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .sup-chip { font-size: 11px; padding: 2px 7px; border-radius: 4px;
+                background: rgba(255,255,255,.06); color: var(--muted); }
+    /* The context the tech never had to be asked for — most of the value of
+       the whole feature is in this one strip. */
+    .sup-ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px;
+               padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px;
+               font-size: 11.5px; color: var(--muted); }
+    .sup-ctx b { color: var(--fg); font-weight: 600; margin-right: 4px; }
+    .sup-msg { border-radius: 7px; padding: 9px 12px; margin-bottom: 8px; max-width: 88%; }
+    .sup-msg.rep { background: rgba(255,255,255,.05); border: 1px solid var(--border); }
+    .sup-msg.dev { background: rgba(79,110,247,.12);
+                   border: 1px solid rgba(79,110,247,.28);
+                   margin-left: auto; }
+    .sup-msg-who { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+    .sup-msg-body { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .sup-reply { width: 100%; margin-top: 14px; padding: 9px 11px; border-radius: 6px;
+                 border: 1px solid var(--border); background: var(--surf);
+                 color: var(--fg); font-family: inherit; font-size: 13px;
+                 line-height: 1.5; resize: vertical; }
+    .sup-actions { display: flex; gap: 8px; align-items: center; margin-top: 9px; }
+    .sup-status-sel { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+                      background: var(--surf); color: var(--fg); font-family: inherit;
+                      font-size: 12.5px; }
     .cat-msg { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 18px; }
     .cat-msg.err { color: var(--err); }
 
@@ -405,6 +597,28 @@
         <div class="mode-name">Fall Protection</div>
         <div class="mode-desc">Manage models and the checks techs are asked in the field.</div>
       </div>
+      <div class="mode-card" id="home-jobs">
+        <div class="mode-icon">🗓️</div>
+        <div class="mode-name">Job Board</div>
+        <div class="mode-desc">Assign work orders to techs, and see what has come back.</div>
+      </div>
+      <div class="mode-card" id="home-fpr">
+        <div class="mode-icon">📒</div>
+        <div class="mode-name">FP Records</div>
+        <div class="mode-desc">Browse what the field recorded, and correct what is wrong.</div>
+      </div>
+      <div class="mode-card" id="home-views">
+        <div class="mode-icon">👁️</div>
+        <div class="mode-name">Certificate Views</div>
+        <div class="mode-desc">Who has been scanning tags and reading certificates.</div>
+      </div>
+      <!-- Drawn only for the developer. Everyone else never sees it exists. -->
+      <div class="mode-card" id="home-support" style="display:none;">
+        <div class="mode-icon">✉️</div>
+        <div class="mode-name">Support Inbox</div>
+        <div class="mode-desc">What techs have reported from the field app.</div>
+        <div class="mode-credits" id="home-support-count" style="display:none;"></div>
+      </div>
     </div>
     <div class="qr-section">
       <div class="qr-item">
@@ -457,6 +671,219 @@
   </div>
 </div>
 
+<!-- ═══════════════ SCREEN: FALL PROTECTION RECORDS ═══════════════ -->
+<!-- What the field recorded, and the only place it can be corrected.
+
+     Corrections SUPERSEDE — the old row stays, marked not-current — and both
+     correcting and deleting demand a reason. A certificate is a safety
+     document; an edit that silently rewrote one with no trace would make every
+     certificate unfalsifiable after the fact. See supabase/15_fp_records.sql. -->
+<div id="screen-fpr" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-fpr-home">← Home</button>
+      <div class="cat-title">Fall Protection Records</div>
+      <div class="sup-filters">
+        <button class="cat-tab on" data-fpr-status="">All</button>
+        <button class="cat-tab" data-fpr-status="due_soon">Due soon</button>
+        <button class="cat-tab" data-fpr-status="inspection overdue">Overdue</button>
+        <button class="cat-tab" data-fpr-status="fail">Removed</button>
+        <button class="btn-mini" id="btn-fpr-push" style="margin-left:8px;">Push to BSI…</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:330px;">
+        <div class="fpr-search">
+          <input type="text" id="fpr-search" placeholder="Serial, tag, model, manufacturer…">
+        </div>
+        <div class="cat-list-hdr"><span>Items</span><span id="fpr-count"></span></div>
+        <div id="fpr-list"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-empty" id="fpr-empty">Pick an item to see its history.</div>
+        <div id="fpr-detail" style="display:none;"></div>
+        <div class="cat-msg" id="fpr-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: JOB BOARD ═══════════════ -->
+<!-- The lead plans the day here and watches it come back.
+     Two things the code deliberately does NOT do, and should keep not doing:
+     • A job does not own its records. Progress is counted by matching the work
+       order number against the inspections that exist, so work recorded before
+       the job was created still counts, and deleting a job destroys nothing.
+     • An assignment is not a lock. A tech can still record against a work order
+       nobody gave him — a phone that refused would strand somebody sent out at
+       short notice with no signal to fetch the update. -->
+<div id="screen-jobs" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-jb-home">← Home</button>
+      <div class="cat-title">Job Board</div>
+      <div class="sup-filters">
+        <button class="cat-tab on" data-jb-status="">All</button>
+        <button class="cat-tab" data-jb-status="open">Open</button>
+        <button class="cat-tab" data-jb-status="closed">Closed</button>
+        <button class="btn-mini" id="btn-jb-new" style="margin-left:8px;">+ New job</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:320px;">
+        <div class="cat-list-hdr"><span>Jobs</span><span id="jb-count"></span></div>
+        <div id="jb-list"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-empty" id="jb-empty">Pick a job, or create one.</div>
+        <div id="jb-detail" style="display:none;"></div>
+        <div class="cat-msg" id="jb-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: PUSH FALL PROTECTION TO BSI ═══════════════ -->
+<!-- Getting paid for fall protection work. The field records the inspection;
+     BSI is where it becomes an invoice line, and until now that was retyped by
+     hand.
+
+     Two things here are deliberate and should not be "simplified":
+
+     • The operator confirms EACH work order before anything is typed. Nothing
+       on the BSI page reliably says which work order is open, and forty boxes
+       on the wrong one has to be undone by hand, box by box.
+     • A box is recorded as pushed the instant it lands, not when the run ends.
+       BSI drops connections. A run that dies at item 20 of 40 must leave the
+       database knowing those 20 went in, or the re-run bills them twice. -->
+<div id="screen-fppush" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-fpp-back">← Records</button>
+      <div class="cat-title">Push Fall Protection to BSI</div>
+      <div class="sup-filters">
+        <button class="btn-mini" id="btn-fpp-refresh">Refresh</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:400px; padding: 12px;">
+        <div id="fpp-pending"></div>
+      </div>
+      <div class="cat-detail">
+        <div id="fpp-wait" class="fpp-wait" style="display:none;">
+          <div id="fpp-wait-text">Open the work order in BSI, then click Continue.</div>
+          <div style="margin-top:10px;">
+            <button class="btn-ok" id="btn-fpp-continue">Continue</button>
+          </div>
+        </div>
+        <div id="fpp-done" class="fpp-done" style="display:none;"></div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+          <button class="btn-p" id="btn-fpp-start">Start push</button>
+          <button class="btn-g" id="btn-fpp-stop" style="display:none;">Stop</button>
+          <span class="cat-msg" id="fpp-msg" style="margin:0;"></span>
+        </div>
+        <div class="fpp-log" id="fpp-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: CERTIFICATE VIEWS ═══════════════ -->
+<!-- Who has been reading certificates. Until now this was completely invisible:
+     no way to tell whether the tags are being used at all.
+
+     "Office or field" is answered by the NETWORK a view came from, so labelling
+     networks lives on this screen rather than in settings — the label is the
+     thing that makes the report mean anything. No visitor address is stored;
+     see supabase/14_certificate_views.sql. -->
+<div id="screen-views" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-views-home">← Home</button>
+      <div class="cat-title">Certificate Views</div>
+      <div class="sup-filters">
+        <button class="cat-tab" data-views-days="7">7 days</button>
+        <button class="cat-tab on" data-views-days="30">30 days</button>
+        <button class="cat-tab" data-views-days="365">Year</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:300px;">
+        <div class="cat-list-hdr"><span>Who is looking</span></div>
+        <div id="views-who"></div>
+        <div class="cat-list-hdr" style="margin-top:6px;"><span>Named networks</span></div>
+        <div id="views-networks"></div>
+        <div class="vw-add">
+          <input type="text" id="vw-cidr" placeholder="203.0.113.0/24">
+          <input type="text" id="vw-label" placeholder="Batavia office">
+          <select id="vw-kind">
+            <option value="office">Office</option>
+            <option value="field">Field</option>
+            <option value="customer">Customer</option>
+            <option value="other">Other</option>
+          </select>
+          <button class="btn-ok" id="btn-vw-add">Add</button>
+        </div>
+        <div class="vw-hint" id="vw-mine"></div>
+      </div>
+      <div class="cat-detail">
+        <div id="views-body"></div>
+        <div class="cat-msg" id="views-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: SUPPORT INBOX ═══════════════ -->
+<!-- What techs have reported from the field app. Developer only — the card on
+     the home screen is not even drawn for anyone else, and every function
+     behind it re-checks server-side, so hiding it here is presentation rather
+     than the boundary.
+
+     Ordered by what is hurting: anything a tech says is stopping him finishing
+     a job comes first, whatever else is newer. -->
+<div id="screen-support" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-support-home">← Home</button>
+      <div class="cat-title">Support Inbox</div>
+      <div class="sup-filters">
+        <button class="cat-tab on" data-sup-filter="open">Open</button>
+        <button class="cat-tab" data-sup-filter="closed">Closed</button>
+        <button class="cat-tab" data-sup-filter="">All</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list">
+        <div class="cat-list-hdr"><span>Tickets</span><span id="sup-count"></span></div>
+        <div id="sup-list"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-empty" id="sup-empty">Pick a ticket to read it and reply.</div>
+        <div id="sup-detail" style="display:none;">
+          <div id="sup-head"></div>
+          <div id="sup-context"></div>
+          <div class="cat-checks-hdr" style="margin-top:18px;"><span>Conversation</span></div>
+          <div id="sup-thread"></div>
+          <textarea id="sup-reply" class="sup-reply" rows="4"
+                    placeholder="Reply to the tech. This appears in his app."></textarea>
+          <div class="sup-actions">
+            <button class="btn-ok" id="btn-sup-reply">Send reply</button>
+            <select id="sup-status" class="sup-status-sel">
+              <option value="new">New</option>
+              <option value="open">Working on it</option>
+              <option value="answered">Answered</option>
+              <option value="resolved">Fixed</option>
+              <option value="wont_fix">Closed</option>
+            </select>
+          </div>
+          <div class="cat-msg" id="sup-msg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ SCREEN: FALL PROTECTION CATALOG ═══════════════ -->
 <!-- Models and the checks techs are asked in the field. Templates are versioned
      and an inspection pins the version it was performed against, so editing a
@@ -470,15 +897,46 @@
 
     <div class="cat-body">
       <div class="cat-list">
-        <div class="cat-list-hdr">
-          <span>Models</span>
-          <button class="btn-mini" id="btn-new-model">+ New</button>
+        <!-- Types first: a checklist belongs to the TYPE of equipment, not to
+             whoever manufactured it. A model only needs its own list when it
+             genuinely differs from the standard one. -->
+        <div class="cat-tabs">
+          <button class="cat-tab on" id="tab-types">Equipment types</button>
+          <button class="cat-tab" id="tab-models">Models</button>
         </div>
-        <div id="cat-models"></div>
+        <div class="cat-list-hdr">
+          <span id="cat-list-label">Equipment types</span>
+          <button class="btn-mini" id="btn-new-type">+ New</button>
+          <button class="btn-mini" id="btn-new-model" style="display:none;">+ New</button>
+        </div>
+        <div id="cat-types"></div>
+        <div id="cat-models" style="display:none;"></div>
       </div>
 
       <div class="cat-detail" id="cat-detail">
-        <div class="cat-empty" id="cat-empty">Pick a model, or add one.</div>
+        <div class="cat-empty" id="cat-empty">Pick an equipment type, or add one.</div>
+
+        <div id="cat-type-editor" style="display:none;">
+          <div class="cat-row">
+            <div class="cat-field" style="flex:1;">
+              <label>Equipment type</label>
+              <input type="text" id="cat-type-name" autocomplete="off" placeholder="Body harness, Lanyard…">
+            </div>
+          </div>
+          <div class="cat-note" id="cat-type-origin"></div>
+
+          <div class="cat-checks-hdr">
+            <span>Pass/fail parameters asked in the field</span>
+            <span class="cat-ver" id="cat-type-version"></span>
+          </div>
+          <div id="cat-type-checks"></div>
+          <button class="btn-mini" id="btn-add-type-check">+ Add check</button>
+
+          <div class="cat-actions">
+            <button class="btn-p" id="btn-publish-type">Publish to devices</button>
+          </div>
+          <div class="cat-msg" id="cat-type-msg"></div>
+        </div>
 
         <div id="cat-editor" style="display:none;">
           <div class="cat-row">
@@ -491,24 +949,21 @@
               <input type="text" id="cat-model" autocomplete="off">
             </div>
             <div class="cat-field">
-              <label>Item type</label>
-              <input type="text" id="cat-type" autocomplete="off" placeholder="Harness, Lanyard…">
+              <label>Equipment type</label>
+              <select id="cat-type"></select>
             </div>
           </div>
-
-          <label class="cat-check">
-            <input type="checkbox" id="cat-indicator">
-            <span>This model has an impact indicator</span>
-          </label>
           <div class="cat-note">
-            When off, techs are never asked about the indicator — the check is
-            hidden for this model rather than answered "not applicable".
+            The type decides which checks this model is given, including whether
+            techs are asked about an impact indicator at all. Publish here only
+            to override that list for this one model.
           </div>
 
           <div class="cat-checks-hdr">
             <span>Checks asked in the field</span>
             <span class="cat-ver" id="cat-version"></span>
           </div>
+          <div class="cat-note" id="cat-inherited" style="display:none;"></div>
           <div id="cat-checks"></div>
           <button class="btn-mini" id="btn-add-check">+ Add check</button>
 
@@ -741,6 +1196,11 @@
 // ════════════════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// For a value going into a quoted ATTRIBUTE rather than a text node. esc()
+// leaves quotes alone, which is fine between tags and is an escape out of an
+// attribute. Support tickets carry free text written by techs straight into
+// innerHTML, so the distinction has to be made rather than assumed away.
+const escA = s => esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 let _supabaseConfigured = false;
 let _session = null;
@@ -780,6 +1240,10 @@ function updateBadge(session) {
     if (_session) updateBadge(_session);
   }
   showHomeScreen();
+  // The Support card exists only for the developer, so whether to draw it is a
+  // question for the server. Deliberately not awaited: it is one extra card on
+  // the home screen, and the app must not sit on a blank window waiting for it.
+  if (_session) refreshSupportBadge();
 })();
 
 function showHomeScreen() {
@@ -830,6 +1294,10 @@ function goToDestination(dest) {
   else if (dest === 'history') { showScreen('history'); loadHistory(); }
   else if (dest === 'catalog') { showScreen('catalog'); loadCatalog(); }
   else if (dest === 'merge')   { showScreen('merge');   loadMerge(); }
+  else if (dest === 'support') { showScreen('support'); loadSupport(); }
+  else if (dest === 'views')   { showScreen('views');   loadViews(); }
+  else if (dest === 'fpr')     { showScreen('fpr');     loadFpr(); }
+  else if (dest === 'jobs')    { showScreen('jobs');    loadJobBoard(); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -850,6 +1318,7 @@ async function doLogin() {
   if (!result.ok) { showLoginError(result.error); return; }
   _session = result;
   updateBadge(_session);
+  refreshSupportBadge();
 
   const dest = _loginDestination;
   _loginDestination = null;
@@ -993,8 +1462,180 @@ function renderMerge() {
 let _catModels = [];
 let _catSel = null;      // the model being edited, null when adding
 let _catChecks = [];
+let _catTypes = [];
+let _catTypeSel = null;  // the equipment type being edited
+let _catTypeChecks = [];
+let _catTab = 'types';
+
+// How a check is answered, and which answer is a pass. Most are a component
+// judged Pass or Fail. Two are questions — and one of those, the impact
+// indicator, fails on Yes, so the polarity cannot be assumed from the wording.
+const ANSWER_STYLES = [
+  { key: 'pass_fail:true',  label: 'Pass / Fail',   answer_style: 'pass_fail', pass_answer: true  },
+  { key: 'yes_no:true',     label: 'Yes = pass',    answer_style: 'yes_no',    pass_answer: true  },
+  { key: 'yes_no:false',    label: 'Yes = FAIL',    answer_style: 'yes_no',    pass_answer: false },
+];
+const styleKey = c => `${c.answer_style || 'pass_fail'}:${c.pass_answer === false ? 'false' : 'true'}`;
 
 $('btn-catalog-home').addEventListener('click', () => showScreen('home'));
+
+function catTab(which) {
+  _catTab = which;
+  $('tab-types').className  = 'cat-tab' + (which === 'types'  ? ' on' : '');
+  $('tab-models').className = 'cat-tab' + (which === 'models' ? ' on' : '');
+  $('cat-types').style.display  = which === 'types'  ? '' : 'none';
+  $('cat-models').style.display = which === 'models' ? '' : 'none';
+  $('btn-new-type').style.display  = which === 'types'  ? '' : 'none';
+  $('btn-new-model').style.display = which === 'models' ? '' : 'none';
+  $('cat-list-label').textContent = which === 'types' ? 'Equipment types' : 'Models';
+  $('cat-empty').textContent = which === 'types'
+    ? 'Pick an equipment type, or add one.'
+    : 'Pick a model, or add one.';
+  // Only one editor at a time; the panes share the detail column.
+  $('cat-editor').style.display = 'none';
+  $('cat-type-editor').style.display = 'none';
+  $('cat-empty').style.display = '';
+  _catSel = null; _catTypeSel = null;
+  renderCatList(); renderCatTypeList();
+}
+$('tab-types').addEventListener('click', () => catTab('types'));
+$('tab-models').addEventListener('click', () => catTab('models'));
+
+function catTypeMsg(text, isErr) {
+  const el = $('cat-type-msg');
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+async function loadCatTypes() {
+  const res = await window.api.fpListTypes();
+  if (!res.ok) { catTypeMsg(res.error, true); return; }
+  _catTypes = res.types || [];
+  renderCatTypeList();
+  renderTypeOptions();
+}
+
+// The picker on the model editor. A model's checklist follows its type, so the
+// type has to be chosen from the catalogue rather than typed.
+function renderTypeOptions() {
+  const sel = $('cat-type');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">—</option>' +
+    _catTypes.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  sel.value = current;
+}
+
+function renderCatTypeList() {
+  const list = $('cat-types');
+  list.innerHTML = '';
+  if (!_catTypes.length) {
+    list.innerHTML = '<div class="cat-empty" style="padding:16px;">No equipment types yet.</div>';
+    return;
+  }
+  _catTypes.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'cat-item' + (_catTypeSel && _catTypeSel.id === t.id ? ' sel' : '');
+    const n = (t.checks || []).length;
+    row.innerHTML = `
+      <div class="cat-item-name">${esc(t.name)}</div>
+      <div class="cat-item-sub">${n} check${n === 1 ? '' : 's'}${t.template_version ? ` · v${t.template_version}` : ''}</div>`;
+    row.addEventListener('click', () => selectType(t.id));
+    list.appendChild(row);
+  });
+}
+
+function selectType(id) {
+  const t = _catTypes.find(x => x.id === id);
+  if (!t) return;
+  _catTypeSel = t;
+  renderCatTypeList();
+  $('cat-empty').style.display = 'none';
+  $('cat-editor').style.display = 'none';
+  $('cat-type-editor').style.display = '';
+  $('cat-type-name').value = t.name || '';
+  $('cat-type-version').textContent = t.template_version ? `v${t.template_version}` : 'not published yet';
+  $('cat-type-origin').textContent =
+    'Every item of this type is asked these, whoever made it. Publishing writes a '
+    + 'new version — inspections already recorded keep the questions they were asked.';
+  _catTypeChecks = (t.checks || []).map(c => ({
+    code: c.code || '', prompt: c.prompt,
+    answer_style: c.answer_style || 'pass_fail',
+    pass_answer: c.pass_answer !== false,
+  }));
+  renderCatTypeChecks();
+  catTypeMsg('');
+}
+
+$('btn-new-type').addEventListener('click', async () => {
+  const name = String(prompt('Name the equipment type') || '').trim();
+  if (!name) return;
+  catTypeMsg('Saving…');
+  const res = await window.api.fpSaveType({ name });
+  if (!res.ok) { catTypeMsg(res.error, true); return; }
+  await loadCatTypes();
+  // A brand new type has no checks yet, so start it on the two every type asks.
+  _catTypeSel = _catTypes.find(t => t.id === res.id) || null;
+  if (_catTypeSel) selectType(_catTypeSel.id);
+  if (!_catTypeChecks.length) {
+    _catTypeChecks = [
+      { code: 'labels', prompt: 'Are all labels and markings present, secured and legible?',
+        answer_style: 'yes_no', pass_answer: true },
+    ];
+    renderCatTypeChecks();
+  }
+  catTypeMsg('Added. Its checks are not on devices until you publish.');
+});
+
+// One editor for both lists' check rows — the shape is identical.
+function renderCheckRows(el, checks, onChange) {
+  el.innerHTML = '';
+  checks.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'cat-check-row';
+    row.innerHTML = `
+      <input type="text" placeholder="What is the tech asked?">
+      <select>${ANSWER_STYLES.map(o =>
+        `<option value="${o.key}"${styleKey(c) === o.key ? ' selected' : ''}>${esc(o.label)}</option>`
+      ).join('')}</select>
+      <button class="cat-x" title="Remove">×</button>`;
+    const [input, sel, x] = [row.querySelector('input'), row.querySelector('select'), row.querySelector('.cat-x')];
+    input.value = c.prompt;
+    input.addEventListener('input', () => { c.prompt = input.value; });
+    sel.addEventListener('change', () => {
+      const o = ANSWER_STYLES.find(a => a.key === sel.value);
+      if (o) { c.answer_style = o.answer_style; c.pass_answer = o.pass_answer; }
+      onChange();
+    });
+    x.addEventListener('click', () => { checks.splice(i, 1); onChange(); });
+    el.appendChild(row);
+  });
+}
+
+function renderCatTypeChecks() {
+  renderCheckRows($('cat-type-checks'), _catTypeChecks, renderCatTypeChecks);
+}
+
+$('btn-add-type-check').addEventListener('click', () => {
+  _catTypeChecks.push({ code: '', prompt: '', answer_style: 'pass_fail', pass_answer: true });
+  renderCatTypeChecks();
+  const inputs = $('cat-type-checks').querySelectorAll('input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
+
+$('btn-publish-type').addEventListener('click', async () => {
+  if (!_catTypeSel) return;
+  const checks = _catTypeChecks.filter(c => c.prompt.trim());
+  if (!checks.length) { catTypeMsg('Add at least one check before publishing.', true); return; }
+  catTypeMsg('Publishing…');
+  const res = await window.api.fpPublishTypeChecks(_catTypeSel.id, checks);
+  if (!res.ok) { catTypeMsg(res.error, true); return; }
+  await loadCatTypes();
+  const again = _catTypes.find(t => t.name === _catTypeSel.name);
+  if (again) selectType(again.id);
+  catTypeMsg(`Published v${res.version}. Devices pick it up on their next sync. `
+           + 'Inspections already recorded keep the version they were done against.');
+});
 
 function catMsg(text, isErr) {
   const el = $('cat-msg');
@@ -1004,6 +1645,8 @@ function catMsg(text, isErr) {
 
 async function loadCatalog() {
   catMsg('');
+  // Types first — the model editor's picker is filled from them.
+  await loadCatTypes();
   const res = await window.api.fpListModels();
   if (!res.ok) { catMsg(res.error, true); return; }
   _catModels = res.models;
@@ -1025,7 +1668,7 @@ function renderCatList() {
     row.className = 'cat-item' + (_catSel && _catSel.id === m.id ? ' sel' : '');
     row.innerHTML = `
       <div class="cat-item-name">${esc(m.manufacturer)} ${esc(m.model)}</div>
-      <div class="cat-item-sub">${esc(m.item_type || '—')}${m.has_impact_indicator ? ' · indicator' : ''}</div>`;
+      <div class="cat-item-sub">${esc(m.item_type || 'no type set')}</div>`;
     row.addEventListener('click', () => selectModel(m.id));
     list.appendChild(row);
   });
@@ -1040,16 +1683,28 @@ async function selectModel(id) {
   $('cat-editor').style.display = '';
   $('cat-mfr').value = m.manufacturer || '';
   $('cat-model').value = m.model || '';
+  renderTypeOptions();
   $('cat-type').value = m.item_type || '';
-  $('cat-indicator').checked = !!m.has_impact_indicator;
   catMsg('Loading checks…');
 
   const res = await window.api.fpGetChecks(id);
   if (!res.ok) { catMsg(res.error, true); return; }
-  _catChecks = (res.checks || []).map(c => ({ code: c.code || '', prompt: c.prompt }));
+  _catChecks = (res.checks || []).map(c => ({
+    code: c.code || '', prompt: c.prompt,
+    answer_style: c.answer_style || 'pass_fail',
+    pass_answer: c.pass_answer !== false,
+  }));
+  // Say plainly whether this list is the model's own or its type's, so a lead
+  // knows whether publishing creates an override or edits one.
+  const inh = $('cat-inherited');
+  inh.style.display = res.inherited ? '' : 'none';
+  inh.textContent = res.inherited
+    ? 'These come from the equipment type. Publishing here gives this model its '
+      + 'own list, which then stops following the type.'
+    : '';
   $('cat-version').textContent = res.version
     ? `v${res.version}${res.published ? ' · published' : ''}`
-    : 'not published yet';
+    : (res.inherited ? 'following its type' : 'not published yet');
   renderCatChecks();
   catMsg('');
 }
@@ -1059,53 +1714,44 @@ $('btn-new-model').addEventListener('click', () => {
   renderCatList();
   $('cat-empty').style.display = 'none';
   $('cat-editor').style.display = '';
-  ['cat-mfr','cat-model','cat-type'].forEach(id => { $(id).value = ''; });
-  $('cat-indicator').checked = false;
+  ['cat-mfr','cat-model'].forEach(id => { $(id).value = ''; });
+  renderTypeOptions();
+  $('cat-type').value = '';
   $('cat-version').textContent = 'new';
-  // A sensible starting point rather than a blank list — every model is asked
-  // these, and the tech can be given something to trim rather than compose.
-  _catChecks = [
-    { code: 'labels',   prompt: 'Labels and markings present, secured and legible' },
-    { code: 'webbing',  prompt: 'Webbing free of cuts, fraying, chemical damage' },
-    { code: 'stitch',   prompt: 'Stitching intact, no pulled or broken threads' },
-    { code: 'hardware', prompt: 'Hardware free of cracks, corrosion and distortion' },
-  ];
+  // Nothing to compose: a new model follows its type's checklist. Picking the
+  // type fills this in.
+  _catChecks = [];
+  $('cat-inherited').style.display = 'none';
   renderCatChecks();
   catMsg('');
   $('cat-mfr').focus();
 });
 
+// Choosing the type on a model that has no list of its own shows what it will
+// actually be asked, rather than leaving the panel blank until it is saved.
+$('cat-type').addEventListener('change', () => {
+  const t = _catTypes.find(x => x.name === $('cat-type').value);
+  const ownList = $('cat-version').textContent.startsWith('v');
+  if (!t || ownList) return;
+  _catChecks = (t.checks || []).map(c => ({
+    code: c.code || '', prompt: c.prompt,
+    answer_style: c.answer_style || 'pass_fail',
+    pass_answer: c.pass_answer !== false,
+  }));
+  const inh = $('cat-inherited');
+  inh.style.display = '';
+  inh.textContent = 'These come from the equipment type. Publishing here gives this '
+                  + 'model its own list, which then stops following the type.';
+  $('cat-version').textContent = 'following its type';
+  renderCatChecks();
+});
+
 function renderCatChecks() {
-  const el = $('cat-checks');
-  el.innerHTML = '';
-  _catChecks.forEach((c, i) => {
-    const row = document.createElement('div');
-    row.className = 'cat-check-row';
-    row.innerHTML = `
-      <input type="text" data-i="${i}" placeholder="What is the tech asked?">
-      <button class="cat-x" data-x="${i}" title="Remove">×</button>`;
-    row.querySelector('input').value = c.prompt;
-    row.querySelector('input').addEventListener('input', e => {
-      _catChecks[Number(e.target.dataset.i)].prompt = e.target.value;
-    });
-    row.querySelector('[data-x]').addEventListener('click', () => {
-      _catChecks.splice(i, 1);
-      renderCatChecks();
-    });
-    el.appendChild(row);
-  });
-  if ($('cat-indicator').checked) {
-    const note = document.createElement('div');
-    note.className = 'cat-note';
-    note.style.margin = '4px 0 0 0';
-    note.textContent = 'The impact-indicator check is added automatically for this model.';
-    el.appendChild(note);
-  }
+  renderCheckRows($('cat-checks'), _catChecks, renderCatChecks);
 }
 
-$('cat-indicator').addEventListener('change', renderCatChecks);
 $('btn-add-check').addEventListener('click', () => {
-  _catChecks.push({ code: '', prompt: '' });
+  _catChecks.push({ code: '', prompt: '', answer_style: 'pass_fail', pass_answer: true });
   renderCatChecks();
   const inputs = $('cat-checks').querySelectorAll('input');
   if (inputs.length) inputs[inputs.length - 1].focus();
@@ -1117,7 +1763,6 @@ async function saveModel() {
     manufacturer: $('cat-mfr').value.trim(),
     model: $('cat-model').value.trim(),
     item_type: $('cat-type').value.trim(),
-    has_impact_indicator: $('cat-indicator').checked,
   };
   if (!model.manufacturer || !model.model) {
     catMsg('A manufacturer and model are required.', true);
@@ -1151,6 +1796,1052 @@ $('btn-publish').addEventListener('click', async () => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// Fall protection records
+// ════════════════════════════════════════════════════════════════
+// The screen the office uses to find an item and fix what the field got wrong.
+//
+// The whole design point: a correction is visible. The history list shows every
+// version including the superseded ones, marked, so anyone can see what a
+// record used to say and why it changed. Hiding that would make the audit trail
+// pointless — it exists to be read, not merely to exist.
+
+let _fprRows = [];
+let _fprSelected = null;
+let _fprStatus = '';
+let _fprSearchTimer = null;
+
+const FPR_STATUS_LABEL = {
+  pass: 'Pass', fail: 'Removed', 'inspection overdue': 'Overdue',
+};
+
+async function loadFpr() {
+  const res = await window.api.fprList({
+    search: $('fpr-search').value.trim() || null,
+    status: _fprStatus || null,
+    limit: 200,
+  });
+  if (!res.ok) { fprMsg(res.error, true); return; }
+  _fprRows = (res.result && res.result.rows) || [];
+  $('fpr-count').textContent = _fprRows.length ? String(_fprRows.length) : '';
+  renderFprList();
+  if (_fprSelected && !_fprRows.some(r => r.asset_id === _fprSelected)) {
+    _fprSelected = null;
+    $('fpr-detail').style.display = 'none';
+    $('fpr-empty').style.display = '';
+  }
+}
+
+function fprMsg(text, isErr) {
+  const el = $('fpr-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+function renderFprList() {
+  const el = $('fpr-list');
+  if (!_fprRows.length) {
+    el.innerHTML = '<div class="cat-empty" style="padding:18px 12px;">Nothing matches.</div>';
+    return;
+  }
+  el.innerHTML = _fprRows.map(r => {
+    const st = r.effective_status || 'pass';
+    return `<button class="sup-item${r.asset_id === _fprSelected ? ' on' : ''}"
+                    data-fpr-id="${escA(r.asset_id)}">
+      <div class="sup-item-top">
+        <span class="fpr-sn">${esc(r.serial_raw || '—')}</span>
+        ${r.tag_label ? `<span class="fpr-lbl">${esc(r.tag_label)}</span>` : ''}
+        <span class="fpr-st ${escA(st.replace(/\s+/g, '-'))}">${esc(FPR_STATUS_LABEL[st] || st)}</span>
+      </div>
+      <div class="sup-item-meta">${esc([r.item_type, r.manufacturer, r.model].filter(Boolean).join(' · ') || '—')}</div>
+      <div class="sup-item-meta">${r.inspection_date ? 'Inspected ' + esc(r.inspection_date) : 'Never inspected'}${
+        r.next_due_date ? ' · due ' + esc(r.next_due_date) : ''}</div>
+    </button>`;
+  }).join('');
+
+  el.querySelectorAll('[data-fpr-id]').forEach(b => b.addEventListener('click', () => {
+    _fprSelected = b.dataset.fprId;
+    renderFprList();
+    openFprDetail(_fprSelected);
+  }));
+}
+
+async function openFprDetail(assetId) {
+  const res = await window.api.fprDetail(assetId);
+  if (!res.ok) { fprMsg(res.error, true); return; }
+  renderFprDetail(res.detail);
+}
+
+function renderFprDetail(d) {
+  $('fpr-empty').style.display = 'none';
+  const el = $('fpr-detail');
+  el.style.display = '';
+  const a = d.asset || {};
+  const history = d.history || [];
+  const current = history.find(h => h.is_current && !h.is_deleted) || history[0] || {};
+
+  el.innerHTML = `
+    <div class="sup-head-subj">${esc(a.serial_raw || '—')}</div>
+    <div class="sup-head-meta">
+      <span class="sup-chip">${esc(current.item_type || 'No type')}</span>
+      ${a.public_ref ? `<span class="sup-chip vw-mono">${esc(a.public_ref)}</span>` : ''}
+      ${a.tag_label ? `<span class="sup-chip vw-mono">Label ${esc(a.tag_label)}</span>` : ''}
+      ${a.nfc_tag_uid ? `<span class="sup-chip">Chip ${esc(a.nfc_tag_uid)}</span>` : ''}
+    </div>
+    ${a.tag_url ? `<div class="fpr-link">${esc(a.tag_url)}</div>` : ''}
+
+    <div class="cat-checks-hdr" style="margin-top:16px;">
+      <span>Item details</span>
+      <button class="fpr-mini" id="btn-fpr-edit-asset">Correct serial or tag</button>
+    </div>
+    <div id="fpr-asset-form" style="display:none;">
+      <div class="fpr-grid">
+        <label>Serial <input type="text" id="fpa-serial" value="${escA(a.serial_raw || '')}"></label>
+        <label>Tag label <input type="text" id="fpa-label" value="${escA(a.tag_label || '')}"></label>
+        <label>Tag chip id <input type="text" id="fpa-tag" value="${escA(a.nfc_tag_uid || '')}"></label>
+        <label class="fpr-wide">Tag link <input type="text" id="fpa-url" value="${escA(a.tag_url || '')}"></label>
+        <label class="fpr-wide">Why is this changing? <input type="text" id="fpa-reason"
+          placeholder="e.g. Serial was mistyped on first entry"></label>
+      </div>
+      <div class="sup-actions">
+        <button class="btn-ok" id="btn-fpa-save">Save correction</button>
+        <span class="vw-hint">The certificate code never changes — tags already
+          in the field point at it.</span>
+      </div>
+    </div>
+
+    <div class="cat-checks-hdr" style="margin-top:18px;">
+      <span>History</span><span class="cat-ver">${history.length} record${history.length === 1 ? '' : 's'}</span>
+    </div>
+    ${history.map(h => renderFprHistoryRow(h)).join('')}
+
+    ${(d.claims || []).length ? `
+      <div class="cat-checks-hdr" style="margin-top:18px;"><span>Claimed by tag links</span></div>
+      <div class="vw-hint" style="margin-bottom:6px;">Read off a third-party tag. Never counted as an inspection.</div>
+      ${d.claims.map(c => `<div class="fpr-claim">
+          <span>${esc(c.claimed_inspection_date || '—')}</span>
+          <span>${c.claimed_pass === true ? 'passed' : c.claimed_pass === false ? 'FAILED' : (c.claimed_result_text || '—')}</span>
+          <span class="vw-mono">${esc(c.source_url || '')}</span>
+        </div>`).join('')}` : ''}
+
+    ${(d.audit || []).length ? `
+      <div class="cat-checks-hdr" style="margin-top:18px;"><span>Corrections</span></div>
+      ${d.audit.map(x => `<div class="fpr-audit">
+          <b>${esc(x.action)}</b> ${esc(x.reason)}
+          <span>${esc(x.actor_name || '')} · ${esc(new Date(x.created_at).toLocaleDateString())}</span>
+        </div>`).join('')}` : ''}`;
+
+  wireFprDetail(d);
+}
+
+// Superseded and deleted rows are shown, marked. The audit trail exists to be
+// read; a history that quietly omits what was changed is not one.
+function renderFprHistoryRow(h) {
+  const state = h.is_deleted ? 'deleted' : (h.is_current ? 'current' : 'superseded');
+  return `<div class="fpr-hist ${state}">
+    <div class="fpr-hist-top">
+      <span class="fpr-hist-date">${esc(h.inspection_date || '—')}</span>
+      <span class="fpr-st ${h.overall_pass ? 'pass' : 'fail'}">${h.overall_pass ? 'PASS' : 'REMOVED'}</span>
+      <span class="fpr-hist-state">${esc(state)}${h.version > 1 ? ' · v' + esc(h.version) : ''}</span>
+    </div>
+    <div class="sup-item-meta">${esc([h.manufacturer, h.model, h.lot_number && 'lot ' + h.lot_number]
+      .filter(Boolean).join(' · ') || '—')}</div>
+    <div class="sup-item-meta">${esc(h.collector_name || '')}${h.work_order_id ? ' · ' + esc(h.work_order_id) : ''}${
+      h.source ? ' · ' + esc(h.source) : ''}</div>
+    ${h.discard_reason ? `<div class="fpr-hist-reason">${esc(h.discard_reason)}</div>` : ''}
+    <div class="fpr-hist-acts">
+      ${h.is_deleted
+        ? `<button class="fpr-mini" data-fpr-restore="${escA(h.id)}">Restore</button>`
+        : `<button class="fpr-mini" data-fpr-amend="${escA(h.id)}">Correct</button>
+           <button class="fpr-mini danger" data-fpr-del="${escA(h.id)}">Delete</button>`}
+    </div>
+    <div class="fpr-inline" id="fpr-inline-${escA(h.id)}" style="display:none;"></div>
+  </div>`;
+}
+
+function wireFprDetail(d) {
+  const edit = $('btn-fpr-edit-asset');
+  if (edit) edit.addEventListener('click', () => {
+    const f = $('fpr-asset-form');
+    f.style.display = f.style.display === 'none' ? '' : 'none';
+  });
+
+  const save = $('btn-fpa-save');
+  if (save) save.addEventListener('click', async () => {
+    const reason = $('fpa-reason').value.trim();
+    if (!reason) { fprMsg('Say why this item is being changed.', true); return; }
+    const res = await window.api.fprUpdateAsset({
+      asset_id: d.asset.id, serial_raw: $('fpa-serial').value.trim(),
+      tag_label: $('fpa-label').value.trim(),
+      nfc_tag_uid: $('fpa-tag').value.trim(), tag_url: $('fpa-url').value.trim(),
+      reason,
+    });
+    if (!res.ok) { fprMsg(res.error, true); return; }
+    fprMsg('Item corrected. The change is on the audit trail.');
+    await loadFpr();
+    openFprDetail(d.asset.id);
+  });
+
+  // Correcting and deleting both open an inline form rather than a dialog: the
+  // reason is mandatory, and a prompt() that can be dismissed with Enter is how
+  // "because" ends up as the reason on every correction.
+  document.querySelectorAll('[data-fpr-amend]').forEach(b => b.addEventListener('click', () => {
+    fprInline(b.dataset.fprAmend, 'amend', d);
+  }));
+  document.querySelectorAll('[data-fpr-del]').forEach(b => b.addEventListener('click', () => {
+    fprInline(b.dataset.fprDel, 'delete', d);
+  }));
+  document.querySelectorAll('[data-fpr-restore]').forEach(b => b.addEventListener('click', async () => {
+    const res = await window.api.fprRestore({ inspection_id: b.dataset.fprRestore });
+    if (!res.ok) { fprMsg(res.error, true); return; }
+    fprMsg('Record restored.');
+    await loadFpr();
+    openFprDetail(d.asset.id);
+  }));
+}
+
+function fprInline(inspectionId, mode, d) {
+  const box = $('fpr-inline-' + inspectionId);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const h = (d.history || []).find(x => x.id === inspectionId) || {};
+
+  box.style.display = '';
+  box.innerHTML = mode === 'amend'
+    ? `<div class="fpr-grid">
+         <label>Manufacturer <input type="text" id="fpi-mfr" value="${escA(h.manufacturer || '')}"></label>
+         <label>Model <input type="text" id="fpi-model" value="${escA(h.model || '')}"></label>
+         <label>Lot # <input type="text" id="fpi-lot" value="${escA(h.lot_number || '')}"></label>
+         <label>Work order <input type="text" id="fpi-wo" value="${escA(h.work_order_id || '')}"></label>
+         <label class="fpr-wide">Why is this being corrected?
+           <input type="text" id="fpi-reason" placeholder="e.g. Model was recorded from the wrong label"></label>
+       </div>
+       <div class="vw-hint">The tech's answers are not editable here. Changing what
+         was found is re-inspecting, and that is a new inspection.</div>
+       <div class="sup-actions"><button class="btn-ok" id="fpi-save">Save correction</button></div>`
+    : `<div class="fpr-grid">
+         <label class="fpr-wide">Why is this being deleted?
+           <input type="text" id="fpi-reason" placeholder="e.g. Recorded against the wrong item"></label>
+       </div>
+       <div class="vw-hint">The record is kept and stays auditable — it stops
+         appearing on the certificate.</div>
+       <div class="sup-actions"><button class="btn-ok" id="fpi-save" style="background:var(--err);">Delete record</button></div>`;
+
+  $('fpi-save').addEventListener('click', async () => {
+    const reason = $('fpi-reason').value.trim();
+    if (!reason) { fprMsg('A reason is required.', true); return; }
+    const res = mode === 'amend'
+      ? await window.api.fprAmend({
+          inspection_id: inspectionId, reason,
+          manufacturer: $('fpi-mfr').value.trim() || null,
+          model: $('fpi-model').value.trim() || null,
+          lot_number: $('fpi-lot').value.trim(),
+          work_order_id: $('fpi-wo').value.trim() || null,
+        })
+      : await window.api.fprDelete({ inspection_id: inspectionId, reason });
+    if (!res.ok) { fprMsg(res.error, true); return; }
+    fprMsg(mode === 'amend'
+      ? 'Corrected. The previous version is kept and still visible below.'
+      : 'Deleted. The record is kept and stays auditable.');
+    await loadFpr();
+    openFprDetail(d.asset.id);
+  });
+}
+
+$('btn-fpr-home').addEventListener('click', () => showScreen('home'));
+$('fpr-search').addEventListener('input', () => {
+  clearTimeout(_fprSearchTimer);
+  _fprSearchTimer = setTimeout(loadFpr, 250);
+});
+document.querySelectorAll('[data-fpr-status]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-fpr-status]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    _fprStatus = btn.dataset.fprStatus;
+    loadFpr();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// Job board
+// ════════════════════════════════════════════════════════════════
+// Where the lead decides who is doing what, and finds out at four o'clock
+// whether it happened.
+//
+// Progress comes from the inspections themselves, matched on the work order
+// number — so a tech who typed the number by hand, or who was working before
+// the job was created, still shows up here. See supabase/16_assignments.sql.
+
+let _jbJobs = [];
+let _jbTeam = [];
+let _jbSelected = null;
+let _jbStatus = '';
+let _jbEditing = null;   // the job being edited, or {} for a new one
+
+function jbMsg(text, isErr) {
+  const el = $('jb-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+async function loadJobBoard() {
+  const [board, team] = await Promise.all([
+    window.api.jobsBoard(_jbStatus || null),
+    window.api.jobsTeam(),
+  ]);
+  if (!board.ok) { jbMsg(board.error, true); return; }
+  _jbJobs = board.jobs || [];
+  _jbTeam = (team.ok && team.team) || [];
+  $('jb-count').textContent = _jbJobs.length ? String(_jbJobs.length) : '';
+  renderJbList();
+  if (_jbSelected && !_jbJobs.some(j => j.id === _jbSelected)) {
+    _jbSelected = null;
+    $('jb-detail').style.display = 'none';
+    $('jb-empty').style.display = '';
+  } else if (_jbSelected) {
+    renderJbDetail();
+  }
+}
+
+function renderJbList() {
+  const el = $('jb-list');
+  if (!_jbJobs.length) {
+    el.innerHTML = '<div class="cat-empty" style="padding:22px 14px;">No jobs.</div>';
+    return;
+  }
+  el.innerHTML = _jbJobs.map(j => {
+    const who = j.assign_all ? 'Whole team'
+      : ((j.assignees || []).map(a => a.name).join(', ') || 'Nobody yet');
+    return `
+      <button class="jb-item${j.id === _jbSelected ? ' on' : ''}" data-jb="${escA(j.id)}">
+        <div class="jb-top">
+          <span class="jb-wo">${esc(j.wo_number || '')}</span>
+          <span class="jb-chip ${j.status === 'open' ? 'open' : 'closed'}">${esc(j.status)}</span>
+          <span class="jb-count">${j.total || 0} recorded</span>
+        </div>
+        <div class="jb-title">${esc(j.title || j.site || '—')}</div>
+        <div class="jb-meta">${esc(who)}${j.due_date ? ' · due ' + esc(j.due_date) : ''}</div>
+      </button>`;
+  }).join('');
+  el.querySelectorAll('[data-jb]').forEach(b => {
+    b.addEventListener('click', () => { _jbSelected = b.dataset.jb; _jbEditing = null;
+                                        renderJbList(); renderJbDetail(); });
+  });
+}
+
+function jbJob(id) { return _jbJobs.find(j => j.id === id) || null; }
+
+function renderJbDetail() {
+  const j = jbJob(_jbSelected);
+  const el = $('jb-detail');
+  if (!j && !_jbEditing) { el.style.display = 'none'; $('jb-empty').style.display = ''; return; }
+  $('jb-empty').style.display = 'none';
+  el.style.display = '';
+
+  if (_jbEditing) { el.innerHTML = renderJbForm(_jbEditing); wireJbForm(); return; }
+
+  const prog = j.progress || [];
+  const who = j.assign_all ? 'Everybody on the team'
+    : ((j.assignees || []).map(a => a.name).join(', ') || 'Nobody assigned yet');
+
+  el.innerHTML = `
+    <div class="sup-head-subj">${esc(j.title || j.wo_number || '')}</div>
+    <div class="sup-head-meta">
+      <span class="sup-chip">WO# ${esc(j.wo_number || '')}</span>
+      <span class="sup-chip">${j.scope === 'fall_protection' ? 'Fall protection' : 'Ladder'}</span>
+      <span class="sup-chip">${esc(j.status)}</span>
+      ${j.due_date ? `<span class="sup-chip">due ${esc(j.due_date)}</span>` : ''}
+    </div>
+    <div class="sup-ctx">
+      <span><b>Assigned to</b> ${esc(who)}</span>
+      ${j.site ? `<span><b>Site</b> ${esc(j.site)}</span>` : ''}
+      <span><b>Peer visibility</b> ${j.share_peer_work
+        ? 'On — techs can read each other’s submitted work'
+        : 'Off — each tech sees only his own'}</span>
+    </div>
+    ${j.notes ? `<div class="sup-msg"><div class="sup-msg-body">${esc(j.notes)}</div></div>` : ''}
+
+    <div class="jb-prog">
+      ${prog.length
+        ? prog.map(p => `
+            <div class="jb-prog-row">
+              <span>${esc(p.who || 'Unattributed')}</span>
+              <span class="jb-last">${p.last_at ? esc(new Date(p.last_at).toLocaleString()) : ''}</span>
+              <span class="jb-n">${p.n}</span>
+            </div>`).join('')
+        : '<div class="jb-prog-row"><span style="color:var(--muted);">Nothing recorded against this work order yet.</span></div>'}
+    </div>
+    ${j.close_note ? `<div class="sup-ctx"><span><b>Closing note</b> ${esc(j.close_note)}</span></div>` : ''}
+
+    <div class="sup-actions">
+      <button class="fpr-mini" id="btn-jb-edit">Edit</button>
+      ${j.status === 'open'
+        ? '<button class="btn-p" id="btn-jb-close">Mark complete</button>'
+        : '<button class="fpr-mini" id="btn-jb-reopen">Reopen</button>'}
+      <button class="fpr-mini" id="btn-jb-del" style="margin-left:auto;">Delete job</button>
+    </div>
+    <div class="asg-ro" style="font-size:11.5px;color:var(--muted);margin-top:8px;">
+      Deleting removes the plan only. The inspections recorded against this work
+      order are matched by number and are not touched.
+    </div>`;
+
+  const ed = $('btn-jb-edit');
+  if (ed) ed.addEventListener('click', () => { _jbEditing = { ...j }; renderJbDetail(); });
+
+  const close = $('btn-jb-close');
+  if (close) close.addEventListener('click', async () => {
+    const note = prompt('Anything to note about finishing this job? (optional)') ?? '';
+    const res = await window.api.jobsClose({ job_id: j.id, note });
+    if (!res.ok) { jbMsg(res.error, true); return; }
+    jbMsg('Marked complete. It stays on the techs’ phones for two days, marked closed.');
+    await loadJobBoard();
+  });
+
+  const reopen = $('btn-jb-reopen');
+  if (reopen) reopen.addEventListener('click', async () => {
+    const res = await window.api.jobsClose({ job_id: j.id, status: 'open' });
+    if (!res.ok) { jbMsg(res.error, true); return; }
+    jbMsg('Reopened.');
+    await loadJobBoard();
+  });
+
+  const del = $('btn-jb-del');
+  if (del) del.addEventListener('click', async () => {
+    if (!confirm('Delete this job? The inspections recorded against the work order are kept.')) return;
+    const res = await window.api.jobsDelete({ job_id: j.id });
+    if (!res.ok) { jbMsg(res.error, true); return; }
+    _jbSelected = null;
+    jbMsg('Job deleted. The work recorded against it was not touched.');
+    await loadJobBoard();
+  });
+}
+
+function renderJbForm(j) {
+  const assigned = new Set((j.assignees || []).map(a => a.user_id));
+  return `
+    <div class="sup-head-subj">${j.id ? 'Edit job' : 'New job'}</div>
+    <div class="jb-form">
+      <div class="jb-row">
+        <label>Work order #
+          <input type="text" id="jb-wo" value="${escA(j.wo_number || '')}"
+                 ${j.id ? 'readonly title="The work order identifies the job and cannot be changed here."' : ''}>
+        </label>
+        <label>Scope
+          <select id="jb-scope">
+            <option value="ladder"${j.scope === 'ladder' ? ' selected' : ''}>Ladder</option>
+            <option value="fall_protection"${j.scope === 'fall_protection' ? ' selected' : ''}>Fall protection</option>
+          </select>
+        </label>
+        <label>Due
+          <input type="date" id="jb-due" value="${escA(j.due_date || '')}">
+        </label>
+      </div>
+      <div class="jb-row">
+        <label>Title <input type="text" id="jb-title" value="${escA(j.title || '')}"></label>
+        <label>Site <input type="text" id="jb-site" value="${escA(j.site || '')}"></label>
+      </div>
+      <label style="font-size:11.5px;color:var(--muted);">Notes for the techs
+        <textarea id="jb-notes">${esc(j.notes || '')}</textarea>
+      </label>
+
+      <div>
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px;">Assign to</div>
+        <label class="jb-toggle" style="margin-bottom:8px;">
+          <input type="checkbox" id="jb-all"${j.assign_all ? ' checked' : ''}>
+          <span>Everybody on the team
+            <div class="jb-hint">Including anyone hired later — a team-wide job
+              is not expanded into a fixed list.</div></span>
+        </label>
+        <div class="jb-who" id="jb-who">
+          ${_jbTeam.map(m => `
+            <label><input type="checkbox" data-jb-who="${escA(m.user_id)}"
+              ${assigned.has(m.user_id) ? 'checked' : ''}>${esc(m.name || m.email)}</label>`).join('')}
+        </div>
+      </div>
+
+      <label class="jb-toggle">
+        <input type="checkbox" id="jb-share"${j.share_peer_work ? ' checked' : ''}>
+        <span>Let techs see each other’s submitted work
+          <div class="jb-hint">Read-only, and off unless you turn it on. With it
+            off, the server sends each tech only his own records — not merely
+            hidden on screen.</div></span>
+      </label>
+    </div>
+    <div class="sup-actions">
+      <button class="btn-p" id="btn-jb-save">${j.id ? 'Save' : 'Create job'}</button>
+      <button class="fpr-mini" id="btn-jb-cancel">Cancel</button>
+    </div>`;
+}
+
+function wireJbForm() {
+  $('btn-jb-cancel').addEventListener('click', () => { _jbEditing = null; jbMsg(''); renderJbDetail(); });
+
+  // Ticking "everybody" and also naming people is a contradiction the lead
+  // should see resolved, not discover later on somebody's phone.
+  const all = $('jb-all');
+  const syncAll = () => {
+    $('jb-who').style.opacity = all.checked ? '.45' : '1';
+    $('jb-who').querySelectorAll('input').forEach(i => { i.disabled = all.checked; });
+  };
+  all.addEventListener('change', syncAll);
+  syncAll();
+
+  $('btn-jb-save').addEventListener('click', async () => {
+    const wo = $('jb-wo').value.trim();
+    if (!wo) { jbMsg('A work order number is required.', true); return; }
+    const assignAll = all.checked;
+    const who = [...$('jb-who').querySelectorAll('[data-jb-who]')]
+      .filter(i => i.checked).map(i => i.dataset.jbWho);
+    if (!assignAll && !who.length) {
+      // A job assigned to nobody appears on no phone at all, which looks
+      // exactly like the feature being broken.
+      jbMsg('Assign it to somebody, or tick the whole team.', true);
+      return;
+    }
+    const res = await window.api.jobsSave({
+      wo_number: wo,
+      scope: $('jb-scope').value,
+      title: $('jb-title').value.trim(),
+      site: $('jb-site').value.trim(),
+      notes: $('jb-notes').value.trim(),
+      due_date: $('jb-due').value || null,
+      assign_all: assignAll,
+      share_peer_work: $('jb-share').checked,
+      assignees: assignAll ? [] : who,
+    });
+    if (!res.ok) { jbMsg(res.error, true); return; }
+    _jbEditing = null;
+    _jbSelected = res.result && res.result.job ? res.result.job.id : _jbSelected;
+    jbMsg('Saved. It reaches the techs’ phones the next time they have signal.');
+    await loadJobBoard();
+  });
+}
+
+$('btn-jb-home').addEventListener('click', () => showScreen('home'));
+$('btn-jb-new').addEventListener('click', () => {
+  _jbSelected = null;
+  _jbEditing = { scope: 'ladder', assignees: [] };
+  jbMsg('');
+  renderJbList();
+  renderJbDetail();
+});
+document.querySelectorAll('[data-jb-status]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-jb-status]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    _jbStatus = btn.dataset.jbStatus;
+    loadJobBoard();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// Push fall protection to BSI
+// ════════════════════════════════════════════════════════════════
+// The billing half of fall protection. See the screen markup above for why the
+// operator confirms each work order and why a landed box is recorded
+// immediately rather than at the end of the run.
+
+let _fppPending = [];
+let _fppSkip = new Set();   // inspection ids the operator has unticked
+let _fppRunning = false;
+let _fppLanded = 0;
+
+function fppMsg(text, isErr) {
+  const el = $('fpp-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+function fppLog(line) {
+  const el = $('fpp-log');
+  if (!el) return;
+  el.textContent += (el.textContent ? '\n' : '') + line;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function loadFpPush() {
+  const res = await window.api.fprPendingBsi(null);
+  if (!res.ok) { fppMsg(res.error, true); return; }
+  _fppPending = res.pending || [];
+  renderFppPending();
+}
+
+function fppSelected() {
+  return _fppPending.filter(i => !_fppSkip.has(i.inspection_id));
+}
+
+function renderFppPending() {
+  const el = $('fpp-pending');
+  if (!el) return;
+  if (!_fppPending.length) {
+    el.innerHTML = '<div class="cat-empty">Nothing waiting. Every fall protection ' +
+                   'record with a work order has already been pushed.</div>';
+    $('btn-fpp-start').disabled = true;
+    return;
+  }
+  $('btn-fpp-start').disabled = _fppRunning;
+
+  const byWo = new Map();
+  for (const i of _fppPending) {
+    const wo = i.work_order_id || '';
+    if (!byWo.has(wo)) byWo.set(wo, []);
+    byWo.get(wo).push(i);
+  }
+
+  let html = '';
+  for (const [wo, items] of byWo) {
+    const on = items.filter(i => !_fppSkip.has(i.inspection_id)).length;
+    html += '<div class="fpp-wo"><div class="fpp-wo-hd">' +
+      '<input type="checkbox" data-fpp-wo="' + escA(wo) + '"' + (on ? ' checked' : '') + '>' +
+      '<span>' + esc(wo) + '</span>' +
+      '<span class="fpp-n">' + on + ' of ' + items.length + '</span></div>';
+    for (const i of items) {
+      // A removal is a different BSI line from an inspection, and is called out
+      // here so the operator can see what is about to be billed as what.
+      const removed = i.overall_pass === false;
+      html += '<label class="fpp-item">' +
+        '<input type="checkbox" data-fpp-id="' + escA(i.inspection_id) + '"' +
+        (_fppSkip.has(i.inspection_id) ? '' : ' checked') + '>' +
+        '<span class="fpp-sn">' + esc(i.serial_num || '—') + '</span>' +
+        (removed ? '<span class="fpp-rm">REMOVAL</span>' : '') +
+        '<span class="fpp-meta">' + esc([i.item_type, i.inspection_date].filter(Boolean).join(' · ')) +
+        '</span></label>';
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-fpp-id]').forEach(box => {
+    box.addEventListener('change', () => {
+      const id = box.dataset.fppId;
+      if (box.checked) _fppSkip.delete(id); else _fppSkip.add(id);
+      renderFppPending();
+    });
+  });
+  el.querySelectorAll('[data-fpp-wo]').forEach(box => {
+    box.addEventListener('change', () => {
+      const wo = box.dataset.fppWo;
+      for (const i of _fppPending) {
+        if ((i.work_order_id || '') !== wo) continue;
+        if (box.checked) _fppSkip.delete(i.inspection_id); else _fppSkip.add(i.inspection_id);
+      }
+      renderFppPending();
+    });
+  });
+}
+
+function fppSetRunning(running) {
+  _fppRunning = running;
+  $('btn-fpp-start').disabled = running || !_fppPending.length;
+  $('btn-fpp-start').textContent = running ? 'Running…' : 'Start push';
+  $('btn-fpp-stop').style.display = running ? '' : 'none';
+  if (!running) $('fpp-wait').style.display = 'none';
+}
+
+$('btn-fpr-push').addEventListener('click', () => { showScreen('fppush'); loadFpPush(); });
+$('btn-fpp-back').addEventListener('click', () => { showScreen('fpr'); loadFpr(); });
+$('btn-fpp-refresh').addEventListener('click', loadFpPush);
+
+$('btn-fpp-start').addEventListener('click', () => {
+  const items = fppSelected();
+  if (!items.length) { fppMsg('Nothing selected.', true); return; }
+  $('fpp-log').textContent = '';
+  $('fpp-done').style.display = 'none';
+  _fppLanded = 0;
+  fppMsg('');
+  fppSetRunning(true);
+  window.api.fpPushStart(items);
+});
+
+$('btn-fpp-stop').addEventListener('click', () => {
+  window.api.fpPushStop();
+  fppSetRunning(false);
+  fppMsg('Stopped. Anything already added to BSI has been recorded.');
+});
+
+$('btn-fpp-continue').addEventListener('click', () => {
+  $('fpp-wait').style.display = 'none';
+  window.api.fpPushReady();
+});
+
+if (window.api.onFpPushLog) {
+  window.api.onFpPushLog(msg => fppLog(String(msg).replace(/\s+$/, '')));
+  window.api.onFpPushWaiting(() => { $('fpp-wait').style.display = ''; });
+  window.api.onFpPushPushed(rec => {
+    _fppLanded++;
+    // Struck off the pending list as it lands, so what is left on screen is
+    // genuinely what is left to do.
+    _fppPending = _fppPending.filter(i => i.inspection_id !== rec.inspectionId);
+    renderFppPending();
+    fppMsg(_fppLanded + ' added so far.');
+  });
+  window.api.onFpPushComplete(res => {
+    fppSetRunning(false);
+    const t = (res && res.totals) || { pushed: 0, skipped: 0, failed: 0 };
+    const refused = ((res && res.workOrders) || []).filter(w => w.preflight && !w.preflight.ok);
+    let html = '<b>' + (res && res.success ? 'Push finished.' : 'Push finished with problems.') +
+      '</b><br>' + t.pushed + ' added · ' + t.skipped + ' skipped · ' + t.failed + ' failed.';
+    if (res && res.error) html += '<br><span class="err">' + esc(res.error) + '</span>';
+    for (const w of refused) {
+      html += '<br><span class="err">' + esc(w.workOrderId) + ': ' + esc(w.preflight.message) + '</span>';
+    }
+    // Failures are named, not summarised into a count. An unnamed failure is one
+    // nobody goes back for.
+    for (const w of (res && res.workOrders) || []) {
+      for (const f of w.failed || []) {
+        html += '<br>' + esc(w.workOrderId) + ' · ' + esc(f.serialNum) + ': ' + esc(f.error);
+      }
+      for (const sk of w.skipped || []) {
+        html += '<br>' + esc(w.workOrderId) + ' · ' + esc(sk.serial_num || '—') + ': ' + esc(sk.reason);
+      }
+    }
+    $('fpp-done').innerHTML = html;
+    $('fpp-done').style.display = '';
+    loadFpPush();
+  });
+  window.api.onFpPushError(msg => { fppSetRunning(false); fppMsg(String(msg), true); });
+  window.api.onFpPushExited(() => { fppSetRunning(false); });
+}
+
+// ════════════════════════════════════════════════════════════════
+// Certificate views
+// ════════════════════════════════════════════════════════════════
+// The report is only as meaningful as the network labels, so the two are on one
+// screen: an unlabelled network shows as "unknown", and the fix for that is
+// right there rather than buried in settings.
+
+let _viewDays = 30;
+
+const VIEWER_LABEL = {
+  office: 'Office', field: 'Field', customer: 'Customer',
+  other: 'Other', unknown: 'Unknown network',
+};
+
+async function loadViews() {
+  const [sum, nets, mine] = await Promise.all([
+    window.api.viewsSummary(_viewDays),
+    window.api.viewsNetworks(),
+    window.api.viewsMyNetwork(),
+  ]);
+
+  if (!sum.ok) { $('views-msg').textContent = sum.error; $('views-msg').className = 'cat-msg err'; return; }
+  $('views-msg').textContent = '';
+  renderViewsWho(sum.summary);
+  renderViewsBody(sum.summary);
+  renderViewsNetworks(nets.ok ? nets.networks : []);
+
+  // A lead cannot label his own office without being told what it looks like
+  // from the server's side, which is not something he can look up himself.
+  const el = $('vw-mine');
+  if (el && mine.ok && mine.network && mine.network.suggested_cidr) {
+    el.textContent = `This computer appears as ${mine.network.suggested_cidr}`;
+    el.style.cursor = 'pointer';
+    el.onclick = () => { $('vw-cidr').value = mine.network.suggested_cidr; };
+  } else if (el) {
+    el.textContent = '';
+  }
+}
+
+function renderViewsWho(s) {
+  const el = $('views-who');
+  const rows = (s && s.by_viewer) || [];
+  if (!rows.length) {
+    el.innerHTML = '<div class="cat-empty" style="padding:14px 12px;">No views recorded yet.</div>';
+    return;
+  }
+  el.innerHTML = rows.map(r => `
+    <div class="vw-row">
+      <span class="sup-sev ${escA(r.viewer_kind)}">${esc(VIEWER_LABEL[r.viewer_kind] || r.viewer_kind)}</span>
+      <span class="vw-row-label">${esc(r.network_label || '—')}</span>
+      <span class="vw-row-n">${esc(r.hits)}</span>
+    </div>`).join('');
+}
+
+function renderViewsNetworks(nets) {
+  const el = $('views-networks');
+  if (!nets.length) {
+    el.innerHTML = '<div class="cat-empty" style="padding:10px 12px;font-size:12px;">' +
+      'None yet. Without one, every view reads as “unknown”.</div>';
+    return;
+  }
+  el.innerHTML = nets.map(n => `
+    <div class="vw-row">
+      <span class="sup-sev ${escA(n.kind)}">${esc(VIEWER_LABEL[n.kind] || n.kind)}</span>
+      <span class="vw-row-label">${esc(n.label)}<br><span class="vw-cidr">${esc(n.cidr)}</span></span>
+      <button class="vw-del" data-net="${escA(n.id)}" title="Remove">×</button>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-net]').forEach(b => b.addEventListener('click', async () => {
+    const res = await window.api.viewsDeleteNetwork(b.dataset.net);
+    if (!res.ok) { $('views-msg').textContent = res.error; $('views-msg').className = 'cat-msg err'; return; }
+    loadViews();
+  }));
+}
+
+function renderViewsBody(s) {
+  const top = (s && s.top_items) || [];
+  const misses = (s && s.misses) || [];
+  const byDay = (s && s.by_day) || [];
+  const peak = byDay.reduce((m, d) => Math.max(m, d.hits), 0) || 1;
+
+  $('views-body').innerHTML = `
+    <div class="cat-checks-hdr"><span>Views per day</span></div>
+    <div class="vw-spark">${byDay.map(d =>
+      `<span class="vw-bar" style="height:${Math.max(3, Math.round(d.hits / peak * 46))}px"
+             title="${escA(d.day)} — ${escA(d.hits)}"></span>`).join('') ||
+      '<span class="cat-empty">Nothing yet.</span>'}</div>
+
+    <div class="cat-checks-hdr" style="margin-top:18px;"><span>Most looked at</span></div>
+    ${top.length ? `<table class="vw-tbl">
+      <tr><th>Serial</th><th>Certificate</th><th>Views</th><th>Last seen</th></tr>
+      ${top.map(t => `<tr>
+        <td>${esc(t.serial_num || '—')}</td>
+        <td class="vw-mono">${esc(t.public_ref || '—')}</td>
+        <td>${esc(t.hits)}</td>
+        <td>${esc(new Date(t.last_viewed).toLocaleDateString())}</td>
+      </tr>`).join('')}
+    </table>` : '<div class="cat-empty">Nothing yet.</div>'}
+
+    ${misses.length ? `
+      <div class="cat-checks-hdr" style="margin-top:18px;">
+        <span>Tags pointing at nothing</span>
+      </div>
+      <div class="vw-hint" style="margin-bottom:8px;">Each of these is a physical tag
+        somebody scanned that resolves to no record.</div>
+      <table class="vw-tbl">
+        <tr><th>Code</th><th>Serial</th><th>Scans</th><th>Last seen</th></tr>
+        ${misses.map(m => `<tr>
+          <td class="vw-mono">${esc(m.public_ref || '—')}</td>
+          <td>${esc(m.serial_key || '—')}</td>
+          <td>${esc(m.hits)}</td>
+          <td>${esc(new Date(m.last_seen).toLocaleDateString())}</td>
+        </tr>`).join('')}
+      </table>` : ''}`;
+}
+
+$('btn-views-home').addEventListener('click', () => showScreen('home'));
+
+document.querySelectorAll('[data-views-days]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-views-days]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    _viewDays = Number(btn.dataset.viewsDays);
+    loadViews();
+  });
+});
+
+$('btn-vw-add').addEventListener('click', async () => {
+  const cidr = $('vw-cidr').value.trim();
+  const label = $('vw-label').value.trim();
+  if (!cidr || !label) {
+    $('views-msg').textContent = 'A network needs both an address range and a name.';
+    $('views-msg').className = 'cat-msg err';
+    return;
+  }
+  const res = await window.api.viewsSaveNetwork({ cidr, label, kind: $('vw-kind').value });
+  if (!res.ok) { $('views-msg').textContent = res.error; $('views-msg').className = 'cat-msg err'; return; }
+  $('vw-cidr').value = ''; $('vw-label').value = '';
+  // After the reload, not before: loadViews() clears this line, so setting it
+  // first meant the confirmation flashed and vanished.
+  await loadViews();
+  $('views-msg').textContent = 'Saved. Views from that network are labelled from now on — earlier ones keep what they were recorded with.';
+  $('views-msg').className = 'cat-msg';
+});
+
+// ════════════════════════════════════════════════════════════════
+// Support inbox — developer only
+// ════════════════════════════════════════════════════════════════
+// What techs reported from the field app, and the reply that reaches them
+// inside it. The ordering is the opinionated part: a ticket saying "I cannot
+// finish the job" outranks everything newer, because that is somebody standing
+// at a customer's site unable to work.
+
+let _supTickets = [];
+let _supSelected = null;
+let _supFilter = 'open';
+
+const SUP_STATUS_LABEL = {
+  new: 'New', open: 'Working on it', answered: 'Answered',
+  resolved: 'Fixed', wont_fix: 'Closed',
+};
+const SUP_SEVERITY_LABEL = {
+  blocking: 'Cannot finish the job', annoying: 'Has a workaround', idea: 'Idea',
+};
+const SUP_KIND_LABEL = {
+  bug: 'Broken', suggestion: 'Suggestion', question: 'Question', other: 'Other',
+};
+
+async function loadSupport() {
+  const res = await window.api.supportInbox(_supFilter || null);
+  if (!res.ok) { supMsg(res.error, true); _supTickets = []; renderSupList(); return; }
+  _supTickets = res.tickets || [];
+  renderSupList();
+  // Keep whatever was open selected across a refresh, so replying does not
+  // bounce you back to the list.
+  if (_supSelected && !_supTickets.some(t => t.id === _supSelected)) _supSelected = null;
+  if (_supSelected) renderSupDetail();
+}
+
+function supMsg(text, isErr) {
+  const el = $('sup-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'cat-msg' + (isErr ? ' err' : '');
+}
+
+function renderSupList() {
+  const list = $('sup-list');
+  const count = $('sup-count');
+  if (count) count.textContent = _supTickets.length ? String(_supTickets.length) : '';
+  if (!list) return;
+
+  if (!_supTickets.length) {
+    list.innerHTML = '<div class="cat-empty" style="padding:18px 12px;">Nothing here.</div>';
+    return;
+  }
+
+  list.innerHTML = _supTickets.map(t => `
+    <button class="sup-item${t.id === _supSelected ? ' on' : ''}${t.unread_developer ? ' unread' : ''}"
+            data-sup-id="${escA(t.id)}">
+      <div class="sup-item-top">
+        <span class="sup-sev ${escA(t.severity)}">${esc(SUP_SEVERITY_LABEL[t.severity] || t.severity)}</span>
+        ${t.unread_developer ? '<span class="sup-dot"></span>' : ''}
+      </div>
+      <div class="sup-item-subj">${esc(t.subject || '(no subject)')}</div>
+      <div class="sup-item-meta">${esc(t.reporter_name || 'Unknown')} · ${esc(t.ref)}
+        · ${esc(SUP_STATUS_LABEL[t.status] || t.status)}</div>
+    </button>`).join('');
+
+  list.querySelectorAll('[data-sup-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      _supSelected = el.dataset.supId;
+      renderSupList();
+      renderSupDetail();
+      const t = _supTickets.find(x => x.id === _supSelected);
+      // Opening it is what marks it read — not merely having it in the list,
+      // which would clear the badge on tickets nobody looked at.
+      if (t && t.unread_developer) {
+        t.unread_developer = false;
+        window.api.supportMarkRead(t.id).then(refreshSupportBadge);
+        renderSupList();
+      }
+    });
+  });
+}
+
+function renderSupDetail() {
+  const t = _supTickets.find(x => x.id === _supSelected);
+  const empty = $('sup-empty');
+  const detail = $('sup-detail');
+  if (!t) {
+    if (empty) empty.style.display = '';
+    if (detail) detail.style.display = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (detail) detail.style.display = '';
+
+  $('sup-head').innerHTML = `
+    <div class="sup-head-subj">${esc(t.subject || '(no subject)')}</div>
+    <div class="sup-head-meta">
+      <span class="sup-sev ${escA(t.severity)}">${esc(SUP_SEVERITY_LABEL[t.severity] || t.severity)}</span>
+      <span class="sup-chip">${esc(SUP_KIND_LABEL[t.kind] || t.kind)}</span>
+      <span class="sup-chip">${esc(t.ref)}</span>
+      <span class="sup-chip">${esc(t.reporter_name || '')}${t.account_name ? ' · ' + esc(t.account_name) : ''}</span>
+    </div>`;
+
+  // The context the tech never had to be asked for. This is most of the value
+  // of the whole feature: "which version" and "what were you on" answered
+  // correctly, every time, without a back-and-forth.
+  const d = t.device || {};
+  const bits = [
+    ['App', [t.app, t.app_version].filter(Boolean).join(' ')],
+    ['Platform', t.platform],
+    ['Screen', t.screen],
+    ['Queued', d.queued === undefined ? '' : String(d.queued) + (d.queueFailing ? ` (${d.queueFailing} failing)` : '')],
+    ['Online', d.online === undefined ? '' : (d.online ? 'yes' : 'no')],
+    ['Device', d.screen || ''],
+    ['Reported', new Date(t.created_at).toLocaleString()],
+  ].filter(x => x[1]);
+  $('sup-context').innerHTML = '<div class="sup-ctx">' + bits.map(x =>
+    `<span><b>${esc(x[0])}</b> ${esc(x[1])}</span>`).join('') + '</div>';
+
+  $('sup-thread').innerHTML = (t.messages || []).map(m => `
+    <div class="sup-msg ${m.author_role === 'developer' ? 'dev' : 'rep'}">
+      <div class="sup-msg-who">${esc(m.author_role === 'developer' ? 'You' : (m.author_name || 'Tech'))}
+        · ${esc(new Date(m.created_at).toLocaleString())}</div>
+      <div class="sup-msg-body">${esc(m.body)}</div>
+    </div>`).join('');
+
+  $('sup-status').value = t.status;
+  supMsg('');
+}
+
+$('btn-support-home').addEventListener('click', () => showScreen('home'));
+
+document.querySelectorAll('[data-sup-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-sup-filter]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    _supFilter = btn.dataset.supFilter;
+    loadSupport();
+  });
+});
+
+$('btn-sup-reply').addEventListener('click', async () => {
+  const body = $('sup-reply').value.trim();
+  if (!body) { supMsg('Write a reply first.', true); return; }
+  if (!_supSelected) return;
+  $('btn-sup-reply').disabled = true;
+  const res = await window.api.supportReply(_supSelected, body);
+  $('btn-sup-reply').disabled = false;
+  if (!res.ok) { supMsg(res.error, true); return; }
+  $('sup-reply').value = '';
+  await loadSupport();
+  supMsg('Sent. It appears in his app, and he is told there is an answer.');
+  refreshSupportBadge();
+});
+
+$('sup-status').addEventListener('change', async () => {
+  if (!_supSelected) return;
+  const res = await window.api.supportSetStatus(_supSelected, $('sup-status').value);
+  if (!res.ok) { supMsg(res.error, true); return; }
+  await loadSupport();
+  supMsg('Status updated. The tech sees this in his app.');
+});
+
+// Shows the card at all, and how much is waiting on it. Called after sign-in.
+async function refreshSupportBadge() {
+  const card = $('home-support');
+  if (!card) return;
+  // The renderer and the preload are separate files and can be out of step —
+  // during development, or if a packaged build ships a stale preload. A missing
+  // bridge method must leave the card hidden, not throw and take the rest of
+  // the home screen's startup down with it.
+  if (!window.api || typeof window.api.supportAmIDeveloper !== 'function') {
+    card.style.display = 'none';
+    return;
+  }
+
+  const who = await window.api.supportAmIDeveloper().catch(() => null);
+  if (!who || !who.ok || !who.developer) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const res = await window.api.supportCounts().catch(() => null);
+  const el = $('home-support-count');
+  if (!el || !res || !res.ok || !res.counts) return;
+  const c = res.counts;
+  if (!c.open) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  // Blocking first, because that is the number worth acting on today.
+  el.textContent = c.blocking
+    ? `${c.blocking} blocking · ${c.open} open`
+    : `${c.open} open${c.unread ? ` · ${c.unread} unread` : ''}`;
+}
+
+// ════════════════════════════════════════════════════════════════
 // Home
 // ════════════════════════════════════════════════════════════════
 $('home-office').addEventListener('click', () => requireAuth('office'));
@@ -1158,6 +2849,10 @@ $('home-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('home-history').addEventListener('click', () => requireAuth('history'));
 $('home-catalog').addEventListener('click', () => requireAuth('catalog'));
 $('home-merge').addEventListener('click', () => requireAuth('merge'));
+$('home-support').addEventListener('click', () => requireAuth('support'));
+$('home-views').addEventListener('click', () => requireAuth('views'));
+$('home-fpr').addEventListener('click', () => requireAuth('fpr'));
+$('home-jobs').addEventListener('click', () => requireAuth('jobs'));
 $('btn-history-home').addEventListener('click', () => showScreen('home'));
 
 $('btn-signout').addEventListener('click', async () => {
@@ -1167,6 +2862,9 @@ $('btn-signout').addEventListener('click', async () => {
   $('home-title').textContent = 'Welcome to Lia';
   $('home-credits').style.display = 'none';
   $('btn-signout').style.display = 'none';
+  // Whoever signs in next is not the developer until the server says so.
+  $('home-support').style.display = 'none';
+  $('home-support-count').style.display = 'none';
   showScreen('home');
 });
 

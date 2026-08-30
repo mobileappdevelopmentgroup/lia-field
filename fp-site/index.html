@@ -90,6 +90,12 @@
     .chk-mark.na { color: var(--muted); }
     .chk-txt { flex: 1; }
     .chk-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    /* The answer in the tech's own terms — Yes/No for a question, Pass/Fail
+       for a component. */
+    .chk-ans { flex-shrink: 0; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+      text-transform: uppercase; align-self: flex-start; }
+    .chk-ans.pass { color: var(--ok); } .chk-ans.fail { color: var(--err); }
+    .chk-ans.na { color: var(--muted); }
 
     .btn-print { background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
                  padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
@@ -304,9 +310,18 @@ function renderCertificate(rec, checks) {
       const mark = c.result === true ? ['pass','✓']
                  : c.result === false ? ['fail','✕']
                  : ['na','—'];
+      // The tick is the verdict; the word beside it is what the tech actually
+      // answered. They are not the same for every check: "has the impact
+      // indicator been activated? — No" is a PASS, and printing "Pass" against
+      // that question would read as though it had been activated. The view
+      // hands us the label already worded for the question's answer style;
+      // fall back to the verdict for records written before that existed.
+      const answer = c.answer_label || (c.result === true ? 'Pass'
+                                      : c.result === false ? 'Fail' : '');
       return `<div class="chk">
         <div class="chk-mark ${mark[0]}">${mark[1]}</div>
         <div class="chk-txt">${esc(c.prompt)}${c.note ? `<div class="chk-note">${esc(c.note)}</div>` : ''}</div>
+        ${answer ? `<div class="chk-ans ${mark[0]}">${esc(answer)}</div>` : ''}
       </div>`;
     }).join('');
     el('checks-card').classList.add('vis');
@@ -315,32 +330,85 @@ function renderCertificate(rec, checks) {
   el('btn-print').classList.add('vis');
 }
 
+// ── Telling the office a certificate was looked at ────────────────────────────
+// Fire-and-forget, and never allowed to affect the page: a certificate has to
+// render whether or not this succeeds. Nothing is sent about the visitor — the
+// server derives a coarse office/field label from the network and keeps only a
+// /24 prefix. See supabase/14_certificate_views.sql.
+//
+// `?src=app` suppresses it. A tech opening a certificate from inside Lia Field
+// is not a visit, and counting one would drown the only signal this exists to
+// capture: whether anybody outside is actually using the tags.
+function reportView(info) {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('src') === 'app') return;
+    db.rpc('record_certificate_view', { p: Object.assign({
+      source: 'web',
+      user_agent: navigator.userAgent,
+      referrer: document.referrer || null,
+      tz: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || null,
+    }, info) }).then(() => {}, () => {});
+  } catch (_) { /* never block the certificate */ }
+}
+
 // ── Lookup ────────────────────────────────────────────────────────────────────
-// Accepts either a certificate code (public_ref, 10 chars from a fixed
-// alphabet) or a serial number. The tag URL carries the former.
+// Accepts any of the three things a person can be holding: the certificate code,
+// the equipment's serial, or the label printed on the tag itself. A tech in a
+// plant room has one of them and should not have to know which kind it is.
+//
+// Order matters. The certificate code is machine-generated and unambiguous, so
+// it goes first. The serial belongs to the equipment and beats the label, which
+// is only ever a pointer to it — if a label ever collided with a real serial,
+// the equipment's own identity has to win.
 async function lookup(term) {
   const q = String(term || '').trim();
-  if (!q) return;
+  if (!q) return false;
   clearAll();
   showMsg('info-msg', 'Searching…');
 
   try {
     const key = normalize(q);
+    // Which way in they used. Arriving by certificate code means a tag or a QR
+    // code was scanned; a serial means somebody typed it. Those are different
+    // kinds of visit and the report separates them.
+    let _lookupBy = 'ref';
     let { data, error } = await db
       .from('fall_protection_public').select('*')
       .eq('public_ref', key).order('inspection_date', { ascending: false });
     if (error) throw error;
 
     if (!data || !data.length) {
+      _lookupBy = 'serial';
       ({ data, error } = await db
         .from('fall_protection_public').select('*')
         .eq('serial_key', key).order('inspection_date', { ascending: false }));
       if (error) throw error;
     }
 
-    if (!data || !data.length) { renderNotFound(q); return; }
+    // The code printed on the tag face. This is the one somebody reads out over
+    // the phone, so it has to work without them knowing it is not the serial.
+    if (!data || !data.length) {
+      _lookupBy = 'tag_label';
+      ({ data, error } = await db
+        .from('fall_protection_public').select('*')
+        .eq('tag_label_key', key).order('inspection_date', { ascending: false }));
+      if (error) throw error;
+    }
+
+    // A tag that resolves to nothing is worth recording too: it is a physical
+    // tag in the world pointing at a record we do not have.
+    if (!data || !data.length) {
+      reportView({ kind: 'fall_protection', found: false, lookup_by: _lookupBy,
+                   public_ref: _lookupBy === 'ref' ? key : null,
+                   serial_key: _lookupBy !== 'ref' ? key : null });
+      renderNotFound(q);
+      return false;
+    }
 
     const rec = data[0];
+    reportView({ kind: 'fall_protection', found: true, lookup_by: _lookupBy,
+                 public_ref: rec.public_ref, serial_key: rec.serial_key });
     let checks = [];
     const cr = await db.from('fall_protection_checks_public').select('*')
       .eq('public_ref', rec.public_ref)
@@ -349,10 +417,14 @@ async function lookup(term) {
     if (!cr.error) checks = cr.data || [];
 
     renderCertificate(rec, checks);
+    return true;
   } catch (err) {
     clearAll();
     showMsg('err-msg', 'Could not reach the inspection records. Check your connection and try again.');
     console.error(err);
+    // Not "not found" — the network failed. Returning false here would send the
+    // deep-link fallback off to run a second query that fails the same way.
+    return true;
   }
 }
 
@@ -380,12 +452,25 @@ function stopScan() {
 el('btn-scan-cancel').addEventListener('click', stopScan);
 
 // ── Deep links ────────────────────────────────────────────────────────────────
-// ?t=<certificate code> is what the NFC tag carries; ?serial= is for hand-typed
-// links and for parity with the ladder site.
+// Our tags carry BOTH: ?t=<certificate code>&s=<serial>. The code is tried
+// first because it survives the office correcting a mistyped serial — a tag
+// riveted to a harness cannot be rewritten, so the durable identifier has to be
+// the one that leads. The serial is a fallback, and is also what a hand-typed
+// or older ?serial= link carries.
 (function initFromUrl() {
   const p = new URLSearchParams(location.search);
-  const t = p.get('t') || p.get('serial');
-  if (t) { el('search-input').value = t; lookup(t); }
+  const t = p.get('t') || p.get('s') || p.get('serial');
+  if (!t) return;
+  el('search-input').value = t;
+  lookup(t).then(found => {
+    // A tag whose certificate code no longer resolves — the item was merged, or
+    // the code was mistyped into the URL — still has the serial in it. Falling
+    // back beats showing "not registered" for equipment we plainly know about.
+    const s = p.get('s');
+    if (found || !s || s === t) return;
+    el('search-input').value = s;
+    lookup(s);
+  });
 })();
 </script>
 </body>

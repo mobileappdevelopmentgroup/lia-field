@@ -15,8 +15,19 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+// Bumped at release, alongside the service worker cache name in sw.js and the
+// native version strings. It exists so a support ticket can say which build hit
+// the problem: asking a tech on a ladder which version he is running gets a
+// wrong answer or no answer, and a bug report without a build number is a
+// guessing game.
+const LIA_APP_VERSION = '1.7.0';
+
 function goScreen(name) {
-  ['auth','sync','jobs','detail'].forEach(s => {
+  // A tap-through run belongs to one job on one screen. Leaving without ending
+  // it would leave the NFC reader armed behind the tech's back — and on iOS,
+  // Apple's sheet up over whatever he moved to.
+  if (name !== 'detail' && typeof fpBatchStop === 'function') fpBatchStop(false);
+  ['auth','sync','jobs','detail','help'].forEach(s => {
     const el = $(`screen-${s}`);
     if (el) el.classList.toggle('active', s === name);
   });
