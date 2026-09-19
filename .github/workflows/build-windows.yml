@@ -58,9 +58,21 @@ jobs:
       # not expand globs — tsx would receive the literal string "src/*.test.ts",
       # find no such file, and fail the build. Running under bash so the shell
       # expands the pattern before tsx sees it.
+      #
+      # The files are found, not listed. A manual run uses master's copy of this
+      # workflow to build whatever `ref` it is given, so a hardcoded list either
+      # skips a branch's newer test folders or names one that ref doesn't have —
+      # and an unmatched glob reaches tsx as a literal path and fails the build.
       - name: Test
         shell: bash
-        run: npx tsx --test src/*.test.ts
+        run: |
+          mapfile -t tests < <(find src -name '*.test.ts' | sort)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::No test files found under src/"
+            exit 1
+          fi
+          printf 'Running %d test files:\n' "${#tests[@]}"; printf '  %s\n' "${tests[@]}"
+          npx tsx --test "${tests[@]}"
 
       # Code signing is optional so the workflow is useful before the certificate
       # lands. Once you have a .pfx, add these two secrets and every build is signed:
