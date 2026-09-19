@@ -142,9 +142,8 @@ notarization credentials are configured.
 ## What a release still cannot do from here
 
 - **Play upload** — no service-account key. By hand in the Play Console.
-- **Store data declarations** — `docs/STORE-DATA-DECLARATIONS.md`. Web forms in
-  both consoles, and a **hard blocker** for any external release: both stores
-  still say "no data collected", which stopped being true when sync landed.
-  Shipping a syncing build against a stale declaration can pull a listing.
+- **Store data declarations** — web forms in both consoles. Updated for sync on
+  2026-08-24; `docs/STORE-DATA-DECLARATIONS.md` has the answers. Only needs
+  touching again if a release starts sending something new.
 - **macOS notarization** — needs an app-specific password or API key wired into
   electron-builder's `notarize` options.

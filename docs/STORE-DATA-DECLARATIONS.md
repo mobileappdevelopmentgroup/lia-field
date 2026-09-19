@@ -1,12 +1,13 @@
 # Store data declarations — the exact answers
 
 Both stores ask what the app collects, separately from the privacy policy URL.
-**Both currently say "no data collected."** That was true; it stopped being true
-when sync landed.
+**Both were updated on 2026-08-24** (Apple App Privacy and Play Data safety).
+Before that they said "no data collected", which stopped being true when sync
+landed.
 
-Shipping a syncing build against a stale declaration can pull a listing — it is
-a policy violation, not a paperwork problem. Update both in the same submission
-as the first syncing build.
+Shipping against a stale declaration can pull a listing — it is a policy
+violation, not a paperwork problem. When the app starts sending anything not in
+the table below, update this file and both consoles in the same submission.
 
 Nothing below needs a judgement call. It is written so it can be followed
 straight through.

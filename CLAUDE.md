@@ -46,9 +46,10 @@ Privacy policy (required by both stores): <https://lia.mobileappdevelopmentgroup
 source at `inspection-site/privacy.html`. It covers **Lia Field only**; Lia Office is a separate
 data model and is not in scope.
 
-⚠️ **Before shipping any build that syncs**, both stores' data declarations must be updated in the
-same submission — they currently say "no data collected". See `docs/STORE-DATA-DECLARATIONS.md`
-for exactly what to tick. Shipping against a stale declaration can pull the listing.
+Both stores' data declarations were updated for sync on **2026-08-24** (Apple App Privacy and Play
+Data safety) — they no longer say "no data collected". `docs/STORE-DATA-DECLARATIONS.md` records
+exactly what was ticked. **Revisit them whenever the app starts sending something new**; shipping
+against a stale declaration can pull the listing.
 
 The Windows build needs a `LIA_CONFIG_JSON` repo secret (the full body of `config.json`, which is
 gitignored). Signing is optional until a certificate exists: add `WINDOWS_CERT_BASE64` and

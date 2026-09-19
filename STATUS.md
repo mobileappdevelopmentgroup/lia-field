@@ -301,11 +301,12 @@ put the automation in front of a reviewer. A signed installer on a download page
 is the better channel — and needs the same certificate anyway.
 
 **Privacy policy covers Lia Field only.**
-<https://d1uwg2boqwq3l6.cloudfront.net/privacy.html> — source at
-`inspection-site/privacy.html`. Lia Field makes **zero** network calls and keeps
-everything in on-device `localStorage`, so its data-safety declaration is
-"no data collected." Lia Office syncs to Supabase. Do not merge the two policies
-without rewriting the claims — the "collects nothing" line would become false.
+<https://lia.mobileappdevelopmentgroup.com/privacy.html> — source at
+`inspection-site/privacy.html`. *(Superseded 2026-08-24: Lia Field now syncs, so
+the policy was rewritten and both store declarations updated — see
+`docs/STORE-DATA-DECLARATIONS.md`. The line below is kept as history.)* Before
+sync, Lia Field made zero network calls, so its declaration was "no data
+collected". Lia Office is a separate data model and is still out of scope.
 
 **No `ipcRenderer.once()` in preload.** An old TODO suggested it for
 `onComplete`/`onExited`. That would be a bug: the renderer binds at module scope

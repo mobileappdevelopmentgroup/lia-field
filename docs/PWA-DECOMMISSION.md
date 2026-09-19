@@ -14,9 +14,8 @@ browser storage, and there is no way to get it back afterwards.
 Both stores, one release cycle. Nothing below happens until techs are actually
 using the installed app.
 
-Blockers for that release are in `docs/STORE-DATA-DECLARATIONS.md` — the store
-data declarations still say "no data collected", which stopped being true when
-sync landed.
+The store data declarations were updated for sync on 2026-08-24
+(`docs/STORE-DATA-DECLARATIONS.md`), so they no longer block that release.
 
 ## 2. Replace the Pages site with the farewell page
 

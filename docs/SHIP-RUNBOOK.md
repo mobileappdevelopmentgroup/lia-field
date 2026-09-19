@@ -193,7 +193,7 @@ Confirm by hand once, because billing is what changed:
 
 | | Blocks |
 |---|---|
-| **Store data declarations** (`docs/STORE-DATA-DECLARATIONS.md`) — both stores still say "no data collected" | The first syncing release. Shipping against a stale declaration can pull the listing. |
+| ~~**Store data declarations**~~ — updated in both consoles 2026-08-24 (`docs/STORE-DATA-DECLARATIONS.md`) | Nothing now. |
 | **iOS NFC capability** on the App ID in the Apple Developer portal | Phase 8. Everything else is built and compiling; an entitlement cannot grant itself. |
 | **A BSI work order that can be dirtied** | Phase 3 L/C/V/P selectors — and the unanswered question below. |
 | **Windows code-signing certificate** | Signed Windows installers. If it ships on a hardware token, CI signing is impossible. |
