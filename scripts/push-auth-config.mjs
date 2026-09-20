@@ -41,8 +41,22 @@ if (missing.length && !dry) {
   process.exit(1);
 }
 
+const SITE = 'https://lia.mobileappdevelopmentgroup.com/set-password.html';
+
 const dir = new URL('../supabase/email-templates/', import.meta.url);
 const body = {
+  // ── Where a verified link lands ───────────────────────────────────────────
+  // The default is http://localhost:3000, which is what every invitation sent
+  // before 2026-09-20 pointed at: the token was spent, the account was created,
+  // and the person saw "this site can't be reached" with no way back.
+  site_url: SITE,
+  // Redirects are allow-listed. Without the entry, Supabase silently falls back
+  // to site_url — which works here, but only by accident.
+  uri_allow_list: [
+    SITE,
+    'https://lia.mobileappdevelopmentgroup.com/**',
+  ].join(','),
+
   // ── SES ───────────────────────────────────────────────────────────────────
   // Port 587 with STARTTLS: 465 is implicit TLS, which Supabase's mailer does
   // not use, and 25 is blocked by most providers.
@@ -56,6 +70,11 @@ const body = {
   // The built-in limit is set for the built-in mailer. With SES behind it, the
   // ceiling that matters is SES's own send rate, not this.
   rate_limit_email_sent: 100,
+
+  // 24 hours, up from the default hour. A tech reads the invitation in the
+  // evening and sets a password the next morning; an hour makes that a support
+  // call, and re-inviting is the lead's time as well as theirs.
+  mailer_otp_exp: 86400,
 
   // ── Templates ─────────────────────────────────────────────────────────────
   mailer_subjects_invite: 'You have been added to Lia',

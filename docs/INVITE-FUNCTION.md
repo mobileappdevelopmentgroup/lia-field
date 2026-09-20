@@ -87,6 +87,30 @@ not need a test message: open SMTP, STARTTLS, `AUTH LOGIN`, and stop. SES
 answers `235 Authentication successful`. That was done after wiring it, and is
 worth repeating whenever the credentials are rotated.
 
+## Where the link lands
+
+`https://lia.mobileappdevelopmentgroup.com/set-password.html`
+(source: `inspection-site/set-password.html`, deployed with
+`aws s3 cp inspection-site/set-password.html s3://batavia-ladder-inspections/set-password.html --content-type "text/html" --cache-control "no-cache"`).
+
+**Every invitation sent before 2026-09-20 was unusable.** The project's Site URL
+was still Supabase's default, `http://localhost:3000`, so the verify endpoint
+checked the token — spending it — and then redirected to a page on the
+recipient's own machine that does not exist. The account was created and the
+person saw *"this site can't be reached"* with no way forward.
+
+Three things now stop that recurring:
+
+- `site_url` and `uri_allow_list` point at the real page (`push-auth-config.mjs`)
+- the function passes `redirectTo` **explicitly**, so it does not depend on a
+  project setting somebody may change
+- the page reads the error out of the URL fragment and says what to do — an
+  expired or already-used link explains itself instead of showing a blank form
+
+Link lifetime is **24 hours** (`mailer_otp_exp`), up from the default hour: a
+tech who reads the email in the evening and sets a password over breakfast
+should not need a second invitation.
+
 ## What the function will and will not do
 
 | | |

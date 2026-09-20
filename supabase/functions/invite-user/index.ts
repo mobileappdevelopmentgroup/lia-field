@@ -91,6 +91,10 @@ Deno.serve(async (req) => {
   if (!userId) {
     const { data: created, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
       data: name ? { name } : undefined,
+      // Said explicitly rather than relying on the project's Site URL. That
+      // default was http://localhost:3000, and every invitation sent before
+      // 2026-09-20 spent its token and then died on a page nobody could reach.
+      redirectTo: 'https://lia.mobileappdevelopmentgroup.com/set-password.html',
     });
     if (inviteErr || !created?.user) {
       // Supabase's own words: "email rate limit exceeded" when SMTP is not
