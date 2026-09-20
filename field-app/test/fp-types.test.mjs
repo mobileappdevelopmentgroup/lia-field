@@ -1,5 +1,5 @@
 // The equipment type catalogue exists twice: as the seed in
-// supabase/11_fp_equipment_types.sql and as the built-in fallback in
+// supabase/migrations/11_fp_equipment_types.sql and as the built-in fallback in
 // field-app/js/fp-types.js. They are generated from one table, and this fails
 // if they ever drift — a phone asking different questions than the database
 // scores against would corrupt a safety record quietly.
@@ -19,7 +19,7 @@ const ok = (l, g, w) => {
 };
 
 // ── The SQL seed ────────────────────────────────────────────────────────────
-const sql = fs.readFileSync(path.join(ROOT, 'supabase/11_fp_equipment_types.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(ROOT, 'supabase/migrations/11_fp_equipment_types.sql'), 'utf8');
 const m = sql.match(/v_defs jsonb := '(\[[\s\S]*?\])'::jsonb;/);
 if (!m) { console.log('FAIL could not find the seed in 11_fp_equipment_types.sql'); process.exit(1); }
 const seed = JSON.parse(m[1].replace(/''/g, "'"));

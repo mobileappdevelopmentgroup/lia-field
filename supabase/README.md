@@ -1,3 +1,11 @@
+> **Layout changed 2026-09-20.** The numbered migrations moved into
+> `supabase/migrations/`, and `supabase/schema.sql` is a generated snapshot of
+> what they produce — read that when the question is "what shape is the
+> database", rather than piecing it together from twenty-two files.
+> `supabase/MIGRATIONS.md` says what each one did. Nothing was deleted: an
+> applied migration is still how the live database gets changed, and every SQL
+> test builds from them.
+
 # Supabase Setup for Lia
 
 ## 1. Create a Supabase project

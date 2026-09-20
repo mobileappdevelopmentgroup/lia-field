@@ -5,7 +5,7 @@
 \set SUB  '33333333-3333-3333-3333-333333333333'
 
 \ir _helpers.sql
-\ir ../09_fp_authoring.sql
+\ir ../migrations/09_fp_authoring.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 
@@ -65,7 +65,7 @@ DO $$ BEGIN
            (SELECT id FROM fp_models WHERE lower(model)='newton')));
 END $$;
 
-\ir ../09_fp_authoring.sql
+\ir ../migrations/09_fp_authoring.sql
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration keeps published versions',

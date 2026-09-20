@@ -20,7 +20,7 @@
 SET lia.uid = '1a000000-0000-0000-0000-000000000002';   -- Nate
 SELECT record_inspection('{"serial_num":"OLD-1","work_order_id":"WO-OLD"}'::jsonb);
 
-\ir ../19_certificate_attribution.sql
+\ir ../migrations/19_certificate_attribution.sql
 
 -- ── Backfill ────────────────────────────────────────────────────────────────
 DO $$
@@ -136,7 +136,7 @@ BEGIN
 END $$;
 
 -- ── Re-running the migration changes nothing ────────────────────────────────
-\ir ../19_certificate_attribution.sql
+\ir ../migrations/19_certificate_attribution.sql
 
 DO $$
 BEGIN

@@ -53,8 +53,8 @@ profile and credits go.
 2. In the SQL Editor, run in this order:
    - `supabase/dist/reset-and-install.sql` — the reset. It fails loudly rather
      than half-clearing.
-   - `supabase/01_licensing.sql`
-   - `supabase/02_inspections.sql`
+   - `supabase/migrations/01_licensing.sql`
+   - `supabase/migrations/02_inspections.sql`
    - `supabase/dist/apply-all.sql`
 3. Provision each user (step 4 below). The first is the lead; everyone else
    passes that lead's account id and role `'tech'`.
@@ -133,7 +133,7 @@ So unless the users in this database genuinely belong to different companies,
 run this too:
 
 ```sql
--- Paste supabase/10_consolidate_account.sql, then:
+-- Paste supabase/migrations/10_consolidate_account.sql, then:
 SELECT consolidate_to_one_account('your-auth-uuid', 'Batavia');
 ```
 

@@ -1,7 +1,7 @@
 # Onboarding people
 
 Who can be added, by whom, and what each one sees. The structure this describes
-is `supabase/18_umbrella_accounts.sql`.
+is `supabase/migrations/18_umbrella_accounts.sql`.
 
 ---
 

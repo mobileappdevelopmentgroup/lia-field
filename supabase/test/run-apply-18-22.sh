@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# Rehearses the LIVE apply of 18–21.
+# Rehearses the LIVE apply of 18–22: a database built to look like production
+# before that wave (01–17, with data in it), then the wave pasted on top, which
+# is what actually happens in the SQL editor. run.sh is a different test — it
+# applies every migration in sequence from an empty database.
 #
-# The live database carries 01–17. This builds a database that looks like that,
-# with data in it, and applies supabase/dist/apply-18-21.sql on top — which is
-# the thing that actually happens in the SQL editor. run.sh is a different test:
-# it applies every migration in sequence from empty.
+# The bundle is concatenated HERE, into a temp file, rather than read from a
+# checked-in one. A stored bundle goes stale the moment a migration is edited,
+# and a stale bundle pasted into the SQL editor re-runs history against a
+# database that has moved on.
 #
 # Two passes, because "idempotent" is a claim until something re-runs it.
 #
-#   ./supabase/test/run-apply-18-21.sh
+#   ./supabase/test/run-apply-18-22.sh
 set -euo pipefail
 
-DB="${LIA_TEST_DB:-lia_apply1821}"
+DB="${LIA_TEST_DB:-lia_applywave}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPA="$(dirname "$HERE")"
+MIG="$SUPA/migrations"
 
 for p in /opt/homebrew/opt/postgresql@16/bin /opt/homebrew/bin /usr/local/bin; do
   [ -d "$p" ] && PATH="$p:$PATH"
@@ -26,7 +30,7 @@ psql -q -d postgres -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB;"
 run() { psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$1" >/dev/null; }
 
 run "$HERE/00_stub_supabase.sql"
-for f in "$SUPA"/0[1-9]_*.sql "$SUPA"/1[0-7]_*.sql; do run "$f"; done
+for f in "$MIG"/0[1-9]_*.sql "$MIG"/1[0-7]_*.sql; do run "$f"; done
 
 echo "Seeding a production-shaped account…"
 psql -q -v ON_ERROR_STOP=1 -d "$DB" >/dev/null <<'SQL'
@@ -45,10 +49,15 @@ SQL
 BEFORE=$(psql -tA -d "$DB" -c "SELECT tech_name FROM ladder_inspections_public WHERE serial_num='PROD-1'")
 echo "  before: the public certificate names '$BEFORE'"
 
+BUNDLE="$(mktemp -t lia-apply-wave)"
+trap 'rm -f "$BUNDLE"' EXIT
+cat "$MIG"/1[89]_*.sql "$MIG"/2[0-2]_*.sql > "$BUNDLE"
+echo "  bundle: $(wc -l < "$BUNDLE" | tr -d ' ') lines from $(ls "$MIG"/1[89]_*.sql "$MIG"/2[0-2]_*.sql | wc -l | tr -d ' ') migrations"
+
 for pass in 1 2; do
   echo
-  echo "Applying supabase/dist/apply-18-21.sql — pass $pass…"
-  psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$SUPA/dist/apply-18-21.sql" >/dev/null
+  echo "Applying migrations 18-22 as one paste — pass $pass…"
+  psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$BUNDLE" >/dev/null
   echo "  applied cleanly"
 done
 
@@ -81,6 +90,14 @@ BEGIN
   PERFORM pg_temp.want('nobody is impersonating anything', is_impersonating(), false);
   PERFORM pg_temp.want('and the lead is offered nobody to act as, having no subs',
     json_array_length(my_context()->'can_act_as'), 0);
+
+  -- 22 rides in the same wave: the office screens call these, and a missing
+  -- one shows as an error where a list should be.
+  PERFORM pg_temp.want('the onboarding screens have their functions',
+    (SELECT count(*)::int FROM pg_proc
+      WHERE proname IN ('add_subcontractor','my_subcontractors','add_crew_member')), 3);
+  PERFORM pg_temp.want('and the context carries what draws them',
+    (my_context()->>'is_umbrella')::boolean, true);
 END $$;
 SQL
 

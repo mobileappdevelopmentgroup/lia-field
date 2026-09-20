@@ -2,7 +2,7 @@
 
 \set ON_ERROR_STOP on
 \ir _helpers.sql
-\ir ../07_fp_status.sql
+\ir ../migrations/07_fp_status.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 
@@ -64,7 +64,7 @@ DO $$ BEGIN
     (SELECT effective_status FROM fall_protection_public WHERE serial_key='ST1'), 'inspection overdue');
 END $$;
 
-\ir ../07_fp_status.sql
+\ir ../migrations/07_fp_status.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration keeps the constraint',
     (SELECT count(*)::int FROM pg_constraint WHERE conname='fp_status_allowed'), 1);

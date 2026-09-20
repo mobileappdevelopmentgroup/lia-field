@@ -6,7 +6,7 @@
 \set BETA '22222222-2222-2222-2222-222222222222'
 
 \ir _helpers.sql
-\ir ../08_device_snapshot.sql
+\ir ../migrations/08_device_snapshot.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 
@@ -125,7 +125,7 @@ BEGIN
 END $$;
 
 -- ── Idempotency ──────────────────────────────────────────────────────────────
-\ir ../08_device_snapshot.sql
+\ir ../migrations/08_device_snapshot.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration leaves the snapshot working',
     (SELECT count(*)::int > 0 FROM account_snapshot()), true);

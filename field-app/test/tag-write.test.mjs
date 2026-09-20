@@ -34,7 +34,7 @@ const ITEM = {
 };
 
 // ── The URL ────────────────────────────────────────────────────────────────
-// Must match fp_tag_url() in supabase/17_tag_write.sql character for character.
+// Must match fp_tag_url() in supabase/migrations/17_tag_write.sql character for character.
 ok('the URL carries the certificate code and the serial',
    await p.evaluate(i => LiaTagWrite.urlFor(i), ITEM),
    'https://lia.mobileappdevelopmentgroup.com/fp/?t=B7K2M9QRXZ&s=TW-1');

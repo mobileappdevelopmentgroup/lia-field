@@ -18,7 +18,7 @@ VALUES
   -- same ladder, inspected again a year later: legitimate history, must survive
   ('SN-001', '2025-01-09', 'Older Tech', 'WO-11111', '2026-01-09', 'first visit', 'Werner', 'Extension', '28');
 
-\ir ../04_inspections_v2.sql
+\ir ../migrations/04_inspections_v2.sql
 
 -- ── Backfill ─────────────────────────────────────────────────────────────────
 DO $$ BEGIN
@@ -111,7 +111,7 @@ DO $$ BEGIN
 END $$;
 
 -- ── Idempotency ──────────────────────────────────────────────────────────────
-\ir ../04_inspections_v2.sql
+\ir ../migrations/04_inspections_v2.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration creates no extra assets',
     (SELECT count(*)::int FROM assets), 3);

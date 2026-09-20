@@ -17,8 +17,8 @@
 \set ON_ERROR_STOP on
 
 \ir _helpers.sql
-\ir ../20_impersonation.sql
-\ir ../21_impersonation_write_paths.sql
+\ir ../migrations/20_impersonation.sql
+\ir ../migrations/21_impersonation_write_paths.sql
 
 -- ── Who may act as whom ─────────────────────────────────────────────────────
 SET lia.uid = '1a000000-0000-0000-0000-000000000002';   -- Nate, a subcontractor
@@ -176,8 +176,8 @@ BEGIN
 END $$;
 
 -- ── Re-running the migrations changes nothing ───────────────────────────────
-\ir ../20_impersonation.sql
-\ir ../21_impersonation_write_paths.sql
+\ir ../migrations/20_impersonation.sql
+\ir ../migrations/21_impersonation_write_paths.sql
 
 DO $$
 BEGIN

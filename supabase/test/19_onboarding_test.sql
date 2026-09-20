@@ -14,7 +14,7 @@
 \set ON_ERROR_STOP on
 
 \ir _helpers.sql
-\ir ../22_onboarding_rpcs.sql
+\ir ../migrations/22_onboarding_rpcs.sql
 
 INSERT INTO auth.users(id, email) VALUES
   ('1a000000-0000-0000-0000-000000000006', 'newsub@sub.test'),
@@ -183,7 +183,7 @@ BEGIN
 END $$;
 
 -- ── Re-running the migration changes nothing ────────────────────────────────
-\ir ../22_onboarding_rpcs.sql
+\ir ../migrations/22_onboarding_rpcs.sql
 
 DO $$
 BEGIN

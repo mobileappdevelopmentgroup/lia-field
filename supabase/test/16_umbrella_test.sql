@@ -13,7 +13,7 @@
 \set ON_ERROR_STOP on
 
 \ir _helpers.sql
-\ir ../18_umbrella_accounts.sql
+\ir ../migrations/18_umbrella_accounts.sql
 
 INSERT INTO auth.users(id, email) VALUES
   ('1a000000-0000-0000-0000-000000000001', 'office@batavia.test'),
@@ -165,7 +165,7 @@ BEGIN
 END $$;
 
 -- ── Re-running the migration changes nothing ────────────────────────────────
-\ir ../18_umbrella_accounts.sql
+\ir ../migrations/18_umbrella_accounts.sql
 
 DO $$
 DECLARE v_umbrella uuid;

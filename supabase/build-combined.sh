@@ -36,7 +36,7 @@ HDR
   # 10_consolidate_account.sql is skipped on purpose (see the header); every
   # other migration from 03 on is included. Listed explicitly rather than
   # globbed to 09, which silently dropped everything numbered 10 and up.
-  for f in supabase/0[3-9]_*.sql supabase/1[1-9]_*.sql supabase/2[0-9]_*.sql; do
+  for f in supabase/migrations/0[3-9]_*.sql supabase/migrations/1[1-9]_*.sql supabase/migrations/2[0-9]_*.sql; do
     [ -f "$f" ] || continue   # the 2x range is empty until there is a migration 20
     printf '\n-- ┌───────────────────────────────────────────────────────────────────\n'
     printf -- '-- │ %s\n' "$(basename "$f")"

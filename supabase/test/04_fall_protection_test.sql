@@ -6,7 +6,7 @@
 \set BETA '22222222-2222-2222-2222-222222222222'
 
 \ir _helpers.sql
-\ir ../06_fall_protection.sql
+\ir ../migrations/06_fall_protection.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 
@@ -159,7 +159,7 @@ BEGIN
 END $$;
 
 -- ── Idempotency ──────────────────────────────────────────────────────────────
-\ir ../06_fall_protection.sql
+\ir ../migrations/06_fall_protection.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration keeps the catalogue intact',
     (SELECT count(*)::int FROM fp_models), 2);

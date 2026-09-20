@@ -16,7 +16,7 @@ SELECT :'SUB', m.account_id, 'tech', false
   FROM public.account_members m WHERE m.user_id = :'ACME'
 ON CONFLICT (user_id) DO NOTHING;
 
-\ir ../05_rep_and_attribution.sql
+\ir ../migrations/05_rep_and_attribution.sql
 
 -- Give the lead a rep number, the way an admin would.
 UPDATE public.account_members SET rep_number = 'BTV-4471' WHERE user_id = :'ACME';
@@ -100,7 +100,7 @@ DO $$ BEGIN
 END $$;
 
 -- ── Idempotency ──────────────────────────────────────────────────────────────
-\ir ../05_rep_and_attribution.sql
+\ir ../migrations/05_rep_and_attribution.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration preserves the rep number',
     (SELECT rep_number FROM account_members WHERE user_id='11111111-1111-1111-1111-111111111111'),

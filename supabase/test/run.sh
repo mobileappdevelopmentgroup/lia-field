@@ -12,6 +12,7 @@ set -euo pipefail
 DB="${LIA_TEST_DB:-lia_sqltest}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPA="$(dirname "$HERE")"
+MIG="$SUPA/migrations"
 
 for p in /opt/homebrew/opt/postgresql@16/bin /opt/homebrew/bin /usr/local/bin; do
   [ -d "$p" ] && PATH="$p:$PATH"
@@ -30,8 +31,8 @@ run() { psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$1" >/dev/null; }
 
 echo "Applying stubs and baseline migrations…"
 run "$HERE/00_stub_supabase.sql"
-run "$SUPA/01_licensing.sql"
-run "$SUPA/02_inspections.sql"
+run "$MIG/01_licensing.sql"
+run "$MIG/02_inspections.sql"
 
 # 01_billing_test.sql applies 03_accounts_billing.sql itself, so that the
 # backfill runs over realistic pre-migration data rather than an empty table.

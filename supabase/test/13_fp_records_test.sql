@@ -12,7 +12,7 @@
 \set ON_ERROR_STOP on
 
 \ir _helpers.sql
-\ir ../15_fp_records.sql
+\ir ../migrations/15_fp_records.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 

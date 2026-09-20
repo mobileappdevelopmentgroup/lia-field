@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 🔴 HIGH — do first
 - [x] ~~Rotate Supabase anon key~~ — **deliberately dropped 2026-07-29, do not re-open without cause.** The key is a *publishable* browser-side identifier, hardcoded at `inspection-site/index.html:312` and deployed to CloudFront by design — the public inspection site cannot query without it. It is in git history because it was always meant to be public. The real defect was anon's grant on the `inspections` base table, fixed below. Rotating would swap one public identifier for another while requiring three coordinated redeploys (S3 site, macOS DMG, `LIA_CONFIG_JSON` CI secret). Revisit only if the Supabase project shows abnormal API volume.
-- [x] ~~🔴 **`inspections` is readable by anon on the live database.**~~ — **CLOSED 2026-08-24.** The migrations were applied via Route B (`docs/APPLY-MIGRATIONS.md`) and the `REVOKE` in `supabase/02_inspections.sql` finally took effect. Verified from outside with the publishable key after the fact: `GET /rest/v1/inspections` now returns **401 `42501`**, while `ladder_inspections_public` still serves all 1,724 rows. This had been recorded as applied on 2026-07-29 and was not; it is now actually in effect. `supabase/test/run-reset.sh` asserts it stays fixed.
-- [x] ~~`inspections` policies were `USING (true)` / `WITH CHECK (true)` for every authenticated user~~ — any tech could read and overwrite any other company's records. `supabase/04_inspections_v2.sql` replaces them with account-scoped policies and removes the INSERT/UPDATE grants entirely; `record_inspection()` (SECURITY DEFINER) is the only write path. **Applied to the live DB 2026-08-24.**
+- [x] ~~🔴 **`inspections` is readable by anon on the live database.**~~ — **CLOSED 2026-08-24.** The migrations were applied via Route B (`docs/APPLY-MIGRATIONS.md`) and the `REVOKE` in `supabase/migrations/02_inspections.sql` finally took effect. Verified from outside with the publishable key after the fact: `GET /rest/v1/inspections` now returns **401 `42501`**, while `ladder_inspections_public` still serves all 1,724 rows. This had been recorded as applied on 2026-07-29 and was not; it is now actually in effect. `supabase/test/run-reset.sh` asserts it stays fixed.
+- [x] ~~`inspections` policies were `USING (true)` / `WITH CHECK (true)` for every authenticated user~~ — any tech could read and overwrite any other company's records. `supabase/migrations/04_inspections_v2.sql` replaces them with account-scoped policies and removes the INSERT/UPDATE grants entirely; `record_inspection()` (SECURITY DEFINER) is the only write path. **Applied to the live DB 2026-08-24.**
 - [x] ~~Add max-length check on `workOrderId`~~ — the field is now required and capped at 64 chars in `electron/index.html`, and normalized server-side by `wo_key()`.
 - [ ] `config.json` is bundled as plaintext in the DMG (`extraResources`) — consider storing the anon key in macOS Keychain via `keytar` or prompting on first launch
 
@@ -24,15 +24,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Migration state
 
-The live database carries **01–21** as of 2026-09-19, and the accounts were
+The migrations live in `supabase/migrations/`; `supabase/schema.sql` is a
+generated snapshot of what they add up to (`npm run schema` regenerates it,
+`npm run schema:check` fails if it is stale) and `supabase/MIGRATIONS.md` is the
+index. The live database carries **01–22** as of 2026-09-20, and the accounts were
 restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**22 is written, rehearsed and NOT applied** — `supabase/dist/apply-22.sql`.
-Lia Office's *Your Crew* and *Subcontractors* screens error without it, and it
-also replaces `add_crew_member`, which put a new hand in the wrong account when
-the office was acting as a subcontractor.
+**22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and
+*Subcontractors* screens call, and it replaced `add_crew_member`, which put a
+new hand in the wrong account when the office was acting as a subcontractor.
 
 Onboarding people is `docs/ONBOARDING.md`. Before writing any bundle
 for it, check what is actually live rather than trusting this file:
@@ -110,8 +112,11 @@ npm run check:www          # Fails if a Capacitor bundle is behind field-app/
 npm run sync:www           # Bring the three Capacitor bundles up to date
 npm run capture:help       # Regenerate the manual's screenshots from the live app
 
-./supabase/test/run-apply-18-21.sh   # Rehearse the live apply of 18-21 on a
-                                     # database built to look like production
+npm run schema             # Regenerate supabase/schema.sql from the migrations
+npm run schema:check       # Fail if that snapshot is stale
+
+./supabase/test/run-apply-18-22.sh   # Rehearse a live paste on a database
+                                     # built to look like production
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -161,7 +166,7 @@ SQL migrations live in `supabase/` and are safe to re-run (idempotent). Run `01_
 ### Fall protection checklists
 
 A checklist belongs to the **equipment type**, not the manufacturer or model —
-`supabase/11_fp_equipment_types.sql` seeds the fourteen standard types with the
+`supabase/migrations/11_fp_equipment_types.sql` seeds the fourteen standard types with the
 pass/fail parameters each one carries. Manufacturer, model, lot number and date
 of manufacture are recorded *about* an item; they do not select its questions. A
 model may be given its own list, which overrides its type's.
@@ -252,7 +257,7 @@ is not retroactive, and the screen says so.
 
 ### Correcting fall-protection records, and pushing them to BSI
 
-`supabase/15_fp_records.sql` is the office's side of what the field recorded. A
+`supabase/migrations/15_fp_records.sql` is the office's side of what the field recorded. A
 correction **supersedes** — the old row stays, marked, and both correcting and
 deleting demand a typed reason. Deleting is soft and promotes the previous
 version *of the same date* (`is_current` is per `(asset_id, inspection_date)`,
@@ -280,7 +285,7 @@ rules, all load-bearing:
 
 ### Umbrella accounts, and who a certificate names
 
-`supabase/18_umbrella_accounts.sql` through `21`. Batavia holds the contracts
+`supabase/migrations/18_umbrella_accounts.sql` through `21`. Batavia holds the contracts
 and parses the work out to lead subcontractors, each running their own operation
 with their own field people. An account therefore has a **parent**, and
 visibility runs in two directions:
@@ -317,7 +322,7 @@ links do **not** follow a session yet.
 
 ### Job assignment
 
-`supabase/16_assignments.sql`. The lead plans the day on the Job Board in Lia
+`supabase/migrations/16_assignments.sql`. The lead plans the day on the Job Board in Lia
 Office; the phone pulls it at every start via `my_jobs()` and caches it in
 localStorage, so a tech with no signal still sees yesterday's plan, marked as of
 when it was fetched.
@@ -337,7 +342,7 @@ On an assigned job the work order number is the lead's: the field is `readOnly`
 
 ### Writing tags, and the five ways to one record
 
-`supabase/17_tag_write.sql`. `LiaNfc.write()` had existed with no caller; this is
+`supabase/migrations/17_tag_write.sql`. `LiaNfc.write()` had existed with no caller; this is
 the other half. A tech writes our own tag onto a piece of equipment and from then
 on **five** identifiers reach the same record:
 

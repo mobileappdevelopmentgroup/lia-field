@@ -15,7 +15,7 @@ ON CONFLICT DO NOTHING;
 SELECT create_lia_user(:'ACME', 'lead@acme.com', 'Acme Lead',  3);
 SELECT create_lia_user(:'BETA', 'boss@beta.com', 'Beta Boss', -1);
 
-\ir ../03_accounts_billing.sql
+\ir ../migrations/03_accounts_billing.sql
 
 -- ── Backfill ─────────────────────────────────────────────────────────────────
 DO $$ BEGIN
@@ -89,7 +89,7 @@ DO $$ BEGIN
 END $$;
 
 -- ── Idempotency: the migration must survive being re-run over live data ──────
-\ir ../03_accounts_billing.sql
+\ir ../migrations/03_accounts_billing.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the migration creates no duplicate accounts',
     (SELECT count(*)::int FROM accounts), 2);

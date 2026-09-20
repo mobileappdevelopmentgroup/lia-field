@@ -181,7 +181,7 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
 ### Done 2026-08-25
 
 - **The fourteen equipment types are in**, with the per-type pass/fail
-  parameters from Batavia's sheet. `supabase/11_fp_equipment_types.sql` seeds
+  parameters from Batavia's sheet. `supabase/migrations/11_fp_equipment_types.sql` seeds
   them; `field-app/js/fp-types.js` is the device-side copy, generated from the
   same table with a test that fails if they drift.
 - **The checklist moved from the model to the equipment type.** It had hung off
@@ -450,7 +450,7 @@ clears the channel first.
 
 ## Still open
 
-**✅ The `REVOKE` is applied.** `supabase/02_inspections.sql` was re-run against
+**✅ The `REVOKE` is applied.** `supabase/migrations/02_inspections.sql` was re-run against
 the live database on 2026-07-29. Anon no longer has any grant on the
 `inspections` base table.
 

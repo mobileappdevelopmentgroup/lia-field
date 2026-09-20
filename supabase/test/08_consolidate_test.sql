@@ -3,7 +3,7 @@
 
 \set ON_ERROR_STOP on
 \ir _helpers.sql
-\ir ../10_consolidate_account.sql
+\ir ../migrations/10_consolidate_account.sql
 
 DO $$
 DECLARE v_before_accounts int; v_before_insp int; v_res json;

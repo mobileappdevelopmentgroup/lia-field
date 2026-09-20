@@ -16,7 +16,7 @@
 \set SUB  '33333333-3333-3333-3333-333333333333'
 
 \ir _helpers.sql
-\ir ../17_tag_write.sql
+\ir ../migrations/17_tag_write.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 

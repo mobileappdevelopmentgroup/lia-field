@@ -25,7 +25,7 @@ Lia is an internal toolset for Batavia ladder repair operations. It has three pa
      }
    }
    ```
-2. Run the SQL migrations in `supabase/01_licensing.sql` then `supabase/02_inspections.sql` via the Supabase SQL editor (safe to re-run).
+2. Run the SQL migrations in `supabase/migrations/01_licensing.sql` then `supabase/migrations/02_inspections.sql` via the Supabase SQL editor (safe to re-run).
 3. Install the DMG from `dist/Lia-x.x.x-arm64.dmg`.
 
 ### Building
@@ -105,8 +105,8 @@ aws s3 cp fp-site/index.html s3://batavia-ladder-inspections/fp/index.html \
 
 ## Supabase
 
-- **`supabase/01_licensing.sql`** — User accounts, credits, `consume_credit` and `get_my_profile` RPC functions
-- **`supabase/02_inspections.sql`** — Inspections table, RLS policies, `ladder_inspections_public` view
+- **`supabase/migrations/01_licensing.sql`** — User accounts, credits, `consume_credit` and `get_my_profile` RPC functions
+- **`supabase/migrations/02_inspections.sql`** — Inspections table, RLS policies, `ladder_inspections_public` view
 
 Both files are idempotent (safe to re-run).
 

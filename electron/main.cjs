@@ -392,7 +392,7 @@ ipcMain.handle('fp:get-checks', async (_event, modelId) => {
 // ── Fall protection records ────────────────────────────────────────────────
 // Browsing, correcting and deleting what the field recorded. Every write goes
 // through a SECURITY DEFINER function that supersedes rather than overwrites
-// and demands a reason — see supabase/15_fp_records.sql for why a certificate
+// and demands a reason — see supabase/migrations/15_fp_records.sql for why a certificate
 // is never destroyed.
 ipcMain.handle('fpr:list', async (_event, opts) => {
   try {
@@ -445,7 +445,7 @@ ipcMain.handle('fpr:pending-bsi', async (_event, workOrder) => {
 // ── Certificate views ──────────────────────────────────────────────────────
 // Who has been reading certificates. The interesting question is office versus
 // field, and that is answered by the network the view came from — so labelling
-// networks is part of the same screen. See supabase/14_certificate_views.sql
+// networks is part of the same screen. See supabase/migrations/14_certificate_views.sql
 // for why an address is never stored.
 ipcMain.handle('views:summary', async (_event, days) => {
   try {
@@ -497,7 +497,7 @@ ipcMain.handle('views:my-network', async () => {
 
 // ── Support inbox ──────────────────────────────────────────────────────────
 // What techs have reported from the field app. Visible only to whoever is
-// flagged is_developer in the database — see supabase/13_support.sql. That is a
+// flagged is_developer in the database — see supabase/migrations/13_support.sql. That is a
 // property of the signed-in user, checked server-side by every one of these
 // functions, so hiding the screen here is presentation and not the security
 // boundary.
@@ -567,7 +567,7 @@ ipcMain.handle('support:mark-read', async (_event, ticketId) => {
 // Both are server-checked: add_crew_member follows the working context (so the
 // office acting as a subcontractor adds THEIR crew), add_subcontractor refuses
 // unless the caller really is the umbrella and is not acting as anybody.
-// See supabase/22_onboarding_rpcs.sql.
+// See supabase/migrations/22_onboarding_rpcs.sql.
 ipcMain.handle('team:add', async (_event, member) => {
   try {
     const sb = await getSupabase();
@@ -613,7 +613,7 @@ ipcMain.handle('subs:add', async (_event, sub) => {
 // ── Working context: whose account am I in ─────────────────────────────────
 // The umbrella (Batavia) can act as a lead subcontractor, to show them how the
 // job is done or to see exactly what they see. While a session is active EVERY
-// query and every write runs as that account — see supabase/20_impersonation.sql.
+// query and every write runs as that account — see supabase/migrations/20_impersonation.sql.
 //
 // The server decides who may act as whom; this is the transport. The renderer
 // must never be the thing that enforces it, and must never cache the answer:
@@ -726,7 +726,7 @@ ipcMain.handle('fp:publish-checks', async (_event, modelId, checks) => {
 // The RPC supersedes an existing record instead of overwriting it, and carries
 // forward any value this write omits — so a re-import can no longer blank out
 // notes a tech typed, and two techs on the same serial no longer erase each
-// other. See supabase/04_inspections_v2.sql.
+// other. See supabase/migrations/04_inspections_v2.sql.
 async function recordInspections(sb, rows, workOrderId, techName, source) {
   const records = rows.map(row => {
     const rec = { serial_num: row.serial, tech_name: techName, source: source || 'office' };
@@ -934,7 +934,7 @@ ipcMain.on('automation:resume', () => {
 // ── Job assignment ─────────────────────────────────────────────────────────
 // The lead's plan for the day: which work orders exist, who is on each, and
 // how much has landed. Every write is lead-gated server-side in
-// supabase/16_assignments.sql — the desktop only decides what to draw.
+// supabase/migrations/16_assignments.sql — the desktop only decides what to draw.
 ipcMain.handle('jobs:board', async (_event, status) => {
   try {
     const sb = await getSupabase();

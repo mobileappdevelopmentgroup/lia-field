@@ -91,7 +91,7 @@ At this point the app cannot see any inspection. That is normal and temporary.
 
 ## Step 3 — consolidate onto one account  ← do not skip
 
-Paste `supabase/10_consolidate_account.sql`, then run with your own auth UUID
+Paste `supabase/migrations/10_consolidate_account.sql`, then run with your own auth UUID
 (Supabase dashboard → Authentication → Users → copy the id for the Alex account):
 
 ```sql

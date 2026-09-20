@@ -12,7 +12,7 @@
 \set ALEX '11111111-1111-1111-1111-111111111111'
 
 \ir _helpers.sql
-\ir ../14_certificate_views.sql
+\ir ../migrations/14_certificate_views.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 

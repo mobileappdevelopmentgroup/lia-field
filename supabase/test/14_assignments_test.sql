@@ -16,7 +16,7 @@
 \set OTHER '99999999-9999-9999-9999-999999999999'
 
 \ir _helpers.sql
-\ir ../16_assignments.sql
+\ir ../migrations/16_assignments.sql
 
 -- Two sub-techs on Alex's account, and one person on a different company
 -- entirely — the account boundary needs somebody standing outside it.

@@ -13,7 +13,7 @@
 \set MALLORY '99999999-9999-9999-9999-999999999999'
 
 \ir _helpers.sql
-\ir ../12_tag_links.sql
+\ir ../migrations/12_tag_links.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 

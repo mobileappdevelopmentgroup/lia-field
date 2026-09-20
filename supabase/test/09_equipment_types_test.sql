@@ -12,7 +12,7 @@
 \set SUB  '33333333-3333-3333-3333-333333333333'
 
 \ir _helpers.sql
-\ir ../11_fp_equipment_types.sql
+\ir ../migrations/11_fp_equipment_types.sql
 
 SET lia.uid = '11111111-1111-1111-1111-111111111111';
 
@@ -64,7 +64,7 @@ DO $$ BEGIN
 END $$;
 
 -- Re-running the migration must not spawn a v2 or undo an edit.
-\ir ../11_fp_equipment_types.sql
+\ir ../migrations/11_fp_equipment_types.sql
 DO $$ BEGIN
   PERFORM pg_temp.want('re-running the seed is idempotent',
     (SELECT max(version)::int FROM fp_check_templates

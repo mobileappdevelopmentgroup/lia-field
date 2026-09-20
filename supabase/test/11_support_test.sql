@@ -14,7 +14,7 @@
 \set DEV  '77777777-7777-7777-7777-777777777777'
 
 \ir _helpers.sql
-\ir ../13_support.sql
+\ir ../migrations/13_support.sql
 
 -- The developer is not a member of the customer's company: that is the point of
 -- the flag. He gets a users row and nothing else.
