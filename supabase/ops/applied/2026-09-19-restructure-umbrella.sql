@@ -30,6 +30,12 @@
 -- kept, read the result), then add COMMIT; and run again.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ⚠️ SUPERSEDED IN PART, 2026-09-20: Nate's technician number is **763**.
+-- The 734 below is what was run on the day and is kept for the record, but
+-- 734 was never his — see ops/2026-09-20-nate-rep-number.sql, which also
+-- corrected the number stamped on every certificate he had already issued.
+-- Do not re-run this script expecting 734 to be right.
+
 BEGIN;
 
 CREATE TEMP TABLE _before ON COMMIT DROP AS

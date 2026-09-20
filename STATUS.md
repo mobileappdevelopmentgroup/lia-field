@@ -62,7 +62,7 @@ with migrations 11–17 live on production (`docs/RELEASE.md` is how it was done
 ### Done 2026-09-19 — the account model became an umbrella
 
 Batavia holds the contracts and parses the work out to lead subcontractors
-(Nate · 734 · Pennsylvania, Michael · 738 · California), each running their own
+(Nate · 763 · Pennsylvania, Michael · 738 · California), each running their own
 crew. The flat one-account-per-company model could not express that, and two
 leads in one account would have shared everything. Four migrations, written,
 tested and **not yet applied**:
