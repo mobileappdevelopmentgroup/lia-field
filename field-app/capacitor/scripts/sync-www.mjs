@@ -55,6 +55,15 @@ const COPY = [
   'icon-192.png',
   'icon-512.png',
   'icon-1024.png',
+  // The project URL and PUBLISHABLE key. Without it a store build cannot reach
+  // Supabase at all: isConfigured() is false, so the app opens straight into
+  // local-only logging and the sign-in screen is unreachable. That is exactly
+  // what shipped in 1.7.0 — the phone builds had no config.json, so nobody
+  // could sign in on a handset.
+  //
+  // It is gitignored, so a fresh clone has none. That is handled below rather
+  // than by failing: a developer without it still gets a working local build.
+  'config.json',
 ];
 
 // Directories that are pruned — a module deleted from field-app/ must stop
@@ -188,7 +197,15 @@ for (const target of TARGETS) {
     });
   };
 
-  COPY.forEach(copyTree);
+  COPY.forEach((rel) => {
+    // config.json is the one optional entry: absent on a fresh clone, and a
+    // local-only bundle is a legitimate outcome rather than an error.
+    if (rel === 'config.json' && !fs.existsSync(path.join(SRC, rel))) {
+      console.log('    (no config.json — this bundle will be local-only)');
+      return;
+    }
+    copyTree(rel);
+  });
   PRUNE.forEach(prune);
 
   const name = path.relative(path.resolve(SRC, '..'), target);

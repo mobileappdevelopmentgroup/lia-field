@@ -88,6 +88,7 @@
     if (!email.trim() || !pass) { msg('auth-msg', 'Enter your email and password.', true); return; }
     msg('auth-msg', 'Signing in…');
     window.LiaSync.signIn(email.trim(), pass).then(function () {
+      markAuthOffered();
       const pw = $('auth-pass'); if (pw) pw.value = '';
       return window.LiaCache.status();
     }).then(function (s) {
@@ -101,6 +102,17 @@
 
   function wire() {
     const si = $('btn-sign-in'); if (si) si.addEventListener('click', signIn);
+
+    // Working locally is a choice this app supports, so it is a button and not
+    // a dead end: the offer is remembered, the app opens, and Settings keeps
+    // the way back for the day they want their work uploaded.
+    const wo = $('btn-work-offline');
+    if (wo) wo.addEventListener('click', function () {
+      markAuthOffered();
+      goScreen('jobs');
+      if (typeof renderJobList === 'function') renderJobList();
+      if (typeof renderSyncStatus === 'function') renderSyncStatus();
+    });
     const pw = $('auth-pass');
     if (pw) pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') signIn(); });
     const ss = $('btn-sync-start'); if (ss) ss.addEventListener('click', startSync);
@@ -129,6 +141,18 @@
   }
   window.refreshAssignments = refreshAssignments;
 
+  // Has this phone been offered the sign-in screen yet? Offered ONCE, then
+  // never again unprompted: a tech who chose to work locally should not be
+  // asked every morning, and Settings carries the way back.
+  function authOffered() {
+    try { return localStorage.getItem('lia-auth-offered') === '1'; }
+    catch (_) { return false; }   // private mode, blocked storage: offer it
+  }
+  function markAuthOffered() {
+    try { localStorage.setItem('lia-auth-offered', '1'); } catch (_) {}
+  }
+  window.markAuthOffered = markAuthOffered;
+
   function boot() {
     wire();
     const sync = window.LiaSync;
@@ -140,7 +164,12 @@
       // A local-only build behaves exactly as it did before sync existed.
       if (!configured) { goScreen('jobs'); return; }
       return sync.session().then(function (sess) {
-        if (!sess) { goScreen('auth'); return; }
+        // Signing in is OPTIONAL. A tech who wants to log on this phone and
+        // hand the office a CSV is using the app as intended, so a missing
+        // session opens the app rather than blocking it. The sign-in screen is
+        // offered once, on a phone that has never had a session, and after
+        // that lives in Settings — see signInAffordance() below.
+        if (!sess) { goScreen(authOffered() ? 'jobs' : 'auth'); return; }
         refreshAssignments();
         return window.LiaCache.status().then(function (s) {
           if (s.ready) { goScreen('jobs'); renderSyncStatus(); }
@@ -190,6 +219,37 @@
     }).catch(function (e) {
       show(e.message || 'Could not refresh.', true);
     }).then(function () { refresh.disabled = false; });
+  });
+
+  // Offered in Settings whenever this phone could sync but nobody is signed in.
+  function signInAffordance() {
+    const box = $('signin-actions');
+    if (!box || !window.LiaSync) return;
+    window.LiaSync.isConfigured().then(function (c) {
+      if (!c) return null;                       // a local-only build: nothing to offer
+      return window.LiaSync.session();
+    }).then(function (sess) {
+      const show = sess === null;
+      box.style.display = show ? 'flex' : 'none';
+      if (!show) return;
+      // What signing in would actually do for them, in records rather than
+      // promises: a tech with 40 waiting has a reason, one with none does not.
+      const n = window.LiaSync.queueLength();
+      const note = $('signin-pending');
+      if (note) {
+        note.textContent = n
+          ? `${n} record${n !== 1 ? 's' : ''} logged on this phone would upload.`
+          : 'Upload your work instead of sharing a CSV.';
+      }
+    }).catch(function () {});
+  }
+  window.refreshSignInAffordance = signInAffordance;
+  signInAffordance();
+
+  const go = $('btn-go-signin');
+  if (go) go.addEventListener('click', function () {
+    if (typeof closeSettings === 'function') closeSettings();
+    goScreen('auth');
   });
 
   const out = $('btn-sign-out');

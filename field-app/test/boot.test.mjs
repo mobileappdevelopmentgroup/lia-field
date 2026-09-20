@@ -100,8 +100,33 @@ ok('an unconfigured build goes straight to jobs', await active(p), 'screen-jobs'
 ok('and raises no errors', errs, []);
 await p.close(); await ctx.close();
 
+// ── Signing in is offered, not required ─────────────────────────────────────
+// A tech who only wants to log on this phone and hand over a CSV is using the
+// app as intended. The sign-in screen is offered once, and must not become a
+// wall in front of an app that works perfectly well without an account.
 ({ p, errs, ctx } = await open({ configured: true, session: false }));
-ok('a configured build with no session asks for sign-in', await active(p), 'screen-auth');
+ok('a configured build with no session offers sign-in', await active(p), 'screen-auth');
+ok('and offers working locally instead',
+   await p.$eval('#btn-work-offline', e => e.textContent.trim()), 'Work on this phone only');
+
+await p.click('#btn-work-offline');
+await p.waitForTimeout(300);
+ok('choosing that opens the app', await active(p), 'screen-jobs');
+
+// The offer is remembered: being asked every morning after saying no once is
+// how a tech learns to ignore the screen.
+await p.reload();
+await p.waitForTimeout(800);
+ok('and is not asked again on the next start', await active(p), 'screen-jobs');
+
+// But it must stay reachable, or local-only is a one-way door.
+await p.evaluate(() => { if (typeof openSettings === 'function') openSettings(); });
+await p.waitForTimeout(300);
+ok('Settings offers a way back to signing in',
+   await p.$eval('#signin-actions', e => e.style.display !== 'none'), true);
+ok('and says what signing in would do',
+   await p.$eval('#signin-pending', e => /Upload your work|would upload/.test(e.textContent)), true);
+ok('no errors along the way', errs, []);
 await p.close(); await ctx.close();
 
 ({ p, errs, ctx } = await open({ configured: true, session: true, synced: false }));

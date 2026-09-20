@@ -749,6 +749,15 @@
     </div>
     <button class="add-ladder-btn" id="btn-sign-in">Sign In</button>
     <div class="auth-msg" id="auth-msg"></div>
+    <!-- Signing in is optional. A tech who only wants to log on this phone and
+         hand over a CSV is a supported way to use the app, not a lapsed
+         setup step — so this screen must never be a wall. -->
+    <button class="btn-g" id="btn-work-offline"
+            style="width:100%;padding:11px;margin-top:14px;">Work on this phone only</button>
+    <div class="auth-sub" style="margin-top:8px;font-size:12.5px;">
+      You can log inspections and share them as a CSV without an account.
+      Sign in later from Settings to upload them instead.
+    </div>
   </div>
 </div>
 
@@ -1076,6 +1085,13 @@
       <button class="btn-p" id="btn-add-cf" style="font-size:14px;padding:12px 18px;">Add</button>
     </div>
 
+  </div>
+  <!-- Shown when this phone could sync but nobody has signed in. Without it,
+       local-only is a one-way door: the sign-in screen is never reachable
+       again after it has been stepped past once. -->
+  <div id="signin-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
+    <button class="btn-p" id="btn-go-signin" style="padding:11px;">Sign in to upload</button>
+    <div class="auth-sub" id="signin-pending" style="font-size:12.5px;"></div>
   </div>
   <div id="sync-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
     <button class="btn-g" id="btn-refresh-catalog" style="padding:11px;">Refresh equipment list</button>
