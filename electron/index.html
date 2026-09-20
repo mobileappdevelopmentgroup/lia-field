@@ -906,7 +906,9 @@
         <div class="cat-detail-title">Invite a field person</div>
         <div class="ob-hint">
           They get an email, set their own password, and appear on this list.
-          Nobody needs a Supabase login for this.
+          Nobody needs a Supabase login for this. Sending again to somebody who
+          already has an account resends the link — that is how you replace one
+          that expired or was deleted.
         </div>
         <label class="ob-label" for="team-email">Email</label>
         <input class="ob-input" id="team-email" type="email" placeholder="them@example.com">
@@ -3140,9 +3142,15 @@ $('btn-team-add').addEventListener('click', async () => {
   $('team-email').value = ''; $('team-name').value = '';
   await loadTeam();          // clears the message box, so it runs BEFORE we write
   msg.className = 'ob-msg ok';
-  msg.textContent = res.result && res.result.invited
+  // Which of the two happened matters: "sent" and "they were already here" look
+  // the same on screen and mean very different things when somebody says they
+  // never got an email.
+  const r = res.result || {};
+  msg.textContent = r.invited
     ? `Invitation sent to ${email}. They appear here once they set a password.`
-    : `${name || email} was already registered, and is now on this crew.`;
+    : r.resent
+      ? `${email} already had an account — a fresh link has been sent. It lasts 24 hours.`
+      : `${name || email} was already registered, and is now on this crew.`;
 });
 
 $('btn-team-remove-cancel').addEventListener('click', () => {
@@ -3224,7 +3232,9 @@ $('btn-sub-add').addEventListener('click', async () => {
   ['sub-email','sub-name','sub-rep','sub-credits'].forEach(id => { $(id).value = ''; });
   await loadSubs();          // also clears its message box
   msg.className = 'ob-msg ok';
-  msg.textContent = `${sub.name} created, and ${sub.email} invited. They can sign in once they set a password.`;
+  msg.textContent = (res.result && res.result.resent)
+    ? `${sub.name} created. ${sub.email} already had an account, so a fresh link has been sent.`
+    : `${sub.name} created, and ${sub.email} invited. They can sign in once they set a password.`;
   // A new company is one more you can act as, so the context is now stale.
   loadContext();
 });

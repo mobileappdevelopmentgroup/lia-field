@@ -79,7 +79,7 @@ const body = {
   // ── Templates ─────────────────────────────────────────────────────────────
   mailer_subjects_invite: 'You have been added to Lia',
   mailer_templates_invite_content: await readFile(new URL('invite.html', dir), 'utf8'),
-  mailer_subjects_recovery: 'Reset your Lia password',
+  mailer_subjects_recovery: 'Your link to set a password for Lia',
   mailer_templates_recovery_content: await readFile(new URL('reset-password.html', dir), 'utf8'),
 };
 

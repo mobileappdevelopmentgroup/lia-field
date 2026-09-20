@@ -23,6 +23,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
+const LANDING = 'https://lia.mobileappdevelopmentgroup.com/set-password.html';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -94,7 +96,7 @@ Deno.serve(async (req) => {
       // Said explicitly rather than relying on the project's Site URL. That
       // default was http://localhost:3000, and every invitation sent before
       // 2026-09-20 spent its token and then died on a page nobody could reach.
-      redirectTo: 'https://lia.mobileappdevelopmentgroup.com/set-password.html',
+      redirectTo: LANDING,
     });
     if (inviteErr || !created?.user) {
       // Supabase's own words: "email rate limit exceeded" when SMTP is not
@@ -104,6 +106,22 @@ Deno.serve(async (req) => {
     }
     userId = created.user.id;
     invited = true;
+  }
+
+  // Somebody who already exists gets a fresh LINK rather than nothing. Losing
+  // the email, or coming back to it after the link expired, is the ordinary
+  // case — and "invite them again" is what anybody would reach for. Without
+  // this it silently placed them and sent no mail, which looks identical to
+  // success until they say they never got anything.
+  //
+  // inviteUserByEmail refuses an existing user, so this is the recovery link,
+  // which lands on the same page and sets the same password.
+  let resent = false;
+  if (!invited) {
+    const anon = createClient(URL, ANON, { auth: { persistSession: false } });
+    const { error: resendErr } = await anon.auth.resetPasswordForEmail(email, { redirectTo: LANDING });
+    if (resendErr) return json({ error: resendErr.message }, 400);
+    resent = true;
   }
 
   const { data: placed } = await admin
@@ -132,7 +150,7 @@ Deno.serve(async (req) => {
       });
       if (error) return json({ error: error.message }, 400);
     }
-    return json({ ok: true, invited, user_id: userId, account_id: member.account_id, kind: 'crew' });
+    return json({ ok: true, invited, resent, user_id: userId, account_id: member.account_id, kind: 'crew' });
   }
 
   // A subcontractor: their own account, beneath the caller's.
@@ -150,5 +168,5 @@ Deno.serve(async (req) => {
   });
   if (memErr) return json({ error: memErr.message }, 400);
 
-  return json({ ok: true, invited, user_id: userId, account_id: account.id, kind: 'subcontractor', name, rep_number: repNumber });
+  return json({ ok: true, invited, resent, user_id: userId, account_id: account.id, kind: 'subcontractor', name, rep_number: repNumber });
 });
