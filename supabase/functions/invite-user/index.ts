@@ -52,7 +52,9 @@ Deno.serve(async (req) => {
 
   const email = String(body.email ?? '').trim().toLowerCase();
   const name = String(body.name ?? '').trim();
-  const kind = body.kind === 'subcontractor' ? 'subcontractor' : 'crew';
+  const kind = body.kind === 'subcontractor' ? 'subcontractor'
+             : body.kind === 'resend' ? 'resend'
+             : 'crew';
   const repNumber = String(body.rep_number ?? '').trim();
   const credits = Number.isFinite(Number(body.credits)) ? Number(body.credits) : 0;
 
@@ -79,6 +81,40 @@ Deno.serve(async (req) => {
     if (acct?.parent_account_id) {
       return json({ error: 'Only the umbrella account can take on subcontractors. Add a crew member instead.' }, 403);
     }
+  }
+
+  // ── Resending ─────────────────────────────────────────────────────────────
+  // Its own path, deliberately. Folding it into the invite flow meant a
+  // subcontractor's lead could not be resent to at all: the email went out and
+  // THEN the placement check refused them for already having an account, so the
+  // screen reported a failure that had already happened successfully.
+  //
+  // Nothing is created or moved here. It sends a fresh link to somebody who is
+  // already beneath the caller, and that is all.
+  if (kind === 'resend') {
+    const { data: target } = await admin
+      .from('users').select('id').eq('email', email).maybeSingle();
+    if (!target) return json({ error: 'Nobody with that address has been invited yet.' }, 404);
+
+    const { data: theirs } = await admin
+      .from('account_members').select('account_id').eq('user_id', target.id).maybeSingle();
+    if (!theirs) return json({ error: 'That person is not on any account.' }, 404);
+
+    // Their own crew, or a company beneath them. Checked here because the
+    // service role bypasses the RLS that would otherwise answer this.
+    let allowed = theirs.account_id === member.account_id;
+    if (!allowed) {
+      const { data: acct } = await admin
+        .from('accounts').select('parent_account_id').eq('id', theirs.account_id).maybeSingle();
+      allowed = acct?.parent_account_id === member.account_id;
+    }
+    if (!allowed) return json({ error: 'They are not on your account.' }, 403);
+
+    const anon = createClient(URL, ANON, { auth: { persistSession: false } });
+    const { error: sendErr } = await anon.auth.resetPasswordForEmail(email, { redirectTo: LANDING });
+    if (sendErr) return json({ error: sendErr.message }, 400);
+
+    return json({ ok: true, resent: true, invited: false, email });
   }
 
   // Already known? Then this is a placement question, not an invitation, and

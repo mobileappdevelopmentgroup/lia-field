@@ -124,6 +124,28 @@ Link lifetime is **24 hours** (`mailer_otp_exp`), up from the default hour: a
 tech who reads the email in the evening and sets a password over breakfast
 should not need a second invitation.
 
+## Resending
+
+**Your Crew → Resend invite**, and the same button on each subcontractor row.
+It sends a fresh link to somebody already beneath you and does nothing else —
+creates nobody, moves nobody, so it is safe to press twice.
+
+It is its own path in the function (`kind: 'resend'`) rather than a side effect
+of inviting, because folding it in meant a subcontractor's lead could not be
+resent to at all: the mail went out and *then* the placement check refused them
+for already having an account, so the screen reported a failure that had already
+succeeded.
+
+Links last 24 hours, so this is the ordinary answer to "I never got it" or "it
+expired" — not deleting somebody out of Supabase by hand.
+
+## Replies reach somebody
+
+`lia@mobileappdevelopmentgroup.com` was send-only: the domain's MX points at SES
+inbound, and the forwarding rule did not list it, so a tech replying to their
+invitation was writing into a void. It is now on the rule with the office
+addresses, so replies land in the same inbox as the rest.
+
 ## What the function will and will not do
 
 | | |

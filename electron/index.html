@@ -3088,9 +3088,13 @@ async function loadTeam() {
     const gone = !!m.removed_at;
     // A lead is not removable: their number is the responsible technician on
     // every certificate the account issues.
-    const btn = m.role === 'lead' ? ''
+    // Resend is offered to anybody still on the crew, lead included: losing the
+    // email, or coming back after the link expired, is the ordinary case.
+    const resend = (!gone && m.email)
+      ? `<button data-resend="${esc(m.email)}">Resend invite</button>` : '';
+    const btn = resend + (m.role === 'lead' ? ''
       : gone ? `<button data-restore="${esc(m.user_id)}">Put back</button>`
-             : `<button data-remove="${esc(m.user_id)}" data-who="${esc(m.name || m.email || 'them')}">Remove</button>`;
+             : `<button data-remove="${esc(m.user_id)}" data-who="${esc(m.name || m.email || 'them')}">Remove</button>`);
     return `
     <div class="ob-row" style="${gone ? 'opacity:.55;' : ''}">
       <span class="ob-who">${esc(m.name || m.email || 'Unnamed')}</span>
@@ -3101,6 +3105,7 @@ async function loadTeam() {
       ${btn}
     </div>`; }).join('');
 
+  list.querySelectorAll('[data-resend]').forEach(b => b.addEventListener('click', () => resendInvite(b, 'team-msg')));
   list.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => askRemoveCrew(b.dataset.remove, b.dataset.who)));
   list.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', async () => {
     const res = await window.api.restoreCrewMember({ userId: b.dataset.restore });
@@ -3178,6 +3183,25 @@ $('btn-team-remove-go').addEventListener('click', async () => {
     : 'Removed.';
 });
 
+// One handler for both lists. Sends a fresh link to somebody already on the
+// account — it creates nothing and moves nobody, so it is safe to press twice.
+async function resendInvite(btn, msgId) {
+  const email = btn.dataset.resend;
+  const msg = $(msgId);
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Sending…';
+
+  const res = await window.api.sendInvite({ email, kind: 'resend' });
+
+  btn.disabled = false;
+  btn.textContent = original;
+  msg.className = res && res.ok ? 'ob-msg ok' : 'ob-msg err';
+  msg.textContent = res && res.ok
+    ? `A fresh link has been sent to ${email}. It lasts 24 hours.`
+    : ((res && res.error) || 'Could not send it.');
+}
+
 async function loadSubs() {
   const list = $('subs-list');
   list.innerHTML = '<div class="ob-empty">Loading…</div>';
@@ -3195,8 +3219,11 @@ async function loadSubs() {
         ${esc(String(sc.records || 0))} records ·
         ${sc.credits === -1 ? 'unlimited' : esc(String(sc.credits)) + ' credits'}</span>
       <span class="ob-sp"></span>
+      ${sc.lead_email ? `<button data-resend="${esc(sc.lead_email)}">Resend invite</button>` : ''}
       <button data-act-as="${esc(sc.account_id)}">Act as</button>
     </div>`).join('');
+
+  list.querySelectorAll('[data-resend]').forEach(b => b.addEventListener('click', () => resendInvite(b, 'subs-msg')));
 
   // Acting as one of them is the same panel as everywhere else, opened with
   // that company already chosen. A second way of starting a session would be a

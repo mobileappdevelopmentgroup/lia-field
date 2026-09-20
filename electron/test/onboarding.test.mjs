@@ -62,6 +62,11 @@ await p.addInitScript(({ umbrella }) => {
     teamMembers: async () => ({ ok: true, team: window.__team }),
     sendInvite: async (inv) => {
       window.__calls.push(['invite', inv]);
+      if (inv.kind === 'resend') {
+        return inv.email === 'nobody@x.test'
+          ? { ok: false, error: 'Nobody with that address has been invited yet.' }
+          : { ok: true, result: { resent: true, invited: false } };
+      }
       // The server's own words, which the screen must show rather than
       // paraphrase — this one tells the lead what to do instead.
       if (inv.email === 'taken@x.test') {
@@ -157,6 +162,16 @@ await p.click('#team-list [data-restore]'); await p.waitForTimeout(300);
 ok('and can be put back',
    await p.evaluate(() => window.__calls.some(c => c[0] === 'restore')), true);
 
+// ── Resending ───────────────────────────────────────────────────────────────
+// Losing the email is ordinary, and a link only lasts a day. Without this the
+// only way to send another was to delete somebody out of Supabase by hand.
+await p.click('#team-list [data-resend]'); await p.waitForTimeout(300);
+ok('resending asks the server for a fresh link, creating nothing',
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'invite').pop()[1]),
+   { email: 'alex@batavia.test', kind: 'resend' });
+ok('and says so, with how long it lasts',
+   await p.$eval('#team-msg', e => /fresh link has been sent to alex@batavia.test.*24 hours/.test(e.textContent)), true);
+
 // ── Subcontractors ──────────────────────────────────────────────────────────
 await p.click('#btn-team-home'); await p.waitForTimeout(150);
 await p.click('#home-subs'); await p.waitForTimeout(300);
@@ -192,8 +207,15 @@ ok('a company is sent with everything the server needs',
    ['invite', { email: 'third@sub.test', name: 'Third Company', repNumber: '742', credits: '25', kind: 'subcontractor' }]);
 ok('and appears in the list', await p.$$eval('#subs-list .ob-row', e => e.length), 3);
 
+// A subcontractor's lead can be resent to as well — the path that used to send
+// the mail and then report a failure.
+await p.click('#subs-list [data-resend]'); await p.waitForTimeout(300);
+ok('a subcontractor lead can be resent to',
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'invite').pop()[1]),
+   { email: 'mike@sub.test', kind: 'resend' });
+
 // Acting as one of them opens the same panel, with that company chosen.
-await p.click('#subs-list .ob-row button'); await p.waitForTimeout(200);
+await p.click('#subs-list [data-act-as]'); await p.waitForTimeout(200);
 ok('acting as a company from its row opens the usual panel',
    await p.$eval('#ctx-panel', e => e.classList.contains('on')), true);
 ok('with that company already selected',
