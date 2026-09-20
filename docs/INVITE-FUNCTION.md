@@ -99,7 +99,20 @@ checked the token — spending it — and then redirected to a page on the
 recipient's own machine that does not exist. The account was created and the
 person saw *"this site can't be reached"* with no way forward.
 
-Three things now stop that recurring:
+### The link does not spend the token
+
+The email points at the page with a **token hash**, which the page redeems in
+JavaScript with `verifyOtp()`. It deliberately does not link to
+`/auth/v1/verify`, because that endpoint spends the token on a **GET** — and
+Gmail and Outlook fetch links before a human clicks them, to scan for malware.
+The scanner takes the single use and the tech gets *"this link has expired"*
+having never opened it.
+
+A scanner fetching a page does not run its JavaScript, so redeeming there
+survives the scan. The spent token is then cleared out of the address bar with
+`history.replaceState`, so it does not sit in browser history or sync.
+
+Three things also stop the redirect problem recurring:
 
 - `site_url` and `uri_allow_list` point at the real page (`push-auth-config.mjs`)
 - the function passes `redirectTo` **explicitly**, so it does not depend on a
