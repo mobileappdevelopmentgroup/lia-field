@@ -164,8 +164,12 @@
                   background: var(--surf); border-bottom: 1px solid var(--border); }
 
     /* Form row header */
-    .form-hdr { display: flex; align-items: center; justify-content: space-between;
+    .form-hdr { display: flex; align-items: center; gap: 8px;
                 flex-shrink: 0; margin-bottom: 2px; }
+    .form-hdr-label { margin-right: auto; }
+    /* Done is the one people reach for with the keyboard up, so it reads as
+       the action and Reset stays quiet beside it. */
+    #btn-entry-done { color: var(--accent, #4f6ef7); font-weight: 700; }
     .form-hdr-label { font-size: 10px; font-weight: 700; color: var(--muted);
                       text-transform: uppercase; letter-spacing: .08em; }
     .clear-form-btn { background: none; border: none; font-size: 11px; color: var(--muted);
@@ -881,6 +885,10 @@
 
     <div class="form-hdr">
       <span class="form-hdr-label">New Ladder</span>
+      <!-- Appears only while something is focused. Reset was doing this job by
+           accident, and clearing the form is a different thing from putting the
+           keyboard away. -->
+      <button class="clear-form-btn" id="btn-entry-done" style="display:none;">Done</button>
       <button class="clear-form-btn" id="btn-clear-form">Reset</button>
     </div>
 

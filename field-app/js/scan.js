@@ -20,7 +20,14 @@ let _scanStream = null, _scanInterval = null, _scanDecoding = false, _scanFailCo
 // 90°-rotated pass, so vertically-oriented barcodes decode as reliably as horizontal ones.
 const ZXING_HINTS = new Map([[3, true]]);
 
-$('btn-scan').addEventListener('click', startScan);
+$('btn-scan').addEventListener('click', () => {
+  // The keyboard and the viewfinder fight for the same half of the screen, and
+  // on Android the keyboard wins — the scanner opens behind it. Put it away
+  // first, then scan; the decoded serial lands in the field either way.
+  const a = document.activeElement;
+  if (a && typeof a.blur === 'function') a.blur();
+  startScan();
+});
 $('btn-scan-cancel').addEventListener('click', stopScan);
 $('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
 

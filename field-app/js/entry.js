@@ -35,7 +35,11 @@ function openJob(id) {
   renderLadderList();
   renderPartButtons();
   renderCustomFieldsForm();
-  if (jobScope(_job) !== 'fall_protection') $('fi-serial').focus();
+  // Deliberately NOT focused. Opening a job put the cursor in the serial field,
+  // which raises the keyboard, which squeezes the ladder list off the screen —
+  // so the first thing a tech saw was a form covering the work he came to look
+  // at, with Reset the only button that happened to dismiss it. The keyboard
+  // now comes up when he asks for it: by tapping the field, or the camera.
 }
 
 $('btn-back').addEventListener('click', () => {
@@ -441,3 +445,37 @@ function cancelEdit() {
   renderLadderList();
   $('fi-serial').focus();
 }
+
+
+// ── Getting the keyboard back out of the way ────────────────────────────────
+// A phone keyboard covers half the screen and has no visible dismiss. On a
+// screen whose whole point is the list underneath, that is the difference
+// between "I can see my work" and "I cannot".
+(function keyboardDone() {
+  const panel = document.getElementById('form-panel');
+  const done = document.getElementById('btn-entry-done');
+  if (!panel || !done) return;
+
+  const show = () => { done.style.display = ''; };
+  const hide = () => { done.style.display = 'none'; };
+
+  panel.addEventListener('focusin', (e) => {
+    if (e.target && e.target.matches('input, textarea')) show();
+  });
+  // Deferred: focus moving between two fields fires focusout before focusin,
+  // and hiding the button between them makes it flicker on every tab.
+  panel.addEventListener('focusout', () => setTimeout(() => {
+    const a = document.activeElement;
+    if (!a || !panel.contains(a) || !a.matches('input, textarea')) hide();
+  }, 60));
+
+  done.addEventListener('click', () => {
+    const a = document.activeElement;
+    if (a && typeof a.blur === 'function') a.blur();
+    hide();
+    // Scroll the list back into view: Android leaves the page where the
+    // keyboard pushed it.
+    const list = document.getElementById('ladders-list');
+    if (list) list.scrollIntoView({ block: 'nearest' });
+  });
+})();

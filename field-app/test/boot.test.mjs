@@ -157,7 +157,36 @@ await p.close(); await ctx.close();
 ok('a synced device opens straight on jobs next launch', await active(p), 'screen-jobs');
 await p.close(); await ctx.close();
 
+// ── Opening a job shows the work, not a keyboard ────────────────────────────
+// Focusing the serial field on open raised the keyboard, which squeezed the
+// ladder list off the screen — so the first thing a tech saw was a form
+// covering the work he came to look at.
+({ p, errs, ctx } = await open({ configured: false }));
+await p.evaluate(() => {
+  const all = loadJobs();
+  const id = Object.keys(all)[0];
+  openJob(id);
+});
+await p.waitForTimeout(500);
+ok('opening a job does not put the cursor in the serial field',
+   await p.evaluate(() => document.activeElement?.id || 'none'), 'none');
+ok('and the Done button is hidden until something is focused',
+   await p.$eval('#btn-entry-done', e => e.style.display), 'none');
+
+await p.click('#fi-serial'); await p.waitForTimeout(200);
+ok('tapping the field focuses it',
+   await p.evaluate(() => document.activeElement?.id), 'fi-serial');
+ok('and Done appears, so the keyboard can be put away',
+   await p.$eval('#btn-entry-done', e => e.style.display !== 'none'), true);
+
+await p.click('#btn-entry-done'); await p.waitForTimeout(200);
+ok('pressing it releases the field',
+   await p.evaluate(() => document.activeElement?.id || 'none'), 'none');
+ok('no errors', errs, []);
+await p.close(); await ctx.close();
+
 await b.close();
 server.close();
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');
 process.exit(fails ? 1 : 0);
+
