@@ -2,6 +2,12 @@ node_modules/
 dist/
 config.json
 config.*.json
+
+# Google Play service-account keys. They live in ~/.play-keys/ and are passed
+# to tools/play-upload.mjs by path — this only stops a stray copy being added.
+*-service-account*.json
+play-key*.json
+*iam.gserviceaccount.com*.json
 logs/*.json
 logs/*.png
 .DS_Store

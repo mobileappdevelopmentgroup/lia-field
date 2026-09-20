@@ -121,7 +121,25 @@ $JAVA_HOME/bin/jarsigner -verify -verbose:summary -certs app-release.aab | grep 
 # CN=Hector Hinojosa, OU=Mobile App Development Group, ...
 ```
 
-Upload by hand in the Play Console — there is still no service-account JSON.
+Then upload it:
+
+```bash
+PLAY_KEY=~/.play-keys/lia-play-publisher.json npm run play:upload -- --check
+PLAY_KEY=~/.play-keys/lia-play-publisher.json npm run play:upload -- --notes "What changed"
+```
+
+`--check` proves the credential and the app permission without touching
+anything: it opens a draft edit, reads the track back, and discards it. Run it
+first after any permission change — a fresh grant needs a few minutes and fails
+with 403 until it lands.
+
+The tool ships to `internal` (default), `alpha` and `beta`. It refuses
+`production`; that release is made in the console with the listing in view.
+`--draft` uploads without rolling out. If anything fails before the commit, the
+edit is discarded and nothing reaches testers.
+
+Creating the key: Play Console → Setup → API access. `CLAUDE.md` has the
+permissions to grant. Without a key, upload by hand in the Play Console.
 
 ## 6. macOS → DMG
 

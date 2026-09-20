@@ -24,7 +24,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Migration state
 
-The live database carries **01–17** as of 2026-08-30. Before writing any bundle
+The live database carries **01–17** as of 2026-08-30; **18–21 are written,
+rehearsed and not yet applied** (`supabase/dist/apply-18-21.sql`, then the ops
+script that restructures the accounts). Onboarding people is `docs/ONBOARDING.md`. Before writing any bundle
 for it, check what is actually live rather than trusting this file:
 `git ls-files supabase/*.sql` shows what pre-dates the current branch, and the
 REST schema shows what the database has. A bundle that starts part-way up the
@@ -41,6 +43,33 @@ database twice and checks all seven migrations end to end.
 | Lia Field (Android) | Play internal testing | `com.mobileappdevelopmentgroup.liafield` | Signed with `~/.android-keystores/lia-field-release.keystore` |
 | Lia Office (macOS) | Direct download (DMG) | — | `npm run electron:build` |
 | Lia Office (Windows) | Direct download (NSIS) | — | Built in CI — `.github/workflows/build-windows.yml`. **Not** shipped via Microsoft Store. |
+
+### Uploading to Play
+
+`npm run play:upload` (`tools/play-upload.mjs`) uploads an `.aab` and releases
+it to a testing track through the Play Developer API — no `googleapis`
+dependency; the service-account JWT is signed with node's `crypto`, as the App
+Store Connect calls in `docs/RELEASE.md` are.
+
+The key is passed **by path** (`PLAY_KEY` or `--key`) and is never read from the
+repo; `~/.play-keys/lia-play-publisher.json`, mode 600. Grant it the **Lia Field
+app only** and **Release apps to testing tracks** — not production, and not
+account-wide. `--check` verifies both without changing anything.
+
+### Android signing fingerprints
+
+Two keys, two fingerprints, and forms differ about which they want. Neither is
+secret. Lia Field is enrolled in **Play App Signing**, so the local keystore is
+the *upload* key only.
+
+| Key | SHA-256 | Use it for |
+|---|---|---|
+| **App signing** (Google holds it) | `81:5F:00:49:8B:C7:EE:98:55:81:FA:68:DA:CD:D2:C3:95:3F:FD:F8:A1:13:9A:83:5E:A2:75:93:BE:81:09:6B` | Anything identifying the **installed** app: developer verification, app links / Digital Asset Links, API key restrictions. Play installs carry this signature. |
+| **Upload** (`~/.android-keystores/lia-field-release.keystore`, alias `lia-field`) | `A6:DC:52:43:32:DD:FD:96:EF:ED:F2:94:D6:0E:EF:52:DB:78:3A:71:84:43:A9:54:9E:80:5B:67:BF:67:F7:20` | Proving an upload came from us, and identifying a build **sideloaded** straight from this Mac. |
+
+Read the app signing one from Play Console → `…/app/<app-id>/keymanagement`
+(the left nav buries it under Test and release → Setup → App signing). Recorded
+2026-09-19 during Play's developer verification, which wanted the app signing key.
 
 Privacy policy (required by both stores): <https://lia.mobileappdevelopmentgroup.com/privacy.html>,
 source at `inspection-site/privacy.html`. It covers **Lia Field only**; Lia Office is a separate
@@ -72,6 +101,9 @@ npm run test:sql           # Migrations against a throwaway local Postgres
 npm run check:www          # Fails if a Capacitor bundle is behind field-app/
 npm run sync:www           # Bring the three Capacitor bundles up to date
 npm run capture:help       # Regenerate the manual's screenshots from the live app
+
+./supabase/test/run-apply-18-21.sh   # Rehearse the live apply of 18-21 on a
+                                     # database built to look like production
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -237,6 +269,43 @@ rules, all load-bearing:
   database knowing those 20 went in, or the re-run bills them twice.
 - **The operator confirms each work order** before anything is typed. Nothing on
   the BSI page reliably says which work order is open.
+
+### Umbrella accounts, and who a certificate names
+
+`supabase/18_umbrella_accounts.sql` through `21`. Batavia holds the contracts
+and parses the work out to lead subcontractors, each running their own operation
+with their own field people. An account therefore has a **parent**, and
+visibility runs in two directions:
+
+- **Work flows up.** The umbrella reads every record beneath it. A subcontractor
+  reads only their own — never a sibling's, never the umbrella's.
+- **The catalogue flows down.** Equipment defined by Batavia is usable by
+  everyone under it. Reversing either direction leaks one company's data into
+  another's, which is why both are asserted in `test/16_umbrella_test.sql`.
+
+Every read policy already funnelled through `my_account_id()`, so this is one
+predicate (`can_see` / `can_use_catalog`) rather than twenty rewritten policies.
+**Applying 18 changes nothing**: an account with no parent means exactly what
+"= my account" meant before, and the live database is entirely unlinked until
+`supabase/ops/2026-09-19-restructure-umbrella.sql` runs.
+
+**A certificate names the lead subcontractor and the umbrella — never the person
+who took the reading.** Before 19 the public views published the *collector's*
+name as `tech_name`, readable by anon. The column is kept and now carries the
+lead's name, so the sites show the right person without a redeploy. Who actually
+did the work stays on the row (`collected_by`, `collector_name`) for the office.
+`rep_name` and `verified_by` are snapshotted by a trigger rather than by each
+write path, because there are four of those and there will be more.
+
+**Impersonation** (20, 21) — driven from Lia Office's home screen, with a banner
+naming the account and the credit badge following the account being *billed* —
+lets the office work inside a subcontractor's account:
+`my_account_id()` returns the impersonated account for the length of an expiring,
+recorded session. 21 re-emits the write paths — verbatim, extracted
+mechanically, one line changed each — because they resolved the account
+themselves; without it, work recorded while acting as somebody lands in the
+office's own account and looks like it succeeded. Catalogue authoring and tag
+links do **not** follow a session yet.
 
 ### Job assignment
 

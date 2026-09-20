@@ -39,6 +39,37 @@
                     color: #8fa4ff; border: 1px solid rgba(79,110,247,.25);
                     border-radius: 99px; padding: 2px 10px; }
 
+    /* ── Working-context banner ─────────────────────────────────────────── */
+    /* Deliberately loud, and deliberately not dismissible. While a session is
+       running every write lands in somebody else's company; a screen that looks
+       the same either way is how a certificate ends up in the wrong account. */
+    #ctx-banner { display: none; align-items: center; gap: 10px; flex-shrink: 0;
+                  padding: 7px 16px; background: #b45309; color: #fff;
+                  font-size: 12px; font-weight: 600; letter-spacing: .01em; }
+    #ctx-banner.on { display: flex; }
+    #ctx-banner .ctx-spacer { flex: 1; }
+    #ctx-reason { font-weight: 400; opacity: .85; }
+    #ctx-expiry { font-weight: 400; opacity: .9; font-variant-numeric: tabular-nums; }
+    #ctx-banner button { background: rgba(0,0,0,.25); color: #fff; border: 1px solid rgba(255,255,255,.35);
+                         border-radius: 6px; padding: 3px 12px; font-size: 12px; font-weight: 600;
+                         cursor: pointer; }
+    #ctx-banner button:hover { background: rgba(0,0,0,.4); }
+
+    /* ── Act-as panel ───────────────────────────────────────────────────── */
+    #ctx-panel { display: none; position: fixed; inset: 0; z-index: 50;
+                 background: rgba(0,0,0,.55); align-items: center; justify-content: center; }
+    #ctx-panel.on { display: flex; }
+    .ctx-box { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
+               padding: 22px; width: 420px; max-width: calc(100vw - 40px); }
+    .ctx-box h3 { margin: 0 0 4px; font-size: 15px; }
+    .ctx-box .ctx-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; line-height: 1.5; }
+    .ctx-box label { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 4px;
+                     text-transform: uppercase; letter-spacing: .06em; }
+    .ctx-box select, .ctx-box input { width: 100%; background: var(--bg); color: var(--fg);
+                     border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-size: 13px; }
+    .ctx-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+    #ctx-error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
+
     /* ── Screens ────────────────────────────────────────────────────────── */
     .screen { display: none; flex: 1; overflow: hidden; }
     .screen.active { display: flex; flex-direction: column; }
@@ -545,6 +576,15 @@
   </div>
 </div>
 
+<!-- Whose account am I working in. Hidden unless it is somebody else's. -->
+<div id="ctx-banner">
+  <span id="ctx-text"></span>
+  <span id="ctx-reason"></span>
+  <span class="ctx-spacer"></span>
+  <span id="ctx-expiry"></span>
+  <button id="btn-ctx-stop">Stop</button>
+</div>
+
 <!-- ═══════════════ SCREEN: LOGIN ═══════════════ -->
 <div id="screen-login" class="screen">
   <div class="login-box">
@@ -576,6 +616,11 @@
         <div class="mode-name">Office Mode</div>
         <div class="mode-desc">Import a CSV into BSI work order.</div>
         <div class="mode-credits" id="home-credits" style="display:none;"></div>
+      </div>
+      <div class="mode-card" id="home-actas" style="display:none;">
+        <div class="mode-icon">🎭</div>
+        <div class="mode-name">Act as a Subcontractor</div>
+        <div class="mode-desc">Work inside their account to show them the job, or to see what they see.</div>
       </div>
       <div class="mode-card" id="home-inspect">
         <div class="mode-icon">🗃️</div>
@@ -1190,6 +1235,33 @@
   </div>
 </div>
 
+<!-- ═══════════════ ACT AS ═══════════════ -->
+<div id="ctx-panel">
+  <div class="ctx-box">
+    <h3>Act as a subcontractor</h3>
+    <div class="ctx-sub">
+      Everything you do — what you see, what you record, who is billed — happens
+      in their account until you stop. The reason is recorded against the work.
+    </div>
+    <label for="ctx-account">Company</label>
+    <select id="ctx-account"></select>
+    <label for="ctx-reason-in">Reason</label>
+    <input id="ctx-reason-in" type="text" placeholder="e.g. showing Michael how a job is recorded">
+    <label for="ctx-minutes">Stop automatically after</label>
+    <select id="ctx-minutes">
+      <option value="30">30 minutes</option>
+      <option value="60" selected>1 hour</option>
+      <option value="240">4 hours</option>
+      <option value="480">8 hours</option>
+    </select>
+    <div id="ctx-error"></div>
+    <div class="ctx-actions">
+      <button class="btn-g" id="btn-ctx-cancel">Cancel</button>
+      <button class="btn-ok" id="btn-ctx-start">Start</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ════════════════════════════════════════════════════════════════
 // Helpers
@@ -1237,7 +1309,7 @@ function updateBadge(session) {
   // Silently restore any saved session in the background
   if (_supabaseConfigured) {
     _session = await window.api.getSession();
-    if (_session) updateBadge(_session);
+    if (_session) { updateBadge(_session); await loadContext(); }
   }
   showHomeScreen();
   // The Support card exists only for the developer, so whether to draw it is a
@@ -1318,6 +1390,7 @@ async function doLogin() {
   if (!result.ok) { showLoginError(result.error); return; }
   _session = result;
   updateBadge(_session);
+  await loadContext();
   refreshSupportBadge();
 
   const dest = _loginDestination;
@@ -2842,6 +2915,148 @@ async function refreshSupportBadge() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Working context — whose account am I in
+// ════════════════════════════════════════════════════════════════
+// The umbrella can act as a lead subcontractor. While a session is running
+// every read and every write happens in their account, so the only safe
+// assumption here is none: the server is asked, never told, and the answer is
+// re-read rather than cached — a session expires on its own.
+let _ctx = null;
+let _ctxTimer = null;
+let _ctxRechecking = false;   // see renderCtxExpiry
+
+// Everything a screen has already loaded belongs to the account that was
+// current when it loaded. After a switch it is another company's data on
+// screen, so it is dropped rather than refreshed: a stale list the operator
+// then acts on is worse than an empty one.
+function resetAccountCaches() {
+  _mgWos = []; _mgSel = null; _mgMerge = null; _mgChoice = {};
+  _catModels = []; _catSel = null; _catChecks = [];
+  _catTypes = []; _catTypeSel = null; _catTypeChecks = [];
+  _fprRows = []; _fprSelected = null; _fprStatus = '';
+  _jbJobs = []; _jbTeam = []; _jbSelected = null; _jbEditing = null; _jbStatus = '';
+  _fppPending = []; _fppSkip = new Set();
+}
+
+async function loadContext() {
+  if (!_supabaseConfigured || !_session) { _ctx = null; renderContext(); return; }
+  // The bridge is not assumed to carry it. A packaged app pairs this renderer
+  // with its own preload, but the two are separate files and an older preload
+  // throwing here at boot would take the whole window down with it.
+  if (typeof window.api.getContext !== 'function') { _ctx = null; renderContext(); return; }
+  const res = await window.api.getContext();
+  _ctx = (res && res.ok) ? res.ctx : null;
+  renderContext();
+}
+
+function renderContext() {
+  const bar = $('ctx-banner');
+  const canAct = !!(_ctx && Array.isArray(_ctx.can_act_as) && _ctx.can_act_as.length);
+  $('home-actas').style.display = canAct ? '' : 'none';
+
+  if (!_ctx || !_ctx.impersonating) {
+    bar.classList.remove('on');
+    if (_ctxTimer) { clearInterval(_ctxTimer); _ctxTimer = null; }
+    return;
+  }
+
+  bar.classList.add('on');
+  $('ctx-text').textContent   = `Working as ${_ctx.account_name || 'another company'}`;
+  $('ctx-reason').textContent = _ctx.reason ? `— ${_ctx.reason}` : '';
+
+  // The credit badge must follow the account being acted as: an import while
+  // acting as them is charged to THEM. Showing the umbrella's balance would
+  // promise an import that the server then refuses.
+  if (_ctx.credits !== null && _ctx.credits !== undefined) {
+    const el = $('credit-badge');
+    el.textContent = _ctx.credits === -1 ? 'Unlimited' : `${_ctx.credits} credit${_ctx.credits !== 1 ? 's' : ''}`;
+    el.title = `${_ctx.account_name}'s balance — this is the account being billed`;
+    el.style.display = '';
+  }
+
+  renderCtxExpiry();
+  if (!_ctxTimer) _ctxTimer = setInterval(renderCtxExpiry, 30000);
+}
+
+function renderCtxExpiry() {
+  if (!_ctx || !_ctx.expires_at) { $('ctx-expiry').textContent = ''; return; }
+  const msLeft = new Date(_ctx.expires_at).getTime() - Date.now();
+
+  if (msLeft <= 0) {
+    // The server is what decides, so confirm rather than assume — then the
+    // banner disappears because the session really has ended.
+    //
+    // Guarded, because loadContext() renders, and rendering lands back here:
+    // if the server still reports the session (clock skew, or it ended a
+    // moment ago), an unguarded call recurses until the window dies. One
+    // re-read per expiry; after that the 30s timer is what asks again.
+    $('ctx-expiry').textContent = 'expired';
+    if (!_ctxRechecking) {
+      _ctxRechecking = true;
+      Promise.resolve(loadContext()).finally(() => { _ctxRechecking = false; });
+    }
+    return;
+  }
+  const mins = Math.round(msLeft / 60000);
+  $('ctx-expiry').textContent = mins >= 60
+    ? `${Math.floor(mins / 60)}h ${mins % 60}m left`
+    : `${Math.max(1, mins)}m left`;
+}
+
+function openActAs() {
+  const sel = $('ctx-account');
+  sel.innerHTML = '';
+  (_ctx && _ctx.can_act_as ? _ctx.can_act_as : []).forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.account_id;
+    opt.textContent = a.name;
+    sel.appendChild(opt);
+  });
+  $('ctx-reason-in').value = '';
+  $('ctx-error').textContent = '';
+  $('ctx-panel').classList.add('on');
+  $('ctx-reason-in').focus();
+}
+
+function closeActAs() { $('ctx-panel').classList.remove('on'); }
+
+// After any change of context: drop what is on screen, re-read who we are, and
+// go back to the home screen. Landing back on a loaded screen would show one
+// company's rows while writes went to another's.
+async function afterContextChange() {
+  resetAccountCaches();
+  _session = await window.api.getSession();
+  updateBadge(_session);
+  await loadContext();
+  showHomeScreen();
+}
+
+$('home-actas').addEventListener('click', openActAs);
+$('btn-ctx-cancel').addEventListener('click', closeActAs);
+
+$('btn-ctx-start').addEventListener('click', async () => {
+  const accountId = $('ctx-account').value;
+  const reason    = $('ctx-reason-in').value.trim();
+  const minutes   = $('ctx-minutes').value;
+  if (!reason) { $('ctx-error').textContent = 'A reason is required — it is recorded against the work.'; return; }
+
+  $('btn-ctx-start').disabled = true;
+  const res = await window.api.startActingAs({ accountId, reason, minutes });
+  $('btn-ctx-start').disabled = false;
+
+  if (!res || !res.ok) { $('ctx-error').textContent = (res && res.error) || 'Could not start.'; return; }
+  closeActAs();
+  await afterContextChange();
+});
+
+$('btn-ctx-stop').addEventListener('click', async () => {
+  $('btn-ctx-stop').disabled = true;
+  await window.api.stopActingAs();
+  $('btn-ctx-stop').disabled = false;
+  await afterContextChange();
+});
+
+// ════════════════════════════════════════════════════════════════
 // Home
 // ════════════════════════════════════════════════════════════════
 $('home-office').addEventListener('click', () => requireAuth('office'));
@@ -2858,6 +3073,11 @@ $('btn-history-home').addEventListener('click', () => showScreen('home'));
 $('btn-signout').addEventListener('click', async () => {
   await window.api.logout();
   _session = null;
+  // Signing out ends the session's visibility of any context too: whoever
+  // signs in next must not inherit a banner, a switcher, or cached rows.
+  _ctx = null;
+  renderContext();
+  resetAccountCaches();
   updateBadge(null);
   $('home-title').textContent = 'Welcome to Lia';
   $('home-credits').style.display = 'none';
@@ -3598,5 +3818,6 @@ async function loadHistory() {
   });
 }
 </script>
+
 </body>
 </html>

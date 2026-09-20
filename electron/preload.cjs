@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('api', {
   login:                (creds)            => ipcRenderer.invoke('auth:login', creds),
   logout:               ()                 => ipcRenderer.invoke('auth:logout'),
 
+  // ── Working context (acting as a subcontractor) ──────────────────────────
+  getContext:   ()      => ipcRenderer.invoke('ctx:get'),
+  startActingAs:(opts)  => ipcRenderer.invoke('ctx:start', opts),
+  stopActingAs: ()      => ipcRenderer.invoke('ctx:stop'),
+
   // ── File & CSV ───────────────────────────────────────────────────────────
   openCsv:       ()         => ipcRenderer.invoke('dialog:open-csv'),
   parseCsv:      (filePath) => ipcRenderer.invoke('csv:parse', filePath),

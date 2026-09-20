@@ -21,6 +21,8 @@ OUT=supabase/dist/apply-all.sql
 --          11 equipment types and their per-type checklists
 --          12 tag hyperlinks · 13 support · 14 certificate views
 --          15 fp record corrections · 16 job assignment · 17 tag writing
+--          18 umbrella accounts · 19 certificate attribution
+--          20 impersonation · 21 impersonation write paths
 --
 -- 10_consolidate_account.sql is deliberately NOT included. It is optional, it
 -- only suits a single-company deployment, and it needs a user id — see

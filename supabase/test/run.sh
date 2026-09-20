@@ -107,6 +107,21 @@ echo "Running tag write assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/15_tag_write_test.sql"
 
+echo
+echo "Running umbrella account assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/16_umbrella_test.sql"
+
+echo
+echo "Running certificate attribution assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/17_attribution_test.sql"
+
+echo
+echo "Running impersonation assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/18_impersonation_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

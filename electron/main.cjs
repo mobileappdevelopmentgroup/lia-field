@@ -563,6 +563,58 @@ ipcMain.handle('support:mark-read', async (_event, ticketId) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── Working context: whose account am I in ─────────────────────────────────
+// The umbrella (Batavia) can act as a lead subcontractor, to show them how the
+// job is done or to see exactly what they see. While a session is active EVERY
+// query and every write runs as that account — see supabase/20_impersonation.sql.
+//
+// The server decides who may act as whom; this is the transport. The renderer
+// must never be the thing that enforces it, and must never cache the answer:
+// a session expires on its own, so the context is re-read rather than assumed.
+ipcMain.handle('ctx:get', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('my_context');
+    if (error) return { ok: false, error: error.message };
+    const ctx = typeof data === 'string' ? JSON.parse(data) : data;
+
+    // The balance that matters is the one that will be charged, which while
+    // acting as somebody is THEIRS. Read through RLS rather than a new RPC —
+    // 18's accounts policy already lets the umbrella see accounts beneath it,
+    // and a null here just leaves the badge showing what it showed before.
+    if (ctx && ctx.impersonating && ctx.account_id) {
+      const { data: acct } = await sb
+        .from('accounts').select('credits').eq('id', ctx.account_id).maybeSingle();
+      if (acct) ctx.credits = acct.credits;
+    }
+    return { ok: true, ctx };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('ctx:start', async (_event, opts) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('start_impersonation', {
+      p: {
+        account_id: opts && opts.accountId,
+        reason:     opts && opts.reason,
+        minutes:    opts && opts.minutes ? Number(opts.minutes) : 60,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, session: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('ctx:stop', async () => {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.rpc('stop_impersonation');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── Equipment types ────────────────────────────────────────────────────────
 // The type owns the checklist: a body harness is checked as a body harness
 // whoever made it. fp_type_catalog() already returns each type with its current

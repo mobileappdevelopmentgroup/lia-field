@@ -1,17 +1,137 @@
 # Lia — Project Status
 
-**As of 2026-08-24** · branch `fall-protection` @ `f200e6b`+. `master` frozen at
-`prod-baseline-2026-08-22` (`6db1ef3`), pushed. **The `fall-protection` branch
-has never been pushed** — 47 commits live only on this machine, and pushing
-needs the `mobileappdevelopmentgroup` account.
+**As of 2026-09-19** · branch `fall-protection` @ `47b83f6`, **pushed** and in
+step with `origin`. `master` is still the 2026-08-22 production baseline
+(`prod-baseline-2026-08-22`) plus one CI-only commit, `280d340`, the Windows
+test-step fix below. Pushing needs the `mobileappdevelopmentgroup` gh account.
 
 ---
 
-## Where it stands — 2026-08-24
+## Where it stands — 2026-09-19
+
+**1.7.0 is the current release everywhere it can be built.** Shipped 2026-08-30
+with migrations 11–17 live on production (`docs/RELEASE.md` is how it was done).
+
+| Product | Build | State |
+|---|---|---|
+| Lia Field (iOS) | 1.7.0, TestFlight build **5** | Uploaded 2026-08-30 |
+| Lia Field (Android) | 1.7.0, **versionCode 4** | ✅ Live on Play **internal testing** — confirmed 2026-09-19 through the API (`npm run play:upload -- --check` reads the track back) |
+| Lia Office (macOS) | 1.7.0 DMG | Signed, **not notarized** |
+| Lia Office (Windows) | 1.7.0 NSIS, **unsigned** | ✅ **First build ever, 2026-09-19** (CI). ⚠️ Never installed or run on Windows yet |
+
+### Done 2026-09-19
+
+- **The Windows installer builds.** `LIA_CONFIG_JSON` repo secret set, and
+  **Actions → Build Lia Office (Windows)** produced `Lia Setup 1.7.0.exe`
+  (x64, 85 MB) on its first run — run `35464632388`. Copied to
+  `~/Desktop/Lia-Deliverables/`. The build moved to CI rather than the local
+  path in `docs/WINDOWS-BUILD.md`: the bench Windows PC is for **testing only**,
+  so neither the toolchain nor `config.json` has to live on it.
+- **The Windows build now runs every unit test.** A manual run uses *master's*
+  copy of the workflow to build whatever `ref` it is given, and master's listed
+  only `src/*.test.ts` — the first build ran 10 of 52. The step now finds
+  `*.test.ts` under `src/` in the checked-out code, so it is right on either
+  branch (master has no `src/core/`, so copying the branch's list would have
+  broken master's builds instead). Fixed on both branches; run `35465208292`
+  confirms 52/52 on Windows. **Dispatch with `--ref master -f ref=fall-protection`**
+  — the default `ref` is `master`, which builds the August baseline app.
+- **Store-declaration docs made consistent.** Six places still called the
+  "no data collected" declarations an open blocker; they were updated in both
+  consoles on 2026-08-24 (see below). ⚠️ Taken from this file's record of that
+  day, not re-checked in the consoles.
+- **Play uploads are scripted.** `tools/play-upload.mjs` (`npm run play:upload`)
+  uploads an .aab and releases it to a testing track through the Play Developer
+  API — no `googleapis` dependency, the service-account JWT is signed with
+  node's `crypto`. Key at `~/.play-keys/lia-play-publisher.json` (mode 600,
+  passed by path, never in the repo), granted **Lia Field + release to testing
+  tracks only**. `--check` verifies credential and permission without changing
+  anything; the tool refuses `production` outright. ⚠️ The **upload path itself
+  is still unproven** — versionCode 4 went up by hand before the key existed, so
+  the first scripted upload will be versionCode 5.
+  **Play Console → Setup → API access could not be found in this account's nav**;
+  the service account was made in Google Cloud and granted through
+  **Users and permissions** instead, which works and avoids that page entirely.
+- **Tester pack refreshed** for an Android tester onboarding 2026-09-20.
+  `~/Desktop/Lia-Deliverables/` now holds the 1.7.0 .aab, the Windows
+  installer, a README with the full onboarding checklist (Play tester list →
+  Supabase invite → `create_lia_user` as a `tech` on the Batavia account), and a
+  rewritten `FOR-TESTERS.md` — the old one told testers the app never signs in
+  and uploads nothing. The v1.1 / versionCode 1 files are in `old-2026-07-28/`
+  and must not be handed out.
+
+### Done 2026-09-19 — the account model became an umbrella
+
+Batavia holds the contracts and parses the work out to lead subcontractors
+(Nate · 734 · Pennsylvania, Michael · 738 · California), each running their own
+crew. The flat one-account-per-company model could not express that, and two
+leads in one account would have shared everything. Four migrations, written,
+tested and **not yet applied**:
+
+| | |
+|---|---|
+| `18_umbrella_accounts.sql` | Accounts gain a parent. Work flows **up** to the umbrella, catalogue flows **down** to the subs. `create_subcontractor()` and `add_crew_member()` make onboarding one call each. Applying it changes nothing until accounts are linked. |
+| `19_certificate_attribution.sql` | The certificate names the responsible **lead** and the umbrella. ⚠️ **Closes a live disclosure**: the public views publish the *field person's* name as `tech_name` today, readable by anon. |
+| `20_impersonation.sql` | The office can act as a subcontractor — expiring, recorded, downward-only. |
+| `21_impersonation_write_paths.sql` | The write paths follow that session. Without it, work recorded while acting as somebody lands in the office's own account and looks like it worked. |
+
+Apply with `supabase/dist/apply-18-21.sql`, then run
+`supabase/ops/2026-09-19-restructure-umbrella.sql` — which moves the **1,724
+records to Nate's new account** with their assets, links both subs under
+Batavia, and makes Alex lead of the umbrella. Both rehearsed:
+`./supabase/test/run-apply-18-21.sh` applies the bundle twice to a
+production-shaped database, and the restructure was rehearsed against seeded
+live-shaped data. Full suite: **578 assertions**.
+
+Onboarding people — leads, crews, acting as a subcontractor — is
+**`docs/ONBOARDING.md`**.
+
+**Lia Office drives it** as of the same day: an *Act as a Subcontractor* card
+(shown only when the server says you may), a panel that demands a reason, and a
+banner naming the account with time remaining and a Stop button. The credit
+badge follows the account being **billed**, not the office's own — showing
+Batavia's "Unlimited" while acting as a sub would promise an import the server
+then refuses. Starting or stopping drops every cached screen.
+`electron/test/act-as.test.mjs` covers it and caught two real bugs: a panel
+wired before its markup existed (which silently killed the rest of the
+renderer), and an expired session recursing until the window died.
+
+**Not built yet:** a crew-onboarding screen (adding a field person still needs
+the SQL editor, and the Supabase dashboard for the invite either way), and
+creating a subcontractor is deliberately SQL-only. Catalogue authoring and tag
+links do not follow an impersonation session.
+
+⚠️ **The other desktop tests cannot run on this machine** — Playwright's bundled
+Chromium is missing (`npx playwright install chromium` restores it). The new
+test uses system Chrome, like the automation does, so it runs regardless.
+
+### Still needed from you
+
+1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
+2. **Test Lia Office on the bench Windows PC**: install (SmartScreen → *More
+   info → Run anyway*), sign in, open a CSV, start an import (needs **Chrome**),
+   the lead screens (Job Board, FP records, Certificate Views), relaunch still
+   signed in. None of it has ever run on Windows. Logs: `Documents\Lia Logs\`.
+3. **Decide the rep-number model** — still open, still built per-account (every
+   certificate names the lead). The write-up was in `docs/PICK-UP-HERE.md`,
+   removed in `bf445c9`; read it with
+   `git show bf7e8e9:docs/PICK-UP-HERE.md`. It recommends per-tech. More
+   pressing now that a second tech is joining.
+4. **A BSI work order that can be dirtied** — L/C/V/P selectors, `FP_FORM`, and
+   how BSI identifies an aggregate fall-protection box (re-run double-billing).
+5. **NFC hardware testing** — `docs/NFC-PLUGIN.md`, plus the iOS `TAG`-only
+   entitlement question. Not recorded as done.
+6. **Windows code-signing certificate** — installers stay unsigned until then.
+7. **Confirm the two expanded checklist prompts** ("Arrester enclosure
+   exterior", "Warning center not extended") before the first real FP
+   certificate.
+
+---
+
+## Where it stood — 2026-08-24
 
 **The migrations are applied and the anon leak is closed.** The thing that
 blocked everything is done. Full write-up, and the one decision still open:
-**`docs/PICK-UP-HERE.md`**.
+**`docs/PICK-UP-HERE.md`** (removed in `bf445c9`; `git show bf7e8e9:docs/PICK-UP-HERE.md`).
 
 Verified from outside the database with the publishable key:
 `GET /rest/v1/inspections` → **401 `42501`** (was 200 with 1,724 rows);
@@ -75,7 +195,8 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
   confirming before the first real inspection, since they print on a
   certificate: "arrester encloser ext" → **"Arrester enclosure exterior"**, and
   "warning center not ext" → **"Warning center not extended"**.
-- `11_fp_equipment_types.sql` has **not** been applied to the live database yet.
+- ~~`11_fp_equipment_types.sql` has **not** been applied to the live database yet.~~
+  Applied 2026-08-30 with 12–17.
 
 ### Done 2026-08-24
 
@@ -108,7 +229,7 @@ Full plan: `~/.claude/plans/we-will-be-adding-zany-corbato.md`.
    a `TAG`-only entitlement is **unverified** and is now the first thing hardware
    testing must check.
 
-### Still needed from you
+### Still needed from you *(as of 2026-08-24 — superseded by the 2026-09-19 list above)*
 
 1. **Decide the rep-number model** — `docs/PICK-UP-HERE.md`. Everything else is
    mechanical.
