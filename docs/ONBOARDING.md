@@ -37,11 +37,8 @@ to the live database, the public certificate still shows the collector's name.)
 
 You do this. It is a new company under the umbrella.
 
-**1. Invite them.** Supabase → **Auth → Users → Invite user**, their email.
-They get a link to set a password. Copy their **UUID** from that table.
-
-**2. In Lia Office → Subcontractors → Take on a subcontractor.** Paste their
-user id, the company name, and their technician number. Credits are billed to
+**In Lia Office → Subcontractors → Take on a subcontractor.** Their lead's
+email, the company name, and their technician number. Credits are billed to
 them: `0` blocks imports until you set a balance, `-1` is unlimited.
 
 The screen lists every company under you with its number, how many people are
@@ -101,12 +98,10 @@ their lead's account: they inherit the catalogue, their work counts toward that
 account, and they carry **no technician number of their own** — the certificate
 names their lead.
 
-**1. Invite them** in Supabase → Auth → Users, and copy the UUID. (Until Lia
-Office grows a screen for this, the invite is still yours to send — it needs the
-Supabase dashboard.)
-
-**2. In Lia Office → Your Crew → Add a field person.** Paste their user id,
-email and name. The screen also lists who is already on the account.
+**In Lia Office → Your Crew → Invite a field person.** Their email and name.
+They get an invitation, set their own password, and appear on the list. Nobody
+needs a Supabase login — see `docs/INVITE-FUNCTION.md` for how that works and
+why the key is not in the app.
 
 While you are acting as a subcontractor, this adds **their** crew — the title
 says whose — and `invited_by` still records that it was you.
@@ -161,6 +156,11 @@ While a session runs, everything behaves as that subcontractor: what you can
 read, what you record, which catalogue you pull, which account is billed.
 There is no second code path, which is the point — you are exercising theirs.
 
+**The home screen becomes theirs, too.** Anything they do not have is greyed
+out rather than hidden — a subcontractor has no *Subcontractors* screen, so the
+card stays visible, disabled, and says whose limitation it is. Hiding it would
+look like a fault; greying it shows you what they see and why.
+
 The rules:
 
 - **Downward only.** You can act as an account beneath yours. Never a sibling,
@@ -179,6 +179,24 @@ The rules:
 links. Editing a catalogue while acting as somebody writes to *your* catalogue.
 Do that work signed in as yourself. Support tickets deliberately stay yours —
 a ticket is from the person who wrote it.
+
+## Removing somebody
+
+**Your Crew → Remove**, and it asks first.
+
+Removal ends **access**, not history. Their next sync is refused, every screen
+closes to them at once, and **everything they recorded stays exactly as it is** —
+the inspections, the certificates, and their name on them as the person who
+collected the work. A certificate issued in March was true in March.
+
+They stay on the crew list, marked with the date and reason, because the office
+still needs to answer "who was on this account last spring". **Put back**
+restores the same membership, so a rehire does not split one person's work
+across two accounts.
+
+**A lead cannot be removed here.** Their number is the responsible technician on
+every certificate their account issues, so removing them would leave the next
+one with nobody to name. Replacing a lead is a separate, deliberate job.
 
 ## Who sees what
 

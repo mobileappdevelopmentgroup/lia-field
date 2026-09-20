@@ -23,6 +23,7 @@ suite and the only path to rebuilding the database from nothing.
 ## Applied to the live database
 
 **01–17** landed between June and 2026-08-30. **18–22** on 2026-09-19/20.
+**23 is written and not yet applied** — `supabase/dist/apply-23.sql`.
 
 | | What it did |
 |---|---|
@@ -48,6 +49,7 @@ suite and the only path to rebuilding the database from nothing.
 | `20_impersonation` | the office can act as a subcontractor: expiring, recorded, downward only |
 | `21_impersonation_write_paths` | the write paths follow that session — without it, work lands in the wrong account and looks fine |
 | `22_onboarding_rpcs` | crew and subcontractors added from Lia Office; fixes `add_crew_member` putting people in the wrong account |
+| `23_crew_removal` | removing somebody ends access and keeps their work; rehiring restores the same membership |
 
 ## Where things are
 

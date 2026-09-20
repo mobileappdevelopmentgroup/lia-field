@@ -32,7 +32,9 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and
+**23 is written and NOT applied** — `supabase/dist/apply-23.sql`: removing
+somebody from a crew, and the `acting_is_umbrella` flag the office draws the
+impersonated home screen from. **22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and
 *Subcontractors* screens call, and it replaced `add_crew_member`, which put a
 new hand in the wrong account when the office was acting as a subcontractor.
 
@@ -319,6 +321,22 @@ mechanically, one line changed each — because they resolved the account
 themselves; without it, work recorded while acting as somebody lands in the
 office's own account and looks like it succeeded. Catalogue authoring and tag
 links do **not** follow a session yet.
+
+### Inviting and removing people
+
+Lia Office sends invitations itself — subcontractors have no Supabase login, so
+"copy a user id from the dashboard" was never going to work for them. Creating
+an auth user needs the **service-role key**, which must never ship inside an
+installer, so it lives in an Edge Function (`supabase/functions/invite-user`)
+that identifies the caller from their own token and repeats every check the
+RPCs make. Deployment and the SMTP caveat: `docs/INVITE-FUNCTION.md`.
+
+**Removal is soft** (`23_crew_removal.sql`). Access ends — `my_account_id()`
+stops finding them, so every policy closes at once — and the work stays exactly
+where it is, still naming them as who collected it. A lead cannot be removed
+this way: their number is on every certificate the account issues. Re-adding
+somebody removed is a rehire of the same membership, because their records live
+under that account and would not follow them elsewhere.
 
 ### Job assignment
 

@@ -128,6 +128,11 @@ echo "Running onboarding assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/19_onboarding_test.sql"
 
+echo
+echo "Running crew removal assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/20_crew_removal_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

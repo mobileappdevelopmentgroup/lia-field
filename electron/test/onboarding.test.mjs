@@ -32,7 +32,7 @@ const ok = (l, g, w) => { const good = JSON.stringify(g) === JSON.stringify(w); 
 const UMBRELLA = {
   account_id: 'acct-batavia', account_name: 'Batavia',
   real_account_id: 'acct-batavia', real_account_name: 'Batavia',
-  impersonating: false, role: 'lead', is_umbrella: true,
+  impersonating: false, role: 'lead', is_umbrella: true, acting_is_umbrella: true,
   can_act_as: [{ account_id: 'acct-mike', name: 'Michael Dobbs' }],
 };
 
@@ -45,6 +45,7 @@ await p.addInitScript(({ umbrella }) => {
   window.__ctx = umbrella;
   window.__team = [
     { user_id: 'u1', name: 'Alex', email: 'alex@batavia.test', role: 'lead', rep_number: null },
+    { user_id: 'u2', name: 'Old Hand', email: 'hand@batavia.test', role: 'tech', rep_number: null },
   ];
   window.__subs = [
     { account_id: 'acct-mike', name: 'Michael Dobbs', rep_number: '738', credits: 3,
@@ -59,23 +60,34 @@ await p.addInitScript(({ umbrella }) => {
     startActingAs: async (o) => { window.__calls.push(['start', o]); return { ok: true, session: {} }; },
     stopActingAs: async () => ({ ok: true }),
     teamMembers: async () => ({ ok: true, team: window.__team }),
-    addCrewMember: async (m) => {
-      window.__calls.push(['crew', m]);
-      // What the server says when somebody is already placed. Shown verbatim.
-      if (m.userId === 'taken') {
+    sendInvite: async (inv) => {
+      window.__calls.push(['invite', inv]);
+      // The server's own words, which the screen must show rather than
+      // paraphrase — this one tells the lead what to do instead.
+      if (inv.email === 'taken@x.test') {
         return { ok: false, error: 'That person already belongs to an account. Moving them is a data migration, not an invitation.' };
       }
-      window.__team.push({ user_id: m.userId, name: m.name, email: m.email, role: 'tech', rep_number: null });
-      return { ok: true, accountId: 'acct-batavia' };
+      if (inv.kind === 'subcontractor') {
+        window.__subs.push({ account_id: 'acct-new', name: inv.name, rep_number: inv.repNumber,
+                             credits: Number(inv.credits || 0), members: 1, records: 0, lead: inv.name });
+        return { ok: true, result: { invited: true, kind: 'subcontractor' } };
+      }
+      window.__team.push({ user_id: 'u-new', name: inv.name, email: inv.email, role: 'tech', rep_number: null });
+      return { ok: true, result: { invited: true, kind: 'crew' } };
+    },
+    removeCrewMember: async (o) => {
+      window.__calls.push(['remove', o]);
+      const m = window.__team.find(x => x.user_id === o.userId);
+      if (m) m.removed_at = '2026-09-20T12:00:00Z', m.removed_reason = o.reason;
+      return { ok: true, result: { removed: true, records_kept: 14 } };
+    },
+    restoreCrewMember: async (o) => {
+      window.__calls.push(['restore', o]);
+      const m = window.__team.find(x => x.user_id === o.userId);
+      if (m) m.removed_at = null, m.removed_reason = null;
+      return { ok: true };
     },
     listSubs: async () => ({ ok: true, subs: window.__subs }),
-    addSubcontractor: async (sc) => {
-      window.__calls.push(['sub', sc]);
-      if (sc.repNumber === '734') return { ok: false, error: 'That technician number is already in use.' };
-      window.__subs.push({ account_id: 'acct-new', name: sc.name, rep_number: sc.repNumber,
-                           credits: Number(sc.credits || 0), members: 1, records: 0, lead: sc.name });
-      return { ok: true, sub: { account_id: 'acct-new', name: sc.name } };
-    },
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
     onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
@@ -95,31 +107,55 @@ ok('the umbrella is offered both screens',
    await p.evaluate(() => [$('home-team').style.display !== 'none', $('home-subs').style.display !== 'none']),
    [true, true]);
 
-// ── Crew ────────────────────────────────────────────────────────────────────
+// ── Crew: invitations ───────────────────────────────────────────────────────
 await p.click('#home-team'); await p.waitForTimeout(300);
-ok('the crew screen lists the account', await p.$$eval('#team-list .ob-row', e => e.length), 1);
+ok('the crew screen lists the account', await p.$$eval('#team-list .ob-row', e => e.length), 2);
 
 await p.click('#btn-team-add'); await p.waitForTimeout(150);
-ok('adding without a user id is refused before anything is sent',
-   await p.$eval('#team-msg', e => /user id is required/i.test(e.textContent)), true);
+ok('inviting without an email is refused before anything is sent',
+   await p.$eval('#team-msg', e => /email address is required/i.test(e.textContent)), true);
 ok('and nothing was sent', await p.evaluate(() => window.__calls.length), 0);
 
-await p.fill('#team-uid', 'taken');
-await p.click('#btn-team-add'); await p.waitForTimeout(250);
+await p.fill('#team-email', 'taken@x.test');
+await p.click('#btn-team-add'); await p.waitForTimeout(300);
 ok('the server\'s refusal is shown in its own words',
    await p.$eval('#team-msg', e => /data migration, not an invitation/.test(e.textContent)), true);
 
-await p.fill('#team-uid', 'u9');
-await p.fill('#team-email', 'hand@batavia.test');
+await p.fill('#team-email', 'hand2@batavia.test');
 await p.fill('#team-name', 'New Hand');
-await p.click('#btn-team-add'); await p.waitForTimeout(300);
-ok('a crew member is sent with what the server needs',
-   await p.evaluate(() => window.__calls.filter(c => c[0] === 'crew').pop()),
-   ['crew', { userId: 'u9', email: 'hand@batavia.test', name: 'New Hand' }]);
-ok('the list picks them up', await p.$$eval('#team-list .ob-row', e => e.length), 2);
-ok('shown as field, with no number of their own',
-   await p.$$eval('#team-list .ob-meta', e => e[0].textContent.trim()), 'lead');
-ok('and the form is cleared', await p.evaluate(() => $('team-uid').value), '');
+await p.click('#btn-team-add'); await p.waitForTimeout(350);
+ok('an invitation carries the email, the name, and which kind of person',
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'invite').pop()),
+   ['invite', { email: 'hand2@batavia.test', name: 'New Hand', kind: 'crew' }]);
+ok('the list picks them up', await p.$$eval('#team-list .ob-row', e => e.length), 3);
+ok('and the form is cleared', await p.evaluate(() => $('team-email').value), '');
+// No uuid anywhere: nobody should need the Supabase dashboard to hire.
+ok('the screen never asks for a user id',
+   await p.evaluate(() => !document.getElementById('team-uid')), true);
+
+// ── Crew: removing somebody ─────────────────────────────────────────────────
+ok('a lead has no Remove button — their number is on every certificate',
+   await p.$$eval('#team-list .ob-row', rows =>
+     rows[0].textContent.includes('lead') && !rows[0].querySelector('[data-remove]')), true);
+
+await p.click('#team-list [data-remove]'); await p.waitForTimeout(200);
+ok('removing asks first', await p.$eval('#team-remove-panel', e => e.classList.contains('on')), true);
+// The sentence that decides whether a lead ever dares use this.
+ok('and says the work is kept',
+   await p.$eval('#team-remove-panel', e => /Everything they recorded stays exactly as it is/.test(e.textContent)), true);
+
+await p.fill('#team-remove-reason', 'left the company');
+await p.click('#btn-team-remove-go'); await p.waitForTimeout(300);
+ok('the reason goes with it',
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'remove').pop()[1].reason), 'left the company');
+ok('and the result says how much work was kept',
+   await p.$eval('#team-msg', e => /14 records stay on the account, unchanged/.test(e.textContent)), true);
+ok('they stay on the list, marked',
+   await p.$$eval('#team-list .ob-meta', e => e.some(x => /removed 2026-09-20 — left the company/.test(x.textContent))), true);
+
+await p.click('#team-list [data-restore]'); await p.waitForTimeout(300);
+ok('and can be put back',
+   await p.evaluate(() => window.__calls.some(c => c[0] === 'restore')), true);
 
 // ── Subcontractors ──────────────────────────────────────────────────────────
 await p.click('#btn-team-home'); await p.waitForTimeout(150);
@@ -131,10 +167,10 @@ ok('an unlimited account says so rather than showing -1',
    await p.$$eval('#subs-list .ob-meta', e => /unlimited/.test(e[1].textContent)), true);
 
 await p.click('#btn-sub-add'); await p.waitForTimeout(150);
-ok('a company with no user id is refused',
-   await p.$eval('#subs-msg', e => /user id is required/i.test(e.textContent)), true);
+ok('a company with no email is refused',
+   await p.$eval('#subs-msg', e => /email is required/i.test(e.textContent)), true);
 
-await p.fill('#sub-uid', 'u7');
+await p.fill('#sub-email', 'third@sub.test');
 await p.click('#btn-sub-add'); await p.waitForTimeout(150);
 ok('and one with no name',
    await p.$eval('#subs-msg', e => /company name is required/i.test(e.textContent)), true);
@@ -146,15 +182,14 @@ await p.click('#btn-sub-add'); await p.waitForTimeout(150);
 ok('and one with no technician number',
    await p.$eval('#subs-msg', e => /technician number is required/i.test(e.textContent)), true);
 ok('none of those reached the server',
-   await p.evaluate(() => window.__calls.filter(c => c[0] === 'sub').length), 0);
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'invite' && c[1].kind === 'subcontractor').length), 0);
 
 await p.fill('#sub-rep', '742');
-await p.fill('#sub-email', 'third@sub.test');
 await p.fill('#sub-credits', '25');
 await p.click('#btn-sub-add'); await p.waitForTimeout(350);
 ok('a company is sent with everything the server needs',
-   await p.evaluate(() => window.__calls.filter(c => c[0] === 'sub').pop()),
-   ['sub', { userId: 'u7', email: 'third@sub.test', name: 'Third Company', repNumber: '742', credits: '25' }]);
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'invite').pop()),
+   ['invite', { email: 'third@sub.test', name: 'Third Company', repNumber: '742', credits: '25', kind: 'subcontractor' }]);
 ok('and appears in the list', await p.$$eval('#subs-list .ob-row', e => e.length), 3);
 
 // Acting as one of them opens the same panel, with that company chosen.
@@ -169,7 +204,8 @@ await p.click('#btn-ctx-cancel'); await p.waitForTimeout(100);
 await p.evaluate(() => {
   window.__ctx = { account_id: 'acct-mike', account_name: 'Michael Dobbs',
                    real_account_id: 'acct-mike', real_account_name: 'Michael Dobbs',
-                   impersonating: false, role: 'lead', is_umbrella: false, can_act_as: [] };
+                   impersonating: false, role: 'lead', is_umbrella: false,
+                   acting_is_umbrella: false, can_act_as: [] };
 });
 await p.evaluate(() => loadContext()); await p.waitForTimeout(150);
 ok('a subcontractor gets a crew screen but not a companies one',

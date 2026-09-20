@@ -35,6 +35,7 @@ const UMBRELLA = {
   account_id: 'acct-batavia', account_name: 'Batavia',
   real_account_id: 'acct-batavia', real_account_name: 'Batavia',
   impersonating: false, expires_at: null, reason: null,
+  role: 'lead', is_umbrella: true, acting_is_umbrella: true,
   can_act_as: [
     { account_id: 'acct-mike', name: 'Michael Dobbs' },
     { account_id: 'acct-nate', name: 'Nate Dobbs' },
@@ -61,6 +62,9 @@ await p.addInitScript(({ umbrella }) => {
         ...window.__ctx, impersonating: true,
         account_id: opts.accountId, account_name: 'Michael Dobbs',
         reason: opts.reason, credits: 3,
+        // Michael has no subcontractors of his own — is_umbrella still
+        // describes YOUR account, which is the distinction under test.
+        acting_is_umbrella: false,
         expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       };
       return { ok: true, session: { account_name: 'Michael Dobbs' } };
@@ -128,6 +132,24 @@ ok('the credit badge shows the account being billed',
 ok('and says so on hover',
    await p.$eval('#credit-badge', e => /Michael Dobbs/.test(e.title)), true);
 
+// ── The home screen becomes THEIR home screen ───────────────────────────────
+// The point of acting as somebody is seeing what they see. A Subcontractors
+// card that opens is the office's own view leaking into theirs.
+ok('the Subcontractors card is greyed out, not hidden',
+   await p.evaluate(() => {
+     const c = $('home-subs');
+     return [c.style.display !== 'none', c.classList.contains('disabled')];
+   }), [true, true]);
+ok('and says whose limitation it is',
+   await p.$eval('#home-subs', e => /Michael Dobbs has no subcontractors/.test(e.title)), true);
+ok('clicking it explains instead of opening',
+   await p.evaluate(() => { $('home-subs').click(); return $('screen-subs').classList.contains('active'); }), false);
+ok('the crew screen stays available — it is theirs',
+   await p.$eval('#home-team', e => e.style.display !== 'none' && !e.classList.contains('disabled')), true);
+// Nesting one session inside another is not a thing they could do either.
+ok('and Act as disappears while acting',
+   await p.$eval('#home-actas', e => e.style.display === 'none'), true);
+
 ok('the panel closed', await p.$eval('#ctx-panel', e => e.classList.contains('on')), false);
 ok('and we are back on the home screen',
    await p.evaluate(() => $('screen-home').classList.contains('active')), true);
@@ -140,6 +162,9 @@ ok('stopping tells the server',
    await p.evaluate(() => window.__calls.some(c => c[0] === 'stop')), true);
 ok('the banner goes',
    await p.$eval('#ctx-banner', e => e.classList.contains('on')), false);
+ok('and the office gets its own screens back',
+   await p.evaluate(() => [$('home-subs').classList.contains('disabled'), $('home-actas').style.display !== 'none']),
+   [false, true]);
 ok('and another company\'s rows are not left on screen',
    await p.evaluate(() => [_mgWos.length, _fprRows.length, _jbJobs.length]), [0, 0, 0]);
 
@@ -165,7 +190,8 @@ ok('an expired session triggers a re-read rather than a local guess',
 await p.evaluate(() => {
   window.__ctx = { account_id: 'acct-mike', account_name: 'Michael Dobbs',
                    real_account_id: 'acct-mike', real_account_name: 'Michael Dobbs',
-                   impersonating: false, can_act_as: [] };
+                   impersonating: false, role: 'lead', is_umbrella: false,
+                   acting_is_umbrella: false, can_act_as: [] };
 });
 await p.evaluate(() => loadContext());
 await p.waitForTimeout(150);

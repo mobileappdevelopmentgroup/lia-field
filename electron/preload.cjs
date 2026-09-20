@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('api', {
   // ── Onboarding ───────────────────────────────────────────────────────────
   teamMembers:    ()       => ipcRenderer.invoke('jobs:team'),
   addCrewMember:  (member) => ipcRenderer.invoke('team:add', member),
+  removeCrewMember:(opts)   => ipcRenderer.invoke('team:remove', opts),
+  restoreCrewMember:(opts)  => ipcRenderer.invoke('team:restore', opts),
+  sendInvite:     (invite)  => ipcRenderer.invoke('invite:send', invite),
   listSubs:       ()       => ipcRenderer.invoke('subs:list'),
   addSubcontractor:(sub)   => ipcRenderer.invoke('subs:add', sub),
 

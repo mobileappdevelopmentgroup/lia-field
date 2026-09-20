@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 22
+-- Migrations included: 23
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -94,6 +94,7 @@ CREATE FUNCTION public.account_rep(p_account uuid) RETURNS TABLE(rep_number text
     JOIN public.users u ON u.id = m.user_id
    WHERE m.account_id = p_account
      AND m.role = 'lead'
+     AND m.removed_at IS NULL
    ORDER BY m.rep_number NULLS LAST
    LIMIT 1;
 $$;
@@ -111,6 +112,7 @@ CREATE FUNCTION public.account_rep_number(p_account_id uuid) RETURNS text
     FROM public.account_members
    WHERE account_id = p_account_id
      AND role = 'lead'
+     AND removed_at IS NULL
      AND rep_number IS NOT NULL;
 $$;
 
@@ -302,6 +304,7 @@ DECLARE
   v_account uuid;
   v_role    text;
   v_user    uuid := (p->>'user_id')::uuid;
+  v_existing public.account_members%ROWTYPE;
 BEGIN
   IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
@@ -309,7 +312,8 @@ BEGIN
   IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
 
   IF NOT public.is_impersonating() THEN
-    SELECT role INTO v_role FROM public.account_members WHERE user_id = v_caller;
+    SELECT role INTO v_role FROM public.account_members
+     WHERE user_id = v_caller AND removed_at IS NULL;
     IF v_role IS DISTINCT FROM 'lead' THEN
       RAISE EXCEPTION 'Only a lead can add crew members';
     END IF;
@@ -319,7 +323,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = v_user) THEN
     RAISE EXCEPTION 'No such user. Invite them in Supabase first (Auth → Users → Invite user).';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.account_members WHERE user_id = v_user) THEN
+
+  SELECT * INTO v_existing FROM public.account_members WHERE user_id = v_user;
+  IF FOUND THEN
+    IF v_existing.account_id = v_account AND v_existing.removed_at IS NOT NULL THEN
+      UPDATE public.account_members
+         SET removed_at = NULL, removed_by = NULL, removed_reason = NULL
+       WHERE user_id = v_user;
+      RETURN v_account;
+    END IF;
     RAISE EXCEPTION 'That person already belongs to an account. Moving them is a data migration, not an invitation.';
   END IF;
 
@@ -329,11 +341,8 @@ BEGIN
     SET email = coalesce(EXCLUDED.email, public.users.email),
         name  = coalesce(EXCLUDED.name,  public.users.name);
 
-  -- invited_by is the REAL person, always: it is the answer to "who put them
-  -- here", which acting as somebody must not be able to launder.
   INSERT INTO public.account_members (user_id, account_id, role, desktop_access, rep_number, invited_by)
-  VALUES (v_user, v_account, 'tech', false, NULL, v_caller)
-  ON CONFLICT (user_id) DO NOTHING;
+  VALUES (v_user, v_account, 'tech', false, NULL, v_caller);
 
   RETURN v_account;
 END;
@@ -2932,7 +2941,8 @@ CREATE FUNCTION public.my_account_id() RETURNS uuid
     AS $$
   SELECT coalesce(
     (SELECT s.account_id FROM public.active_impersonation() s),
-    (SELECT account_id FROM public.account_members WHERE user_id = auth.uid())
+    (SELECT account_id FROM public.account_members
+      WHERE user_id = auth.uid() AND removed_at IS NULL)
   );
 $$;
 
@@ -2953,16 +2963,21 @@ CREATE FUNCTION public.my_context() RETURNS json
     'impersonating',   public.is_impersonating(),
     'expires_at',      (SELECT expires_at FROM public.active_impersonation()),
     'reason',          (SELECT reason FROM public.active_impersonation()),
-    'role',            (SELECT role FROM public.account_members WHERE user_id = auth.uid()),
+    'role',            (SELECT role FROM public.account_members
+                         WHERE user_id = auth.uid() AND removed_at IS NULL),
     'is_umbrella',     (SELECT a.parent_account_id IS NULL
                           FROM public.accounts a WHERE a.id = public.my_real_account_id()),
+    -- Does the account being worked in have subcontractors of its own?
+    'acting_is_umbrella', EXISTS (SELECT 1 FROM public.accounts
+                                   WHERE parent_account_id = public.my_account_id()),
     'can_act_as',      coalesce((
        SELECT json_agg(json_build_object('account_id', a.id, 'name', a.name) ORDER BY a.name)
          FROM public.accounts a
          JOIN public.account_descendants(public.my_real_account_id()) d ON d.account_id = a.id
         WHERE a.id <> public.my_real_account_id()
           AND EXISTS (SELECT 1 FROM public.account_members m
-                       WHERE m.user_id = auth.uid() AND m.role = 'lead')
+                       WHERE m.user_id = auth.uid() AND m.role = 'lead'
+                         AND m.removed_at IS NULL)
      ), '[]'::json)
   );
 $$;
@@ -3048,7 +3063,8 @@ CREATE FUNCTION public.my_real_account_id() RETURNS uuid
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-  SELECT account_id FROM public.account_members WHERE user_id = auth.uid();
+  SELECT account_id FROM public.account_members
+   WHERE user_id = auth.uid() AND removed_at IS NULL;
 $$;
 
 
@@ -3891,6 +3907,67 @@ $$;
 
 
 --
+-- Name: remove_crew_member(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.remove_crew_member(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_caller  uuid := auth.uid();
+  v_account uuid;
+  v_role    text;
+  v_user    uuid := nullif(p->>'user_id', '')::uuid;
+  v_reason  text := nullif(btrim(coalesce(p->>'reason', '')), '');
+  v_target  public.account_members%ROWTYPE;
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  v_account := public.my_account_id();
+  IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
+
+  -- Acting as a subcontractor is acting as their lead, and the session was
+  -- already gated on being one. Signed in as yourself, you must be the lead.
+  IF NOT public.is_impersonating() THEN
+    SELECT role INTO v_role FROM public.account_members
+     WHERE user_id = v_caller AND removed_at IS NULL;
+    IF v_role IS DISTINCT FROM 'lead' THEN
+      RAISE EXCEPTION 'Only a lead can remove somebody from the crew';
+    END IF;
+  END IF;
+
+  IF v_user IS NULL THEN RAISE EXCEPTION 'user_id is required'; END IF;
+  IF v_user = v_caller THEN
+    RAISE EXCEPTION 'You cannot remove yourself. Somebody else would have to let you back in.';
+  END IF;
+
+  SELECT * INTO v_target FROM public.account_members WHERE user_id = v_user;
+  IF NOT FOUND OR v_target.account_id <> v_account THEN
+    RAISE EXCEPTION 'That person is not on this account.';
+  END IF;
+  IF v_target.role = 'lead' THEN
+    RAISE EXCEPTION 'A lead cannot be removed here: their number is the responsible technician on every certificate this account issues.';
+  END IF;
+  IF v_target.removed_at IS NOT NULL THEN
+    RETURN json_build_object('removed', false, 'reason', 'already removed',
+                             'removed_at', v_target.removed_at);
+  END IF;
+
+  UPDATE public.account_members
+     SET removed_at = now(), removed_by = v_caller, removed_reason = v_reason
+   WHERE user_id = v_user;
+
+  RETURN json_build_object(
+    'removed', true,
+    'user_id', v_user,
+    'records_kept', (SELECT count(*) FROM public.inspections WHERE collected_by = v_user)
+                  + (SELECT count(*) FROM public.fp_inspections WHERE collected_by = v_user));
+END;
+$$;
+
+
+--
 -- Name: reply_support_ticket(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4007,6 +4084,48 @@ BEGIN
     RAISE EXCEPTION 'Only a lead technician can change the catalogue';
   END IF;
   RETURN v_account;
+END;
+$$;
+
+
+--
+-- Name: restore_crew_member(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.restore_crew_member(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_caller  uuid := auth.uid();
+  v_account uuid;
+  v_role    text;
+  v_user    uuid := nullif(p->>'user_id', '')::uuid;
+  v_target  public.account_members%ROWTYPE;
+BEGIN
+  IF v_caller IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  v_account := public.my_account_id();
+  IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
+
+  IF NOT public.is_impersonating() THEN
+    SELECT role INTO v_role FROM public.account_members
+     WHERE user_id = v_caller AND removed_at IS NULL;
+    IF v_role IS DISTINCT FROM 'lead' THEN
+      RAISE EXCEPTION 'Only a lead can put somebody back on the crew';
+    END IF;
+  END IF;
+
+  SELECT * INTO v_target FROM public.account_members WHERE user_id = v_user;
+  IF NOT FOUND OR v_target.account_id <> v_account THEN
+    RAISE EXCEPTION 'That person is not on this account.';
+  END IF;
+
+  UPDATE public.account_members
+     SET removed_at = NULL, removed_by = NULL, removed_reason = NULL
+   WHERE user_id = v_user;
+
+  RETURN json_build_object('restored', true, 'user_id', v_user);
 END;
 $$;
 
@@ -4510,7 +4629,10 @@ BEGIN
   RETURN (
     SELECT coalesce(json_agg(json_build_object(
              'user_id', u.id, 'name', u.name, 'email', u.email,
-             'role', m.role, 'rep_number', m.rep_number) ORDER BY m.role, u.name), '[]'::json)
+             'role', m.role, 'rep_number', m.rep_number,
+             'removed_at', m.removed_at,
+             'removed_reason', m.removed_reason)
+             ORDER BY (m.removed_at IS NOT NULL), m.role, u.name), '[]'::json)
       FROM public.account_members m JOIN public.users u ON u.id = m.user_id
      WHERE m.account_id = v_account);
 END;
@@ -4646,6 +4768,9 @@ CREATE TABLE public.account_members (
     rep_number text,
     invited_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    removed_at timestamp with time zone,
+    removed_by uuid,
+    removed_reason text,
     CONSTRAINT account_members_role_check CHECK ((role = ANY (ARRAY['lead'::text, 'tech'::text])))
 );
 
@@ -5601,6 +5726,13 @@ CREATE INDEX account_members_account_idx ON public.account_members USING btree (
 
 
 --
+-- Name: account_members_active_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX account_members_active_idx ON public.account_members USING btree (account_id) WHERE (removed_at IS NULL);
+
+
+--
 -- Name: account_members_rep_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6083,6 +6215,14 @@ ALTER TABLE ONLY public.account_members
 
 ALTER TABLE ONLY public.account_members
     ADD CONSTRAINT account_members_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: account_members account_members_removed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_members
+    ADD CONSTRAINT account_members_removed_by_fkey FOREIGN KEY (removed_by) REFERENCES auth.users(id);
 
 
 --
@@ -7433,6 +7573,14 @@ GRANT ALL ON FUNCTION public.record_fp_tag_write(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION remove_crew_member(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.remove_crew_member(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.remove_crew_member(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION reply_support_ticket(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -7446,6 +7594,14 @@ GRANT ALL ON FUNCTION public.reply_support_ticket(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.require_lead() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.require_lead() TO authenticated;
+
+
+--
+-- Name: FUNCTION restore_crew_member(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.restore_crew_member(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.restore_crew_member(p jsonb) TO authenticated;
 
 
 --

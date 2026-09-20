@@ -583,6 +583,61 @@ ipcMain.handle('team:add', async (_event, member) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// Inviting goes through an Edge Function, not from here: creating an auth user
+// needs the service-role key, and that key must never be inside something a
+// customer can install. supabase/functions/invite-user holds it; this passes
+// the signed-in user's token so the function can check who is asking.
+ipcMain.handle('invite:send', async (_event, invite) => {
+  try {
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, error: 'Sign in first.' };
+
+    const { data, error } = await sb.functions.invoke('invite-user', {
+      body: {
+        email:      invite && invite.email,
+        name:       invite && invite.name,
+        kind:       invite && invite.kind,          // 'crew' | 'subcontractor'
+        rep_number: invite && invite.repNumber,
+        credits:    invite && invite.credits,
+      },
+    });
+    // A non-2xx from the function arrives as an error whose body holds the
+    // reason. Surfacing "Edge Function returned a non-2xx status code" instead
+    // would hide the sentence that says what to do.
+    if (error) {
+      let detail = error.message;
+      try {
+        const body = await error.context?.json?.();
+        if (body && body.error) detail = body.error;
+      } catch (_) { /* keep error.message */ }
+      return { ok: false, error: detail };
+    }
+    if (data && data.error) return { ok: false, error: data.error };
+    return { ok: true, result: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('team:remove', async (_event, opts) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('remove_crew_member', {
+      p: { user_id: opts && opts.userId, reason: opts && opts.reason },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('team:restore', async (_event, opts) => {
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.rpc('restore_crew_member', { p: { user_id: opts && opts.userId } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 ipcMain.handle('subs:list', async () => {
   try {
     const sb = await getSupabase();

@@ -59,6 +59,12 @@
     .ob-row button:hover { border-color: var(--accent); }
     .ob-empty { color: var(--muted); font-size: 12px; padding: 12px; }
 
+    /* A card the account being acted as does not have. Shown, not hidden:
+       the office needs to see the difference between "they cannot do this"
+       and "this app is broken". */
+    .mode-card.disabled { opacity: .38; cursor: not-allowed; }
+    .mode-card.disabled:hover { border-color: var(--border); background: var(--surf); }
+
     /* ── Working-context banner ─────────────────────────────────────────── */
     /* Deliberately loud, and deliberately not dismissible. While a session is
        running every write lands in somebody else's company; a screen that looks
@@ -76,9 +82,15 @@
     #ctx-banner button:hover { background: rgba(0,0,0,.4); }
 
     /* ── Act-as panel ───────────────────────────────────────────────────── */
-    #ctx-panel { display: none; position: fixed; inset: 0; z-index: 50;
+    #ctx-panel, #team-remove-panel { display: none; position: fixed; inset: 0; z-index: 50;
                  background: rgba(0,0,0,.55); align-items: center; justify-content: center; }
-    #ctx-panel.on { display: flex; }
+    #ctx-panel.on, #team-remove-panel.on { display: flex; }
+    #team-remove-panel label { display: block; font-size: 11px; color: var(--muted);
+                               margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .06em; }
+    #team-remove-panel input { width: 100%; background: var(--bg); color: var(--fg);
+                               border: 1px solid var(--border); border-radius: 7px;
+                               padding: 8px 10px; font-size: 13px; }
+    #team-remove-error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
     .ctx-box { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
                padding: 22px; width: 420px; max-width: calc(100vw - 40px); }
     .ctx-box h3 { margin: 0 0 4px; font-size: 15px; }
@@ -891,14 +903,11 @@
         <div id="team-list"></div>
       </div>
       <div class="cat-detail">
-        <div class="cat-detail-title">Add a field person</div>
+        <div class="cat-detail-title">Invite a field person</div>
         <div class="ob-hint">
-          Invite them in Supabase first — <b>Auth → Users → Invite user</b> — then
-          copy their <b>user id</b> from that table. They set their own password
-          from the email.
+          They get an email, set their own password, and appear on this list.
+          Nobody needs a Supabase login for this.
         </div>
-        <label class="ob-label" for="team-uid">Their user id</label>
-        <input class="ob-input" id="team-uid" type="text" placeholder="00000000-0000-0000-0000-000000000000">
         <label class="ob-label" for="team-email">Email</label>
         <input class="ob-input" id="team-email" type="email" placeholder="them@example.com">
         <label class="ob-label" for="team-name">Name</label>
@@ -908,7 +917,7 @@
           the lead of this account, whoever did the inspection. They get the phone
           app, not Lia Office.
         </div>
-        <div class="ob-actions"><button class="btn-ok" id="btn-team-add">Add to crew</button></div>
+        <div class="ob-actions"><button class="btn-ok" id="btn-team-add">Send invitation</button></div>
         <div id="team-msg" class="ob-msg"></div>
       </div>
     </div>
@@ -932,11 +941,9 @@
         <div class="ob-hint">
           A new company with its own equipment, work orders and crew. They see
           none of your other subcontractors, and none of them see this one.
-          Invite their lead in Supabase first and copy their <b>user id</b>.
+          Their lead gets an email and sets their own password.
         </div>
-        <label class="ob-label" for="sub-uid">Their lead's user id</label>
-        <input class="ob-input" id="sub-uid" type="text" placeholder="00000000-0000-0000-0000-000000000000">
-        <label class="ob-label" for="sub-email">Email</label>
+        <label class="ob-label" for="sub-email">Their lead's email</label>
         <input class="ob-input" id="sub-email" type="email" placeholder="lead@company.com">
         <label class="ob-label" for="sub-name">Company name</label>
         <input class="ob-input" id="sub-name" type="text" placeholder="Michael Dobbs">
@@ -1347,6 +1354,26 @@
       </div>
 
     </main>
+  </div>
+</div>
+
+<!-- ═══════════════ REMOVE FROM CREW ═══════════════ -->
+<div id="team-remove-panel" class="ctx-panel-like">
+  <div class="ctx-box">
+    <h3>Remove <span id="team-remove-who"></span> from the crew?</h3>
+    <div class="ctx-sub">
+      They lose access immediately — the next sync from their phone is refused.
+      <b>Everything they recorded stays exactly as it is</b>: the inspections,
+      the certificates, and their name on them as the person who collected the
+      work. You can put them back later without splitting their history.
+    </div>
+    <label for="team-remove-reason">Reason (optional, kept on the record)</label>
+    <input id="team-remove-reason" type="text" placeholder="e.g. left the company">
+    <div id="team-remove-error"></div>
+    <div class="ctx-actions">
+      <button class="btn-g" id="btn-team-remove-cancel">Cancel</button>
+      <button class="btn-ok" id="btn-team-remove-go">Remove</button>
+    </div>
   </div>
 </div>
 
@@ -3055,32 +3082,92 @@ async function loadTeam() {
 
   const team = res.team || [];
   if (!team.length) { list.innerHTML = '<div class="ob-empty">Nobody yet.</div>'; return; }
-  list.innerHTML = team.map(m => `
-    <div class="ob-row">
+  list.innerHTML = team.map(m => {
+    const gone = !!m.removed_at;
+    // A lead is not removable: their number is the responsible technician on
+    // every certificate the account issues.
+    const btn = m.role === 'lead' ? ''
+      : gone ? `<button data-restore="${esc(m.user_id)}">Put back</button>`
+             : `<button data-remove="${esc(m.user_id)}" data-who="${esc(m.name || m.email || 'them')}">Remove</button>`;
+    return `
+    <div class="ob-row" style="${gone ? 'opacity:.55;' : ''}">
       <span class="ob-who">${esc(m.name || m.email || 'Unnamed')}</span>
-      <span class="ob-meta">${esc(m.role === 'lead' ? 'lead' : 'field')}${m.rep_number ? ' · no. ' + esc(m.rep_number) : ''}</span>
+      <span class="ob-meta">${esc(m.role === 'lead' ? 'lead' : 'field')}${m.rep_number ? ' · no. ' + esc(m.rep_number) : ''}${
+        gone ? ' · removed ' + esc(String(m.removed_at).slice(0, 10)) + (m.removed_reason ? ' — ' + esc(m.removed_reason) : '') : ''}</span>
       <span class="ob-sp"></span>
       <span class="ob-meta">${esc(m.email || '')}</span>
-    </div>`).join('');
+      ${btn}
+    </div>`; }).join('');
+
+  list.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => askRemoveCrew(b.dataset.remove, b.dataset.who)));
+  list.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', async () => {
+    const res = await window.api.restoreCrewMember({ userId: b.dataset.restore });
+    await loadTeam();
+    const msg = $('team-msg');
+    msg.className = res && res.ok ? 'ob-msg ok' : 'ob-msg err';
+    msg.textContent = res && res.ok ? 'They can sign in again.' : ((res && res.error) || 'Could not restore them.');
+  }));
 }
+
+// Removing somebody ends their ACCESS and keeps their WORK. Saying so on the
+// way past matters: a lead who thinks this deletes a season of inspections
+// will never use it, and one who thinks it does not when it does is worse.
+function askRemoveCrew(userId, who) {
+  _teamRemoving = userId;
+  $('team-remove-who').textContent = who;
+  $('team-remove-reason').value = '';
+  $('team-remove-panel').classList.add('on');
+  $('team-remove-reason').focus();
+}
+
+let _teamRemoving = null;
 
 $('btn-team-add').addEventListener('click', async () => {
   const msg = $('team-msg');
   msg.className = 'ob-msg';
-  const userId = $('team-uid').value.trim();
-  const email  = $('team-email').value.trim();
-  const name   = $('team-name').value.trim();
-  if (!userId) { msg.className = 'ob-msg err'; msg.textContent = 'Their user id is required — copy it from Supabase → Auth → Users.'; return; }
+  const email = $('team-email').value.trim();
+  const name  = $('team-name').value.trim();
+  if (!email || !email.includes('@')) {
+    msg.className = 'ob-msg err'; msg.textContent = 'An email address is required — that is where the invitation goes.'; return;
+  }
 
   $('btn-team-add').disabled = true;
-  const res = await window.api.addCrewMember({ userId, email, name });
+  msg.textContent = 'Sending…';
+  const res = await window.api.sendInvite({ email, name, kind: 'crew' });
   $('btn-team-add').disabled = false;
 
-  if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not add them.'; return; }
+  if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not send the invitation.'; return; }
+  $('team-email').value = ''; $('team-name').value = '';
+  await loadTeam();          // clears the message box, so it runs BEFORE we write
   msg.className = 'ob-msg ok';
-  msg.textContent = `${name || email || 'They'} can sign in to the phone app now.`;
-  $('team-uid').value = ''; $('team-email').value = ''; $('team-name').value = '';
-  loadTeam();
+  msg.textContent = res.result && res.result.invited
+    ? `Invitation sent to ${email}. They appear here once they set a password.`
+    : `${name || email} was already registered, and is now on this crew.`;
+});
+
+$('btn-team-remove-cancel').addEventListener('click', () => {
+  $('team-remove-panel').classList.remove('on');
+  _teamRemoving = null;
+});
+
+$('btn-team-remove-go').addEventListener('click', async () => {
+  if (!_teamRemoving) return;
+  $('btn-team-remove-go').disabled = true;
+  const res = await window.api.removeCrewMember({
+    userId: _teamRemoving, reason: $('team-remove-reason').value.trim(),
+  });
+  $('btn-team-remove-go').disabled = false;
+
+  if (!res || !res.ok) { $('team-remove-error').textContent = (res && res.error) || 'Could not remove them.'; return; }
+  $('team-remove-panel').classList.remove('on');
+  _teamRemoving = null;
+  await loadTeam();
+  const msg = $('team-msg');
+  msg.className = 'ob-msg ok';
+  const kept = res.result && res.result.records_kept;
+  msg.textContent = kept
+    ? `Removed. Their ${kept} record${kept === 1 ? '' : 's'} stay on the account, unchanged.`
+    : 'Removed.';
 });
 
 async function loadSubs() {
@@ -3118,25 +3205,26 @@ $('btn-sub-add').addEventListener('click', async () => {
   const msg = $('subs-msg');
   msg.className = 'ob-msg';
   const sub = {
-    userId:    $('sub-uid').value.trim(),
     email:     $('sub-email').value.trim(),
     name:      $('sub-name').value.trim(),
     repNumber: $('sub-rep').value.trim(),
     credits:   $('sub-credits').value.trim(),
+    kind:      'subcontractor',
   };
-  if (!sub.userId)    { msg.className = 'ob-msg err'; msg.textContent = 'Their lead\'s user id is required — copy it from Supabase → Auth → Users.'; return; }
+  if (!sub.email || !sub.email.includes('@')) { msg.className = 'ob-msg err'; msg.textContent = 'Their lead\'s email is required — that is where the invitation goes.'; return; }
   if (!sub.name)      { msg.className = 'ob-msg err'; msg.textContent = 'A company name is required: it is what the account is called.'; return; }
   if (!sub.repNumber) { msg.className = 'ob-msg err'; msg.textContent = 'Their technician number is required: it is what the certificate names.'; return; }
 
   $('btn-sub-add').disabled = true;
-  const res = await window.api.addSubcontractor(sub);
+  msg.textContent = 'Sending…';
+  const res = await window.api.sendInvite(sub);
   $('btn-sub-add').disabled = false;
 
   if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not create the company.'; return; }
+  ['sub-email','sub-name','sub-rep','sub-credits'].forEach(id => { $(id).value = ''; });
+  await loadSubs();          // also clears its message box
   msg.className = 'ob-msg ok';
-  msg.textContent = `${sub.name} created. They can sign in once they have set their password.`;
-  ['sub-uid','sub-email','sub-name','sub-rep','sub-credits'].forEach(id => { $(id).value = ''; });
-  loadSubs();
+  msg.textContent = `${sub.name} created, and ${sub.email} invited. They can sign in once they set a password.`;
   // A new company is one more you can act as, so the context is now stale.
   loadContext();
 });
@@ -3183,12 +3271,28 @@ async function loadContext() {
 
 function renderContext() {
   const bar = $('ctx-banner');
-  const canAct = !!(_ctx && Array.isArray(_ctx.can_act_as) && _ctx.can_act_as.length);
-  $('home-actas').style.display = canAct ? '' : 'none';
-  // A field person has no business on a crew screen, and the umbrella flag
-  // describes the REAL account — acting as somebody does not lend you theirs.
-  $('home-team').style.display = (_ctx && _ctx.role === 'lead') ? '' : 'none';
-  $('home-subs').style.display = (_ctx && _ctx.role === 'lead' && _ctx.is_umbrella) ? '' : 'none';
+  // While acting as somebody, the home screen shows what THEY would see.
+  // Anything the office has and they do not is greyed rather than hidden, so
+  // it is obvious that the difference is the impersonation and not a fault —
+  // and clicking it says whose limitation it is.
+  const acting   = !!(_ctx && _ctx.impersonating);
+  const isLead   = !!(_ctx && (acting || _ctx.role === 'lead'));
+  const umbrella = acting ? !!(_ctx && _ctx.acting_is_umbrella) : !!(_ctx && _ctx.is_umbrella);
+  const canAct   = !!(_ctx && Array.isArray(_ctx.can_act_as) && _ctx.can_act_as.length);
+  const them     = (_ctx && _ctx.account_name) || 'this company';
+
+  // Acting as somebody is not something they can do, so it goes while acting.
+  $('home-actas').style.display = (canAct && !acting) ? '' : 'none';
+  $('home-team').style.display  = isLead ? '' : 'none';
+
+  // The Subcontractors door belongs to the umbrella. Acting as a subcontractor
+  // who has none, it stays visible but disabled — the view is theirs, and the
+  // card says why it cannot be opened.
+  const subs = $('home-subs');
+  subs.style.display = (isLead && (umbrella || acting)) ? '' : 'none';
+  const subsOff = acting && !umbrella;
+  subs.classList.toggle('disabled', subsOff);
+  subs.title = subsOff ? `${them} has no subcontractors of their own` : '';
 
   if (!_ctx || !_ctx.impersonating) {
     bar.classList.remove('on');
@@ -3305,7 +3409,14 @@ $('home-views').addEventListener('click', () => requireAuth('views'));
 $('home-fpr').addEventListener('click', () => requireAuth('fpr'));
 $('home-jobs').addEventListener('click', () => requireAuth('jobs'));
 $('home-team').addEventListener('click', () => requireAuth('team'));
-$('home-subs').addEventListener('click', () => requireAuth('subs'));
+$('home-subs').addEventListener('click', () => {
+  if ($('home-subs').classList.contains('disabled')) {
+    // Silence here reads as a broken button. Say whose limitation it is.
+    $('home-subs').title = `${(_ctx && _ctx.account_name) || 'This company'} cannot take on subcontractors — stop acting as them to manage your own.`;
+    return;
+  }
+  requireAuth('subs');
+});
 $('btn-history-home').addEventListener('click', () => showScreen('home'));
 
 $('btn-signout').addEventListener('click', async () => {
