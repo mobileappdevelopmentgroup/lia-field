@@ -563,6 +563,53 @@ ipcMain.handle('support:mark-read', async (_event, ticketId) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── Onboarding: crew, and subcontractors ───────────────────────────────────
+// Both are server-checked: add_crew_member follows the working context (so the
+// office acting as a subcontractor adds THEIR crew), add_subcontractor refuses
+// unless the caller really is the umbrella and is not acting as anybody.
+// See supabase/22_onboarding_rpcs.sql.
+ipcMain.handle('team:add', async (_event, member) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('add_crew_member', {
+      p: {
+        user_id: member && member.userId,
+        email:   member && member.email,
+        name:    member && member.name,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, accountId: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('subs:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('my_subcontractors');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, subs: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('subs:add', async (_event, sub) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('add_subcontractor', {
+      p: {
+        user_id:    sub && sub.userId,
+        email:      sub && sub.email,
+        name:       sub && sub.name,
+        rep_number: sub && sub.repNumber,
+        // Blank means 0 — a balance is set deliberately, never inherited.
+        credits:    sub && sub.credits !== '' && sub.credits != null ? Number(sub.credits) : 0,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, sub: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── Working context: whose account am I in ─────────────────────────────────
 // The umbrella (Batavia) can act as a lead subcontractor, to show them how the
 // job is done or to see exactly what they see. While a session is active EVERY

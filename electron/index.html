@@ -39,6 +39,26 @@
                     color: #8fa4ff; border: 1px solid rgba(79,110,247,.25);
                     border-radius: 99px; padding: 2px 10px; }
 
+    /* ── Onboarding screens ─────────────────────────────────────────────── */
+    .ob-label { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 4px;
+                text-transform: uppercase; letter-spacing: .06em; }
+    .ob-input { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+                border-radius: 7px; padding: 8px 10px; font-size: 13px; }
+    .ob-hint  { color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .ob-actions { margin-top: 16px; }
+    .ob-msg   { margin-top: 10px; font-size: 12px; min-height: 16px; }
+    .ob-msg.err { color: #f87171; }
+    .ob-msg.ok  { color: #4ade80; }
+    .ob-row   { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px;
+                border-bottom: 1px solid var(--border); font-size: 13px; }
+    .ob-row .ob-who  { font-weight: 600; }
+    .ob-row .ob-meta { color: var(--muted); font-size: 11px; }
+    .ob-row .ob-sp   { flex: 1; }
+    .ob-row button   { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+                       border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+    .ob-row button:hover { border-color: var(--accent); }
+    .ob-empty { color: var(--muted); font-size: 12px; padding: 12px; }
+
     /* ── Working-context banner ─────────────────────────────────────────── */
     /* Deliberately loud, and deliberately not dismissible. While a session is
        running every write lands in somebody else's company; a screen that looks
@@ -96,7 +116,13 @@
     #login-error.vis { display: block; }
 
     /* ── Home ───────────────────────────────────────────────────────────── */
-    #screen-home { align-items: center; justify-content: center; gap: 0; }
+    /* Scrolls, and the cards wrap. The row was a single non-wrapping line:
+       at the window's own default width it ran to 2620px, leaving eight of
+       twelve cards off-screen with no way to reach them — Job Board, FP
+       Records, Certificate Views and Support among them, unless the window was
+       dragged wider than most displays. */
+    #screen-home { align-items: center; justify-content: center; gap: 0;
+                   overflow-y: auto; padding: 28px 16px; }
     .home-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
     .home-title { font-size: 22px; font-weight: 700; color: var(--text); }
     .home-sub   { font-size: 13px; color: var(--muted); margin-top: -24px; }
@@ -370,7 +396,8 @@
     .cat-msg { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 18px; }
     .cat-msg.err { color: var(--err); }
 
-    .mode-cards { display: flex; gap: 20px; }
+    .mode-cards { display: flex; flex-wrap: wrap; justify-content: center;
+                  gap: 20px; max-width: 900px; }
     .mode-card  { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
                   padding: 32px 28px; width: 200px; display: flex; flex-direction: column;
                   align-items: center; gap: 12px; cursor: pointer; transition: border-color .2s, background .2s;
@@ -617,6 +644,16 @@
         <div class="mode-desc">Import a CSV into BSI work order.</div>
         <div class="mode-credits" id="home-credits" style="display:none;"></div>
       </div>
+      <div class="mode-card" id="home-team" style="display:none;">
+        <div class="mode-icon">👷</div>
+        <div class="mode-name">Your Crew</div>
+        <div class="mode-desc">Add the field people who work for you, and see who is on the account.</div>
+      </div>
+      <div class="mode-card" id="home-subs" style="display:none;">
+        <div class="mode-icon">🏢</div>
+        <div class="mode-name">Subcontractors</div>
+        <div class="mode-desc">Take on a company, and see what each one has been doing.</div>
+      </div>
       <div class="mode-card" id="home-actas" style="display:none;">
         <div class="mode-icon">🎭</div>
         <div class="mode-name">Act as a Subcontractor</div>
@@ -841,6 +878,84 @@
      networks lives on this screen rather than in settings — the label is the
      thing that makes the report mean anything. No visitor address is stored;
      see supabase/14_certificate_views.sql. -->
+<!-- ═══════════════ SCREEN: TEAM ═══════════════ -->
+<div id="screen-team" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-team-home">← Home</button>
+      <div class="cat-title" id="team-title">Your Crew</div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:340px;">
+        <div class="cat-list-hdr"><span>Who is on this account</span></div>
+        <div id="team-list"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-detail-title">Add a field person</div>
+        <div class="ob-hint">
+          Invite them in Supabase first — <b>Auth → Users → Invite user</b> — then
+          copy their <b>user id</b> from that table. They set their own password
+          from the email.
+        </div>
+        <label class="ob-label" for="team-uid">Their user id</label>
+        <input class="ob-input" id="team-uid" type="text" placeholder="00000000-0000-0000-0000-000000000000">
+        <label class="ob-label" for="team-email">Email</label>
+        <input class="ob-input" id="team-email" type="email" placeholder="them@example.com">
+        <label class="ob-label" for="team-name">Name</label>
+        <input class="ob-input" id="team-name" type="text" placeholder="Their name">
+        <div class="ob-hint" style="margin-top:12px;">
+          A field person carries <b>no technician number</b>: the certificate names
+          the lead of this account, whoever did the inspection. They get the phone
+          app, not Lia Office.
+        </div>
+        <div class="ob-actions"><button class="btn-ok" id="btn-team-add">Add to crew</button></div>
+        <div id="team-msg" class="ob-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: SUBCONTRACTORS ═══════════════ -->
+<div id="screen-subs" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-subs-home">← Home</button>
+      <div class="cat-title">Subcontractors</div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:380px;">
+        <div class="cat-list-hdr"><span>Companies under you</span></div>
+        <div id="subs-list"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-detail-title">Take on a subcontractor</div>
+        <div class="ob-hint">
+          A new company with its own equipment, work orders and crew. They see
+          none of your other subcontractors, and none of them see this one.
+          Invite their lead in Supabase first and copy their <b>user id</b>.
+        </div>
+        <label class="ob-label" for="sub-uid">Their lead's user id</label>
+        <input class="ob-input" id="sub-uid" type="text" placeholder="00000000-0000-0000-0000-000000000000">
+        <label class="ob-label" for="sub-email">Email</label>
+        <input class="ob-input" id="sub-email" type="email" placeholder="lead@company.com">
+        <label class="ob-label" for="sub-name">Company name</label>
+        <input class="ob-input" id="sub-name" type="text" placeholder="Michael Dobbs">
+        <label class="ob-label" for="sub-rep">Their technician number</label>
+        <input class="ob-input" id="sub-rep" type="text" placeholder="738">
+        <label class="ob-label" for="sub-credits">Import credits</label>
+        <input class="ob-input" id="sub-credits" type="text" placeholder="0, or -1 for unlimited">
+        <div class="ob-hint" style="margin-top:12px;">
+          The technician number goes on every certificate their company issues,
+          so it cannot be left blank. Credits are billed to <b>them</b>; 0 blocks
+          imports until you set a balance.
+        </div>
+        <div class="ob-actions"><button class="btn-ok" id="btn-sub-add">Create company</button></div>
+        <div id="subs-msg" class="ob-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="screen-views" class="screen">
   <div class="cat-wrap">
     <div class="cat-head">
@@ -1370,6 +1485,8 @@ function goToDestination(dest) {
   else if (dest === 'views')   { showScreen('views');   loadViews(); }
   else if (dest === 'fpr')     { showScreen('fpr');     loadFpr(); }
   else if (dest === 'jobs')    { showScreen('jobs');    loadJobBoard(); }
+  else if (dest === 'team')    { showScreen('team');    loadTeam(); }
+  else if (dest === 'subs')    { showScreen('subs');    loadSubs(); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -2915,6 +3032,119 @@ async function refreshSupportBadge() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Crew and subcontractors
+// ════════════════════════════════════════════════════════════════
+// Two screens, and the difference between them is what is being added:
+//   Your Crew        field people, into whichever account is being worked in
+//   Subcontractors   a whole company, under the umbrella
+//
+// Neither is the security boundary — every rule is enforced in the database,
+// and the errors below are the server's own words rather than a paraphrase, so
+// a refusal says the same thing here as it does in the SQL editor.
+
+async function loadTeam() {
+  const list = $('team-list');
+  list.innerHTML = '<div class="ob-empty">Loading…</div>';
+  $('team-msg').textContent = '';
+  // Whose crew this is depends on the working context, so say so in the title.
+  $('team-title').textContent = (_ctx && _ctx.impersonating)
+    ? `${_ctx.account_name} — Crew` : 'Your Crew';
+
+  const res = await window.api.teamMembers();
+  if (!res || !res.ok) { list.innerHTML = `<div class="ob-empty">${esc((res && res.error) || 'Could not load.')}</div>`; return; }
+
+  const team = res.team || [];
+  if (!team.length) { list.innerHTML = '<div class="ob-empty">Nobody yet.</div>'; return; }
+  list.innerHTML = team.map(m => `
+    <div class="ob-row">
+      <span class="ob-who">${esc(m.name || m.email || 'Unnamed')}</span>
+      <span class="ob-meta">${esc(m.role === 'lead' ? 'lead' : 'field')}${m.rep_number ? ' · no. ' + esc(m.rep_number) : ''}</span>
+      <span class="ob-sp"></span>
+      <span class="ob-meta">${esc(m.email || '')}</span>
+    </div>`).join('');
+}
+
+$('btn-team-add').addEventListener('click', async () => {
+  const msg = $('team-msg');
+  msg.className = 'ob-msg';
+  const userId = $('team-uid').value.trim();
+  const email  = $('team-email').value.trim();
+  const name   = $('team-name').value.trim();
+  if (!userId) { msg.className = 'ob-msg err'; msg.textContent = 'Their user id is required — copy it from Supabase → Auth → Users.'; return; }
+
+  $('btn-team-add').disabled = true;
+  const res = await window.api.addCrewMember({ userId, email, name });
+  $('btn-team-add').disabled = false;
+
+  if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not add them.'; return; }
+  msg.className = 'ob-msg ok';
+  msg.textContent = `${name || email || 'They'} can sign in to the phone app now.`;
+  $('team-uid').value = ''; $('team-email').value = ''; $('team-name').value = '';
+  loadTeam();
+});
+
+async function loadSubs() {
+  const list = $('subs-list');
+  list.innerHTML = '<div class="ob-empty">Loading…</div>';
+  $('subs-msg').textContent = '';
+
+  const res = await window.api.listSubs();
+  if (!res || !res.ok) { list.innerHTML = `<div class="ob-empty">${esc((res && res.error) || 'Could not load.')}</div>`; return; }
+
+  const subs = res.subs || [];
+  if (!subs.length) { list.innerHTML = '<div class="ob-empty">No subcontractors yet.</div>'; return; }
+  list.innerHTML = subs.map(sc => `
+    <div class="ob-row">
+      <span class="ob-who">${esc(sc.name || '')}</span>
+      <span class="ob-meta">no. ${esc(sc.rep_number || '—')} · ${esc(String(sc.members || 0))} on the account ·
+        ${esc(String(sc.records || 0))} records ·
+        ${sc.credits === -1 ? 'unlimited' : esc(String(sc.credits)) + ' credits'}</span>
+      <span class="ob-sp"></span>
+      <button data-act-as="${esc(sc.account_id)}">Act as</button>
+    </div>`).join('');
+
+  // Acting as one of them is the same panel as everywhere else, opened with
+  // that company already chosen. A second way of starting a session would be a
+  // second place for the rules to drift.
+  list.querySelectorAll('[data-act-as]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openActAs();
+      $('ctx-account').value = btn.dataset.actAs;
+    });
+  });
+}
+
+$('btn-sub-add').addEventListener('click', async () => {
+  const msg = $('subs-msg');
+  msg.className = 'ob-msg';
+  const sub = {
+    userId:    $('sub-uid').value.trim(),
+    email:     $('sub-email').value.trim(),
+    name:      $('sub-name').value.trim(),
+    repNumber: $('sub-rep').value.trim(),
+    credits:   $('sub-credits').value.trim(),
+  };
+  if (!sub.userId)    { msg.className = 'ob-msg err'; msg.textContent = 'Their lead\'s user id is required — copy it from Supabase → Auth → Users.'; return; }
+  if (!sub.name)      { msg.className = 'ob-msg err'; msg.textContent = 'A company name is required: it is what the account is called.'; return; }
+  if (!sub.repNumber) { msg.className = 'ob-msg err'; msg.textContent = 'Their technician number is required: it is what the certificate names.'; return; }
+
+  $('btn-sub-add').disabled = true;
+  const res = await window.api.addSubcontractor(sub);
+  $('btn-sub-add').disabled = false;
+
+  if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not create the company.'; return; }
+  msg.className = 'ob-msg ok';
+  msg.textContent = `${sub.name} created. They can sign in once they have set their password.`;
+  ['sub-uid','sub-email','sub-name','sub-rep','sub-credits'].forEach(id => { $(id).value = ''; });
+  loadSubs();
+  // A new company is one more you can act as, so the context is now stale.
+  loadContext();
+});
+
+$('btn-team-home').addEventListener('click', () => showScreen('home'));
+$('btn-subs-home').addEventListener('click', () => showScreen('home'));
+
+// ════════════════════════════════════════════════════════════════
 // Working context — whose account am I in
 // ════════════════════════════════════════════════════════════════
 // The umbrella can act as a lead subcontractor. While a session is running
@@ -2936,6 +3166,8 @@ function resetAccountCaches() {
   _fprRows = []; _fprSelected = null; _fprStatus = '';
   _jbJobs = []; _jbTeam = []; _jbSelected = null; _jbEditing = null; _jbStatus = '';
   _fppPending = []; _fppSkip = new Set();
+  const team = $('team-list'); if (team) team.innerHTML = '';
+  const subs = $('subs-list'); if (subs) subs.innerHTML = '';
 }
 
 async function loadContext() {
@@ -2953,6 +3185,10 @@ function renderContext() {
   const bar = $('ctx-banner');
   const canAct = !!(_ctx && Array.isArray(_ctx.can_act_as) && _ctx.can_act_as.length);
   $('home-actas').style.display = canAct ? '' : 'none';
+  // A field person has no business on a crew screen, and the umbrella flag
+  // describes the REAL account — acting as somebody does not lend you theirs.
+  $('home-team').style.display = (_ctx && _ctx.role === 'lead') ? '' : 'none';
+  $('home-subs').style.display = (_ctx && _ctx.role === 'lead' && _ctx.is_umbrella) ? '' : 'none';
 
   if (!_ctx || !_ctx.impersonating) {
     bar.classList.remove('on');
@@ -3068,6 +3304,8 @@ $('home-support').addEventListener('click', () => requireAuth('support'));
 $('home-views').addEventListener('click', () => requireAuth('views'));
 $('home-fpr').addEventListener('click', () => requireAuth('fpr'));
 $('home-jobs').addEventListener('click', () => requireAuth('jobs'));
+$('home-team').addEventListener('click', () => requireAuth('team'));
+$('home-subs').addEventListener('click', () => requireAuth('subs'));
 $('btn-history-home').addEventListener('click', () => showScreen('home'));
 
 $('btn-signout').addEventListener('click', async () => {

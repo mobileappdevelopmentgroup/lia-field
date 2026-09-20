@@ -57,6 +57,11 @@ shipped.
 
 Then `npm run sync:www` again, because `storage.js` and `sw.js` just changed.
 
+**A desktop-only build moves one string.** If nothing under `field-app/` has
+changed, bump `package.json` alone: the phone app's version is what the stores
+show, and moving it without shipping claims a release that never happened. The
+table above is for a release that includes the phone.
+
 ## 3. Commit and push
 
 Pushing needs the **org** account; `hectorahinojosa1` is pull-only on this repo.

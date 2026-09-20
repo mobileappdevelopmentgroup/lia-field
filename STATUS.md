@@ -95,10 +95,21 @@ then refuses. Starting or stopping drops every cached screen.
 wired before its markup existed (which silently killed the rest of the
 renderer), and an expired session recursing until the window died.
 
-**Not built yet:** a crew-onboarding screen (adding a field person still needs
-the SQL editor, and the Supabase dashboard for the invite either way), and
-creating a subcontractor is deliberately SQL-only. Catalogue authoring and tag
-links do not follow an impersonation session.
+**Onboarding is a screen now too** — `22_onboarding_rpcs.sql` plus *Your Crew*
+and *Subcontractors* in Lia Office. ⚠️ **22 is not applied yet**: paste
+`supabase/dist/apply-22.sql`, or those two screens error. It also **replaces
+`add_crew_member`**, which resolved the account itself — so the office acting as
+a subcontractor added a hand to the *office's* account, silently. The SQL tests
+caught it.
+
+**Two bugs found while building the screens**, both pre-existing:
+`.mode-cards` never wrapped, so at the window's own default width the card row
+ran to 2620px and **eight of twelve cards were unreachable** — Job Board, FP
+Records, Certificate Views and Support among them — and the home screen did not
+scroll. Both fixed.
+
+**Still not built:** the Supabase invite itself (no API for it from here), and
+catalogue authoring and tag links do not follow an impersonation session.
 
 ⚠️ **The other desktop tests cannot run on this machine** — Playwright's bundled
 Chromium is missing (`npx playwright install chromium` restores it). The new

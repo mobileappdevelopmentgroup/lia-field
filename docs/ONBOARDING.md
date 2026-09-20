@@ -40,7 +40,19 @@ You do this. It is a new company under the umbrella.
 **1. Invite them.** Supabase → **Auth → Users → Invite user**, their email.
 They get a link to set a password. Copy their **UUID** from that table.
 
-**2. Create their account** — SQL editor:
+**2. In Lia Office → Subcontractors → Take on a subcontractor.** Paste their
+user id, the company name, and their technician number. Credits are billed to
+them: `0` blocks imports until you set a balance, `-1` is unlimited.
+
+The screen lists every company under you with its number, how many people are
+on it, how much work has come back, and an **Act as** button.
+
+It refuses — in the server's own words — if you are not the umbrella, if you are
+acting as somebody, if the number is missing, or if that person already belongs
+to an account. The last one is deliberate: moving somebody who already has
+records is a data migration, not an invitation.
+
+**Or from SQL**, which is what the screen calls:
 
 ```sql
 SELECT public.create_subcontractor(
@@ -93,7 +105,13 @@ names their lead.
 Office grows a screen for this, the invite is still yours to send — it needs the
 Supabase dashboard.)
 
-**2. The lead runs**, signed in, from Lia Office:
+**2. In Lia Office → Your Crew → Add a field person.** Paste their user id,
+email and name. The screen also lists who is already on the account.
+
+While you are acting as a subcontractor, this adds **their** crew — the title
+says whose — and `invited_by` still records that it was you.
+
+**Or from SQL**, which is what the screen calls:
 
 ```sql
 SELECT public.add_crew_member('{

@@ -21,6 +21,12 @@ contextBridge.exposeInMainWorld('api', {
   login:                (creds)            => ipcRenderer.invoke('auth:login', creds),
   logout:               ()                 => ipcRenderer.invoke('auth:logout'),
 
+  // ── Onboarding ───────────────────────────────────────────────────────────
+  teamMembers:    ()       => ipcRenderer.invoke('jobs:team'),
+  addCrewMember:  (member) => ipcRenderer.invoke('team:add', member),
+  listSubs:       ()       => ipcRenderer.invoke('subs:list'),
+  addSubcontractor:(sub)   => ipcRenderer.invoke('subs:add', sub),
+
   // ── Working context (acting as a subcontractor) ──────────────────────────
   getContext:   ()      => ipcRenderer.invoke('ctx:get'),
   startActingAs:(opts)  => ipcRenderer.invoke('ctx:start', opts),

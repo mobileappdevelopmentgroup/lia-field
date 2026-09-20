@@ -122,6 +122,11 @@ echo "Running impersonation assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/18_impersonation_test.sql"
 
+echo
+echo "Running onboarding assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/19_onboarding_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"
