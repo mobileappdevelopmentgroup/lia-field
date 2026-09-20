@@ -20,19 +20,28 @@ service-role connection has no `auth.uid()` for those RPCs to read.
 
 ## Deploying it
 
-One-time, from this repo:
+**Deployed 2026-09-20**, version 1, `verify_jwt: true`. Redeploy after any edit:
 
 ```bash
-brew install supabase/tap/supabase       # the CLI is not installed yet
-supabase login                           # opens a browser
-supabase link --project-ref bqoxpbjtqwicurmuxueq
-supabase functions deploy invite-user
+npx supabase functions deploy invite-user --project-ref bqoxpbjtqwicurmuxueq
 ```
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase at
-runtime — there is nothing to configure and no secret to paste.
+Use **npx, not Homebrew**: `brew install supabase/tap/supabase` fails on this
+machine because the Command Line Tools are too old for Homebrew to build
+anything, and updating them is a multi-gigabyte Xcode download for no gain. npx
+needs nothing installed. Docker is not needed either — the CLI warns that it is
+not running and deploys anyway.
 
-Check it end to end by inviting yourself at a second address from **Your Crew**.
+The CLI is already authenticated from an earlier session. If that expires,
+`npx supabase login` opens a browser.
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase at
+runtime — nothing to configure, no secret to paste.
+
+Verified after deploying: an unauthenticated POST is refused with
+`401 UNAUTHORIZED_NO_AUTH_HEADER` before it reaches any of our code, because
+`verify_jwt` is on. Check the rest end to end by inviting yourself at a second
+address from **Your Crew**.
 
 ## ⚠️ Email delivery will be the first thing that breaks
 

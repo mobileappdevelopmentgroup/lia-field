@@ -32,9 +32,9 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**23 is written and NOT applied** — `supabase/dist/apply-23.sql`: removing
-somebody from a crew, and the `acting_is_umbrella` flag the office draws the
-impersonated home screen from. **22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and
+**23 was applied 2026-09-20** — removing somebody from a crew, and the
+`acting_is_umbrella` flag the office draws the impersonated home screen from.
+**22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and
 *Subcontractors* screens call, and it replaced `add_crew_member`, which put a
 new hand in the wrong account when the office was acting as a subcontractor.
 
