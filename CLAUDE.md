@@ -329,7 +329,11 @@ Lia Office sends invitations itself — subcontractors have no Supabase login, s
 an auth user needs the **service-role key**, which must never ship inside an
 installer, so it lives in an Edge Function (`supabase/functions/invite-user`)
 that identifies the caller from their own token and repeats every check the
-RPCs make. Deployment and the SMTP caveat: `docs/INVITE-FUNCTION.md`.
+RPCs make. Deployed, with auth email going through **Amazon SES** as
+`lia@mobileappdevelopmentgroup.com` (IAM user `ses-lia-invites`, which can send
+as nothing else; credentials in `~/.ses-lia/smtp.env`, never in the repo).
+Templates live in `supabase/email-templates/` and are pushed with
+`scripts/push-auth-config.mjs`. See `docs/INVITE-FUNCTION.md`.
 
 **Removal is soft** (`23_crew_removal.sql`). Access ends — `my_account_id()`
 stops finding them, so every policy closes at once — and the work stays exactly

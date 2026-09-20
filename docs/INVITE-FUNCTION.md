@@ -43,20 +43,49 @@ Verified after deploying: an unauthenticated POST is refused with
 `verify_jwt` is on. Check the rest end to end by inviting yourself at a second
 address from **Your Crew**.
 
-## ⚠️ Email delivery will be the first thing that breaks
+## Email goes through Amazon SES
 
-Supabase's built-in SMTP is for development: a handful of messages per hour,
-shared infrastructure, and it will start refusing with *"email rate limit
-exceeded"*. That error is passed through to the screen verbatim, so it is
-recognisable when it happens.
+**Wired 2026-09-20.** Supabase's built-in SMTP is for development — a handful of
+messages an hour, then *"email rate limit exceeded"* — and invitations are the
+front door for people who have no other way in, so they cannot ride on that.
 
-The fix is custom SMTP: **Supabase → Project Settings → Auth → SMTP Settings**,
-pointed at Amazon SES — which is already in use for the scheduler project
-(`scheduler@mobileappdevelopmentgroup.com`, IAM user `ses-scheduler-messages`).
-A separate IAM user and a `lia@` sender would keep the two apart.
+| | |
+|---|---|
+| Host | `email-smtp.us-east-1.amazonaws.com:587` (STARTTLS; 465 is implicit TLS, which Supabase's mailer does not speak) |
+| Sender | `Lia <lia@mobileappdevelopmentgroup.com>` |
+| IAM user | `ses-lia-invites`, allowed **only** `ses:SendRawEmail`/`SendEmail`, and only with `FromAddress = lia@mobileappdevelopmentgroup.com` |
+| Credentials | `~/.ses-lia/smtp.env`, mode 600, **outside the repo**. Source it; never paste it |
 
-Until that is configured, invitations work but should be treated as
-rate-limited: invite a crew one at a time, not fifteen at once.
+SES is already in **production access** on this account (50,000/day, 14/sec) and
+`mobileappdevelopmentgroup.com` is verified for sending, so no sandbox request
+and no per-address verification was needed. The scheduler project sends from the
+same domain as `scheduler@` through its own IAM user; the two are separate so
+either can be revoked alone.
+
+**An SES SMTP password is not the IAM secret key** — it is derived from it
+through a SigV4 HMAC chain ending in `SendRawEmail`. `scripts/push-auth-config.mjs`
+never sees the IAM key; the derivation happened once, and only the result is
+stored.
+
+### Changing the templates or the sender
+
+`supabase/email-templates/` holds the invitation and the password reset. Push
+them, and the SMTP settings, with:
+
+```bash
+set -a; . ~/.ses-lia/smtp.env; set +a
+SUPABASE_ACCESS_TOKEN=$(security find-generic-password -s 'Supabase CLI' -w)   node scripts/push-auth-config.mjs
+```
+
+`--dry-run` prints what would be sent and changes nothing. Secrets are read from
+the environment only — never printed, never committed.
+
+### Verifying without emailing anybody
+
+The derived password is the most likely thing to be wrong, and proving it does
+not need a test message: open SMTP, STARTTLS, `AUTH LOGIN`, and stop. SES
+answers `235 Authentication successful`. That was done after wiring it, and is
+worth repeating whenever the credentials are rotated.
 
 ## What the function will and will not do
 
