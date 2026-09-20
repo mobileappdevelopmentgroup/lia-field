@@ -24,9 +24,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Migration state
 
-The live database carries **01–17** as of 2026-08-30; **18–21 are written,
-rehearsed and not yet applied** (`supabase/dist/apply-18-21.sql`, then the ops
-script that restructures the accounts). Onboarding people is `docs/ONBOARDING.md`. Before writing any bundle
+The live database carries **01–21** as of 2026-09-19, and the accounts were
+restructured into the umbrella shape the same day
+(`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
+Michael, with the 1,724 records moved into Nate's own account).
+
+**22 is written, rehearsed and NOT applied** — `supabase/dist/apply-22.sql`.
+Lia Office's *Your Crew* and *Subcontractors* screens error without it, and it
+also replaces `add_crew_member`, which put a new hand in the wrong account when
+the office was acting as a subcontractor.
+
+Onboarding people is `docs/ONBOARDING.md`. Before writing any bundle
 for it, check what is actually live rather than trusting this file:
 `git ls-files supabase/*.sql` shows what pre-dates the current branch, and the
 REST schema shows what the database has. A bundle that starts part-way up the
