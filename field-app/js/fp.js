@@ -1000,6 +1000,8 @@ function fpRenderPending() {
 }
 
 function fpRenderItems() {
+  // One queue read for the whole list; see the same note in list.js.
+  const _upq = window.LiaSyncState ? window.LiaSyncState.queued() : {};
   const list = $('fp-items-list');
   const hdr = $('fp-items-hdr');
   if (!list) return;
@@ -1016,7 +1018,7 @@ function fpRenderItems() {
     const sub = [it.item_type, it.manufacturer, it.model].filter(Boolean).join(' · ');
     card.innerHTML = `
       <div class="fp-item-top">
-        <span class="fp-item-sn">${esc(it.serial_num)}</span>
+        <span class="fp-item-sn">${esc(it.serial_num)}</span>${window.LiaSyncState ? window.LiaSyncState.badge(it.id, _upq) : ''}
         <span class="fp-item-meta">${esc(sub)}</span>
         <span class="fp-item-badge ${it.overall_pass ? 'pass' : 'fail'}">${it.overall_pass ? 'PASS' : 'REMOVED'}</span>
       </div>

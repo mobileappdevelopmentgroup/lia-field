@@ -177,6 +177,29 @@
   // capture screens means. Support traffic is excluded on purpose: a ticket
   // that has not gone yet is not an inspection at risk, and showing it here
   // would tell a tech he has unsent records when he does not.
+  // Put records back in the queue. Used by "resend" in Settings, after a run
+  // that stopped half way or a record the server never confirmed.
+  //
+  // It skips anything already queued or already uploaded, deliberately: the
+  // write path versions a record rather than rejecting it, so sending a second
+  // copy of something that landed would quietly add a superseded row to a
+  // customer's certificate history. Resend means "what is missing", not "send
+  // it all again".
+  function requeue(entries) {
+    var already = {};
+    readQueue().forEach(function (e) { already[e.clientId] = true; });
+    var state = root.LiaSyncState;
+    var added = 0;
+    (entries || []).forEach(function (e) {
+      if (!e || !e.clientId) return;
+      if (already[e.clientId]) return;
+      if (state && state.sentAt(e.clientId)) return;
+      enqueue(e);
+      added++;
+    });
+    return added;
+  }
+
   function pendingSummary() {
     var q = readQueue().filter(function (e) { return !isDeferrable(e); });
     return {
@@ -305,6 +328,13 @@
           q2.shift();
           writeQueue(q2);
           sent++;
+          // The server has it. This is the only place that knows that, and the
+          // only place allowed to say so — see sync-state.js.
+          try {
+            root.dispatchEvent(new CustomEvent('lia-record-sent', {
+              detail: { clientId: entry.clientId, kind: entry.kind },
+            }));
+          } catch (_) { /* older webview: the queue still shortened */ }
           onProgress(sent, sent + q2.length);
           return step();
         });
@@ -401,6 +431,7 @@
     catchUpAssignments: catchUpAssignments,
     pullTypes: pullTypes,
     enqueue: enqueue,
+    requeue: requeue,
     dequeue: dequeue,
     queueLength: queueLength,
     pendingSummary: pendingSummary,

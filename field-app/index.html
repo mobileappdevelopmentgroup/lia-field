@@ -713,7 +713,57 @@
     .auth-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center;
                  gap: 12px; padding: 28px 22px calc(28px + var(--safe-b)); max-width: 460px;
                  margin: 0 auto; width: 100%; }
-    .auth-logo { font-size: 26px; font-weight: 800; letter-spacing: -.03em; }
+    .auth-logo { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+    .auth-head { display: flex; align-items: center; gap: 13px; margin-bottom: 4px; }
+    .auth-mark { width: 46px; height: 46px; flex: none; border-radius: 13px; display: grid;
+                 place-items: center; font-size: 23px; font-weight: 800; color: #fff;
+                 background: linear-gradient(145deg, var(--accent, #4f6ef7), #7a5cf0); }
+    .auth-tag { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    .auth-card { background: var(--surf); border: 1px solid var(--border); border-radius: 14px;
+                 padding: 18px 16px; }
+    .auth-card-quiet { background: transparent; }
+    .auth-card-title { font-size: 15.5px; font-weight: 700; }
+    .auth-card-sub { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 3px; }
+
+    .auth-label { display: block; font-size: 11px; color: var(--muted); letter-spacing: .06em;
+                  text-transform: uppercase; margin: 14px 0 5px; }
+    /* 16px keeps iOS from zooming the whole page when the field takes focus. */
+    .auth-input { width: 100%; font-size: 16px; padding: 13px 14px; border-radius: 10px;
+                  background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+    .auth-input:focus { outline: none; border-color: var(--accent, #4f6ef7); }
+
+    .auth-primary { width: 100%; margin-top: 18px; padding: 15px; border: 0; border-radius: 11px;
+                    font-size: 16px; font-weight: 700; color: #fff; cursor: pointer;
+                    background: var(--accent, #4f6ef7); }
+    .auth-secondary { width: 100%; margin-top: 14px; padding: 14px; border-radius: 11px;
+                      font-size: 15px; font-weight: 600; cursor: pointer;
+                      background: transparent; color: var(--fg); border: 1px solid var(--border); }
+    .auth-secondary:active, .auth-primary:active { opacity: .85; }
+    .auth-note { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 12px; }
+
+    /* A divider that says these are alternatives, not a step and a way out. */
+    .auth-or { display: flex; align-items: center; gap: 12px; color: var(--muted);
+               font-size: 12px; margin: 4px 0; }
+    .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    /* Whether one record reached the server. Small, quiet, and absent
+       entirely on a phone that does not sync — a mark on every line about a
+       feature the tech has chosen not to use is noise. */
+    .up { font-size: 11px; font-weight: 700; margin-left: 7px; vertical-align: middle; }
+    .up-ok   { color: var(--ok-fg, #3fb950); }
+    .up-wait { color: var(--muted); }
+    .up-bad  { color: var(--bad-fg, #f85149); }
+
+    /* What is still owed, named rather than counted. */
+    #waiting-list { margin: 8px 0 4px; max-height: 210px; overflow-y: auto;
+                    border: 1px solid var(--border); border-radius: 8px; }
+    .wait-row { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+                border-bottom: 1px solid var(--border); font-size: 13px; }
+    .wait-row:last-child { border-bottom: 0; }
+    .wait-row .wr-sn { font-weight: 600; }
+    .wait-row .wr-meta { color: var(--muted); font-size: 11px; margin-left: auto; text-align: right; }
+    .wait-row.bad .wr-meta { color: var(--bad-fg); }
+
     .auth-sub { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
     .auth-msg { font-size: 12.5px; line-height: 1.45; color: var(--muted); min-height: 18px; }
     .auth-msg.err { color: var(--bad-fg); font-weight: 600; }
@@ -732,31 +782,48 @@
      build goes straight to the jobs list, as it always did. -->
 <div id="screen-auth" class="screen">
   <div class="auth-wrap">
-    <div class="auth-logo">Lia Field</div>
-    <div class="auth-sub">Sign in with the account your company set up.</div>
-    <div class="field-ig">
-      <div class="field-label">Email</div>
-      <div class="field-ig-wrap">
-        <input type="email" id="auth-email" class="field-input" autocomplete="username"
-               autocapitalize="none" autocorrect="off" inputmode="email">
+    <div class="auth-head">
+      <div class="auth-mark">L</div>
+      <div>
+        <div class="auth-logo">Lia Field</div>
+        <div class="auth-tag">Ladder and fall-protection inspections</div>
       </div>
     </div>
-    <div class="field-ig">
-      <div class="field-label">Password</div>
-      <div class="field-ig-wrap">
-        <input type="password" id="auth-pass" class="field-input" autocomplete="current-password">
+
+    <!-- Two ways to use this app, presented as two choices rather than one
+         path and an escape hatch. A tech who logs on his own phone and hands
+         over a CSV is not a lapsed setup step. -->
+    <div class="auth-card">
+      <div class="auth-card-title">Sign in</div>
+      <div class="auth-card-sub">Your work uploads to your company automatically.</div>
+
+      <label class="auth-label" for="auth-email">Email</label>
+      <input type="email" id="auth-email" class="auth-input" autocomplete="username"
+             autocapitalize="none" autocorrect="off" inputmode="email"
+             placeholder="you@company.com">
+
+      <label class="auth-label" for="auth-pass">Password</label>
+      <input type="password" id="auth-pass" class="auth-input" autocomplete="current-password"
+             placeholder="••••••••">
+
+      <button class="auth-primary" id="btn-sign-in">Sign in</button>
+      <div class="auth-msg" id="auth-msg"></div>
+      <div class="auth-note">
+        Invited by your lead? Use the address the invitation came to. Do this
+        first sign-in where you have signal — your equipment list downloads
+        once, then the app works with none.
       </div>
     </div>
-    <button class="add-ladder-btn" id="btn-sign-in">Sign In</button>
-    <div class="auth-msg" id="auth-msg"></div>
-    <!-- Signing in is optional. A tech who only wants to log on this phone and
-         hand over a CSV is a supported way to use the app, not a lapsed
-         setup step — so this screen must never be a wall. -->
-    <button class="btn-g" id="btn-work-offline"
-            style="width:100%;padding:11px;margin-top:14px;">Work on this phone only</button>
-    <div class="auth-sub" style="margin-top:8px;font-size:12.5px;">
-      You can log inspections and share them as a CSV without an account.
-      Sign in later from Settings to upload them instead.
+
+    <div class="auth-or"><span>or</span></div>
+
+    <div class="auth-card auth-card-quiet">
+      <div class="auth-card-title">Use it on this phone only</div>
+      <div class="auth-card-sub">
+        Log inspections and share them as a CSV. Nothing is uploaded, and no
+        account is needed. You can sign in later from Settings.
+      </div>
+      <button class="auth-secondary" id="btn-work-offline">Start without an account</button>
     </div>
   </div>
 </div>
@@ -997,6 +1064,10 @@
       <span class="recent-hdr-label" id="ladders-hdr">Ladders (0)</span>
       <button class="btn-share" id="btn-share-csv">↑ Share CSV</button>
     </div>
+    <!-- What has not reached the server yet. Fall protection has had this
+         since sync existed; ladders never uploaded at all, so there was
+         nothing to count. -->
+    <div class="fp-pending" id="ladder-pending" style="display:none;"></div>
     <div id="ladders-list"></div>
   </div>
 
@@ -1095,7 +1166,19 @@
   </div>
   <div id="sync-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
     <button class="btn-g" id="btn-refresh-catalog" style="padding:11px;">Refresh equipment list</button>
-    <button class="btn-g" id="btn-sign-out" style="padding:11px; color:var(--bad-fg); border-color:rgba(var(--bad-rgb),.3);">Sign out</button>
+    <!-- The one above asks for what changed since last time. This asks for
+         everything, which is what you want when something looks missing and
+         "trust the bookmark" is the thing you are trying to get past. -->
+    <button class="btn-g" id="btn-redownload-catalog" style="padding:11px;">Download the whole list again</button>
+
+    <div class="auth-sub" id="upload-state" style="margin-top:10px;"></div>
+    <button class="btn-g" id="btn-upload-now" style="padding:11px;">Upload waiting work</button>
+    <button class="btn-g" id="btn-resend-job" style="padding:11px;">Re-send this job</button>
+    <button class="btn-g" id="btn-resend-all" style="padding:11px;">Re-send everything not uploaded</button>
+    <button class="btn-g" id="btn-show-waiting" style="padding:11px;">Show what is waiting</button>
+    <div id="waiting-list" style="display:none;"></div>
+
+    <button class="btn-g" id="btn-sign-out" style="padding:11px; margin-top:10px; color:var(--bad-fg); border-color:rgba(var(--bad-rgb),.3);">Sign out</button>
     <div class="auth-msg" id="settings-sync-msg"></div>
   </div>
   <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
@@ -1219,6 +1302,7 @@
 <script src="./js/list.js"></script>
 <script src="./js/nfc.js"></script>
 <script src="./js/sync.js"></script>
+<script src="./js/sync-state.js"></script>
 <script src="./js/fp-types.js"></script>
 <script src="./js/fp.js"></script>
 <script src="./js/help.js"></script>

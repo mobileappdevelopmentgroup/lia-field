@@ -252,6 +252,149 @@
     goScreen('auth');
   });
 
+  // ── What this device still owes the server ────────────────────────────────
+  function renderUploadState() {
+    const el = $('upload-state');
+    if (!el || !window.LiaSync || !window.LiaSync.pendingSummary) return;
+    const p = window.LiaSync.pendingSummary();
+    if (!p.total) {
+      el.textContent = 'Everything recorded on this phone is on the server.';
+      el.className = 'auth-sub';
+      return;
+    }
+    const age = p.oldest ? Math.floor((Date.now() - new Date(p.oldest)) / 3600000) : 0;
+    el.className = 'auth-msg' + (p.failing ? ' err' : '');
+    el.textContent = p.failing
+      ? `${p.total} waiting · ${p.failing} the server keeps refusing.`
+      : `${p.total} waiting to upload${age >= 1 ? `, oldest ${age}h ago` : ''}.`;
+  }
+  window.renderUploadState = renderUploadState;
+  renderUploadState();
+
+  const redown = $('btn-redownload-catalog');
+  if (redown) redown.addEventListener('click', function () {
+    redown.disabled = true;
+    show('Downloading the whole list…');
+    window.LiaSync.pullCatalog({
+      full: true,
+      onProgress: function (d, t) { show(t ? `${d} of ${t}…` : 'Downloading…'); },
+    }).then(function (r) {
+      show(`${r.total} items on this device.`);
+      if (typeof renderSyncStatus === 'function') renderSyncStatus();
+    }).catch(function (e) {
+      show(e.message || 'Could not download it.', true);
+    }).then(function () { redown.disabled = false; });
+  });
+
+  const upNow = $('btn-upload-now');
+  if (upNow) upNow.addEventListener('click', function () {
+    upNow.disabled = true;
+    show('Uploading…');
+    window.LiaSync.drain({ onProgress: function (s2, t) { show(`${s2} of ${t}…`); } })
+      .then(function (r) {
+        // The server's own words when it refuses: a tech reading "not going
+        // through" learns nothing, and the lead they ring learns less.
+        show(r.error ? (r.error + (r.sent ? ` (${r.sent} did go up)` : ''))
+                     : (r.sent ? `${r.sent} uploaded.` : 'Nothing was waiting.'), !!r.error);
+        renderUploadState();
+        renderWaiting();
+        if (typeof renderPending === 'function') renderPending();
+      })
+      .then(function () { upNow.disabled = false; });
+  });
+
+  // Re-sending means "send what is missing", never "send it all again": the
+  // write path versions a record rather than rejecting it, so a second copy of
+  // something that already landed would add a superseded row to a customer's
+  // certificate history.
+  function resend(records, what) {
+    const entries = records.filter(Boolean);
+    if (!entries.length) { show('Nothing to re-send.'); return; }
+    const added = window.LiaSync.requeue(entries);
+    renderUploadState();
+    if (typeof renderPending === 'function') renderPending();
+    if (!added) { show(`${what} is already on the server.`); return; }
+    show(`${added} queued. Uploading…`);
+    window.LiaSync.drain({}).then(function (r) {
+      show(r.error ? r.error : `${r.sent} uploaded.`, !!r.error);
+      renderUploadState();
+      renderWaiting();
+    });
+  }
+
+  const rsJob = $('btn-resend-job');
+  if (rsJob) rsJob.addEventListener('click', function () {
+    const job = (typeof _job !== 'undefined' && _job) ? _job : null;
+    if (!job) { show('Open a job first, then re-send it.', true); return; }
+    resend(jobEntries(job), job.workOrderNum ? `WO ${job.workOrderNum}` : 'That job');
+  });
+
+  const rsAll = $('btn-resend-all');
+  if (rsAll) rsAll.addEventListener('click', function () {
+    let all = [];
+    try {
+      Object.values(loadJobs()).forEach(function (j) { all = all.concat(jobEntries(j)); });
+    } catch (_) { /* fall through to the empty case */ }
+    resend(all, 'Everything on this phone');
+  });
+
+  // Every record in a job, in the shape the queue takes. Ladders need the job
+  // for their work order, which is why this lives here rather than in the
+  // capture screens.
+  function jobEntries(job) {
+    const out = [];
+    (job.ladders || []).forEach(function (l) {
+      if (!l.serialNum || !job.workOrderNum) return;
+      out.push({
+        clientId: l.id,
+        kind: 'ladder',
+        payload: {
+          serial_num: l.serialNum,
+          work_order_id: job.workOrderNum,
+          brand: l.brand || undefined,
+          type: l.type || undefined,
+          length: l.length || undefined,
+          notes: l.desc || undefined,
+          source: 'field',
+          captured_at: l.capturedAt || undefined,
+        },
+      });
+    });
+    (job.items || []).forEach(function (it) {
+      if (typeof fpToPayload !== 'function') return;
+      out.push({ clientId: it.id, kind: 'fall_protection', payload: fpToPayload(it) });
+    });
+    return out;
+  }
+
+  function renderWaiting() {
+    const box = $('waiting-list');
+    if (!box || !window.LiaSyncState) return;
+    if (box.style.display === 'none') return;
+    const rows = window.LiaSyncState.waiting();
+    if (!rows.length) {
+      box.innerHTML = '<div class="wait-row"><span class="wr-sn">Nothing waiting</span></div>';
+      return;
+    }
+    box.innerHTML = rows.map(function (r) {
+      const bad = r.attempts >= 3;
+      const why = bad ? (r.lastError || 'the server keeps refusing it')
+                      : (r.workOrder ? 'WO ' + r.workOrder : 'waiting');
+      return '<div class="wait-row' + (bad ? ' bad' : '') + '">' +
+             '<span class="wr-sn">' + esc(r.label) + '</span>' +
+             '<span class="wr-meta">' + esc(why) + '</span></div>';
+    }).join('');
+  }
+
+  const showWaiting = $('btn-show-waiting');
+  if (showWaiting) showWaiting.addEventListener('click', function () {
+    const box = $('waiting-list');
+    const open = box.style.display !== 'none';
+    box.style.display = open ? 'none' : 'block';
+    showWaiting.textContent = open ? 'Show what is waiting' : 'Hide what is waiting';
+    renderWaiting();
+  });
+
   const out = $('btn-sign-out');
   if (out) out.addEventListener('click', function () {
     // Anything not yet uploaded would be unreachable after the session goes.

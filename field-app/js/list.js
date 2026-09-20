@@ -8,7 +8,23 @@
 // server, and the app has to run from file:// and from a Capacitor bundle.
 
 // ── Ladder list (shows all, newest first) ─────────────────────────────────────
+// Mirrors fpRenderPending() on the fall protection screen. A tech who has been
+// working all day offline needs to see the backlog is known about, not lost.
+function renderPending() {
+  const el = document.getElementById('ladder-pending');
+  if (!el || !window.LiaSync || !window.LiaSync.pendingSummary) return;
+  const p = window.LiaSync.pendingSummary();
+  if (!p.total) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = 'fp-pending' + (p.failing ? ' warn' : '');
+  el.textContent = p.failing
+    ? `${p.total} waiting to upload · ${p.failing} not going through`
+    : `${p.total} waiting to upload`;
+}
+window.renderPending = renderPending;
+
 function renderLadderList() {
+  renderPending();
   const container = $('ladders-list');
   container.innerHTML = '';
   const ladders = _job.ladders || [];
@@ -17,6 +33,9 @@ function renderLadderList() {
     container.innerHTML = '<div class="no-ladders">No ladders added yet</div>';
     return;
   }
+  // Read the queue once for the whole list rather than per row: it is a
+  // localStorage parse, and forty of them on every keystroke is felt.
+  const q = window.LiaSyncState ? window.LiaSyncState.queued() : {};
   ladders.forEach((l, idx) => {
     const meta = [l.brand, l.type, l.length ? l.length + ' ft' : '', l.locationId].filter(Boolean).join(' · ');
     const partsHtml = (l.parts || []).length
@@ -30,7 +49,7 @@ function renderLadderList() {
     card.innerHTML = `
       <div class="lc-body">
         <div class="lc-top">
-          <span class="lc-sn">${esc(l.serialNum)}</span>
+          <span class="lc-sn">${esc(l.serialNum)}</span>${window.LiaSyncState ? window.LiaSyncState.badge(l.id, q) : ''}
           ${meta ? `<span class="lc-meta">${esc(meta)}</span>` : ''}
         </div>
         <div class="lc-parts">${partsHtml}</div>
@@ -60,3 +79,16 @@ function renderLadderList() {
     container.appendChild(card);
   });
 }
+
+// A record landing is the one event a tech is waiting on, so the screen shows
+// it as it happens rather than the next time something else redraws.
+window.addEventListener('lia-record-sent', function () {
+  if (document.getElementById('screen-detail')?.classList.contains('active')) {
+    try { renderLadderList(); } catch (_) { renderPending(); }
+  } else {
+    renderPending();
+  }
+  if (typeof fpRenderPending === 'function') fpRenderPending();
+  if (typeof fpRenderItems === 'function' &&
+      document.getElementById('screen-fp')?.classList.contains('active')) fpRenderItems();
+});

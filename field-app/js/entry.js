@@ -348,6 +348,47 @@ function buildLadderFromForm(existingId) {
   };
 }
 
+
+// ── Uploading a ladder ──────────────────────────────────────────────────────
+// Ladders were captured locally and never sent. The queue has always known how
+// (sendOne handles 'ladder'), the server has always had record_inspection, and
+// the office's Merge Field Work screen reads exactly what this produces — but
+// nothing ever enqueued one, so a tech's ladders reached the office only as a
+// CSV somebody remembered to hand over.
+//
+// The record is saved on the device first and queued second, as everywhere
+// else: local is the truth, the upload is a copy.
+function ladderPayload(l) {
+  const f = l.flags || {};
+  return {
+    serial_num:    l.serialNum,
+    work_order_id: (_job && _job.workOrderNum) || undefined,
+    brand:         l.brand || undefined,
+    type:          l.type || undefined,
+    length:        l.length || undefined,
+    notes:         l.desc || undefined,
+    source:        'field',
+    captured_at:   l.capturedAt || new Date().toISOString(),
+    // Null means "not asked", which is not the same as false. Only a decision
+    // the tech actually made is sent.
+    lubricated:  f.lubricated === null || f.lubricated === undefined ? undefined : !!f.lubricated,
+    has_leveler: f.leveler    === null || f.leveler    === undefined ? undefined : !!f.leveler,
+    has_claw:    f.claw       === null || f.claw       === undefined ? undefined : !!f.claw,
+    has_vrung:   f.vrung      === null || f.vrung      === undefined ? undefined : !!f.vrung,
+  };
+}
+
+function queueLadder(l) {
+  const sync = window.LiaSync;
+  if (!sync || !l || !l.serialNum) return;
+  // A work order is what the office matches the day's work on. Without one the
+  // record would land unattached, so it stays on the phone until the job has
+  // one — and the CSV still carries it either way.
+  if (!(_job && _job.workOrderNum)) return;
+  sync.enqueue({ clientId: l.id, kind: 'ladder', payload: ladderPayload(l) });
+  if (typeof renderPending === 'function') renderPending();
+}
+
 function addLadder() {
   const serial = $('fi-serial').value.trim();
   if (!serial) {
@@ -357,7 +398,10 @@ function addLadder() {
     return;
   }
   if (!_job.ladders) _job.ladders = [];
-  _job.ladders.unshift(buildLadderFromForm());
+  const added = buildLadderFromForm();
+  added.capturedAt = new Date().toISOString();
+  _job.ladders.unshift(added);
+  queueLadder(added);
   clearEntryForm();
   renderLadderList();
   scheduleSave();
@@ -374,7 +418,14 @@ function saveEdits() {
     return;
   }
   const existingId = _job.ladders[_editingIdx]?.id;
-  _job.ladders[_editingIdx] = buildLadderFromForm(existingId);
+  const edited = buildLadderFromForm(existingId);
+  edited.capturedAt = _job.ladders[_editingIdx]?.capturedAt || new Date().toISOString();
+  _job.ladders[_editingIdx] = edited;
+  // An edit is sent again. record_inspection supersedes rather than
+  // duplicating, so the corrected version becomes current and the old one
+  // stays in the history where a correction belongs.
+  if (window.LiaSyncState) window.LiaSyncState.markUnsent(edited.id);
+  queueLadder(edited);
   _editingIdx = -1;
   setEditMode(false);
   clearEntryForm();

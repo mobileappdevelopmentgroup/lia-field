@@ -188,7 +188,10 @@
       // this one pull so every row comes back and gets it. Cleared only once the
       // pull has finished, so an interrupted one runs again rather than leaving
       // half the catalogue without its link.
-      if (meta.needsFullSync) meta.since = null;
+      // opts.full: the tech asked for everything again in Settings. Something
+      // looked wrong or missing, and "trust the bookmark" is exactly what they
+      // are trying to get past.
+      if (meta.needsFullSync || opts.full) meta.since = null;
       return sb.rpc('account_snapshot_meta', { p_since: meta.since });
     }).then(function (res) {
       if (res.error) throw new Error(res.error.message);

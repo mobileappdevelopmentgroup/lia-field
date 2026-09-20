@@ -106,8 +106,11 @@ await p.close(); await ctx.close();
 // wall in front of an app that works perfectly well without an account.
 ({ p, errs, ctx } = await open({ configured: true, session: false }));
 ok('a configured build with no session offers sign-in', await active(p), 'screen-auth');
-ok('and offers working locally instead',
-   await p.$eval('#btn-work-offline', e => e.textContent.trim()), 'Work on this phone only');
+ok('and offers working locally instead, as an equal choice',
+   await p.$eval('#btn-work-offline', e => e.textContent.trim()), 'Start without an account');
+ok('which says what it costs and what it does not',
+   await p.$eval('#screen-auth', e => /share them as a CSV/.test(e.textContent) &&
+                                      /sign in later from Settings/i.test(e.textContent)), true);
 
 await p.click('#btn-work-offline');
 await p.waitForTimeout(300);
