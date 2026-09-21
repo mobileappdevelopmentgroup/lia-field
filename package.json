@@ -1,6 +1,6 @@
 {
   "name": "lia-ladder-import-assistant",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -17,7 +17,7 @@
     "capture:help": "node field-app/tools/capture-help-shots.mjs",
     "sync:www": "node field-app/capacitor/scripts/sync-www.mjs",
     "check:www": "node field-app/capacitor/scripts/sync-www.mjs --check",
-    "test:desktop": "node electron/test/catalog.test.mjs && node electron/test/merge-screen.test.mjs && node electron/test/support-inbox.test.mjs && node electron/test/cert-views.test.mjs && node electron/test/fp-records.test.mjs && node electron/test/fp-push.test.mjs && node electron/test/job-board.test.mjs && node electron/test/act-as.test.mjs && node electron/test/onboarding.test.mjs && node electron/test/layout.test.mjs && node electron/test/help.test.mjs",
+    "test:desktop": "node electron/test/columns.test.mjs && node electron/test/catalog.test.mjs && node electron/test/merge-screen.test.mjs && node electron/test/support-inbox.test.mjs && node electron/test/cert-views.test.mjs && node electron/test/fp-records.test.mjs && node electron/test/fp-push.test.mjs && node electron/test/job-board.test.mjs && node electron/test/act-as.test.mjs && node electron/test/onboarding.test.mjs && node electron/test/layout.test.mjs && node electron/test/help.test.mjs",
     "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
     "build:core": "esbuild src/core/index.ts --bundle --platform=node --format=cjs --outfile=dist/lia-core.cjs",
     "build:all": "npm run build:runner && npm run build:core",

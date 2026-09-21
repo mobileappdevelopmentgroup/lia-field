@@ -316,8 +316,12 @@ ipcMain.handle('merge:pull', async (_event, workOrderId) => {
     const core = require('../dist/lia-core.cjs');
 
     const [ladders, fp] = await Promise.all([
+      // `inspections` has no `uploaded_at` — `created_at` is when the server
+      // took the row, which is the same fact under a different name. Only
+      // `fp_inspections` carries `uploaded_at`, and asking for it here failed
+      // the whole pull with "column inspections.uploaded_at does not exist".
       sb.from('inspections')
-        .select('id, serial_num, tech_name, tech_user_id, captured_at, uploaded_at, is_deleted, brand, type, length, notes, parts, lubricated, has_leveler, has_claw, has_vrung')
+        .select('id, serial_num, tech_name, tech_user_id, captured_at, created_at, is_deleted, brand, type, length, notes, parts, lubricated, has_leveler, has_claw, has_vrung')
         .eq('work_order_id', workOrderId).eq('is_current', true),
       sb.from('fp_inspections')
         .select('id, tech_user_id, collector_name, captured_at, uploaded_at, is_deleted, overall_pass, manufacturer, model, item_type, lot_number, mfg_month, mfg_year, assets(serial_raw)')
@@ -329,7 +333,7 @@ ipcMain.handle('merge:pull', async (_event, workOrderId) => {
     const records = [];
     (ladders.data || []).forEach(r => records.push({
       clientId: r.id, serialNum: r.serial_num, scope: 'ladder',
-      capturedAt: r.captured_at, uploadedAt: r.uploaded_at,
+      capturedAt: r.captured_at, uploadedAt: r.created_at,
       techName: r.tech_name, techUserId: r.tech_user_id, deleted: r.is_deleted,
       brand: r.brand, type: r.type, length: r.length, notes: r.notes, parts: r.parts || [],
       lubricated: r.lubricated, has_leveler: r.has_leveler,
