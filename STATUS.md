@@ -150,6 +150,41 @@ committed schema snapshot. The three desktop builds in
 reinstall.
 
 
+**1.12.0 — 2026-09-21.** Android **versionCode 10**, iOS **build 11**, all three
+desktop builds in `~/Desktop/Lia-Deliverables/`.
+
+Three things that did not work on a real device, all of them silent: **Save CSV
+did nothing at all on Android** (the WebView has neither the Web Share API nor a
+download manager, so both routes the code took were no-ops; iOS has Web Share,
+which hid it), the **suggestion lists opened upwards** over the field just
+filled in, and the **greeting was sheared off** the top of Lia Office.
+
+**The four ladder checkboxes now reach BSI.** L, C, V and P had never been wired
+up — the parser filled them, the CSV carried them, the database stored them, and
+`src/automation.ts` never read `record.flags`. Read off a live work order
+(`docs/BSI-FORM.md`): they are bound to `click`, not `change`, unlike the
+dropdowns beside them, so the house pattern would have ticked them on screen and
+saved nothing.
+
+**Fall protection is the same form** — one box per work order, serial `1111` +
+the work order number, items as parts by type. So `src/core/fp-bsi.ts` is wrong
+at the premise and `FP_FORM` guesses at a form that does not exist. The derived
+serial also answers the double-billing question: the existing diff finds the box
+on a re-run.
+
+**The phone knows every part BSI does** — 1,936 with descriptions, merged behind
+each tech's own favourites and order. Not 11,079: that is the price matrix,
+23 customer types deep, which is also why a part number alone never identifies a
+price.
+
+**Lia Office has fewer, clearer screens**: Import CSVs Manually, **Field Work**
+(Merge and FP Records as one list, coloured by what still owes BSI), Work Order
+Assigning, Catalog, and Advanced for the rest. Work History is Field Work's
+archived half, read-only, with one button that sends a work order back.
+
+Migrations **26 and 27 are written and tested but NOT applied** — Field Work and
+the shared catalogue need them. `docs/QUEUE.md` has what is left.
+
 ### Still needed from you
 
 1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
