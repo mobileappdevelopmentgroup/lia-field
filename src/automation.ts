@@ -4,6 +4,7 @@ import path from 'path';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type {
   AutomationOptions,
+  LadderFlags,
   LadderRecord,
   LadderResult,
   PartEntry,
@@ -241,6 +242,59 @@ async function keyboardSelectDropdown(
 // Sets dropdowns via evaluate+jQuery (no Tab navigation needed) then fills Location ID last.
 // Location ID is filled last because BSI's validation only fires on real keyboard input/blur,
 // so we click into the field, fill it, then Tab out to trigger the green checkmark.
+// The four boxes under Length, confirmed against a live work order.
+//
+// BSI calls the third one "Vbar"; the field app and the CSV call it V-Rung.
+// Same box, same "V" on the tag — the name differs only here.
+//
+// These are bound to **click**, not change (checked on the live page against
+// jQuery's own handler table). That is the opposite of the dropdowns beside
+// them: a select is driven by setting selectedIndex under evaluate() and
+// firing change by hand, and doing the same to one of these would set the
+// property and run none of BSI's code. They have to be really clicked.
+const FLAG_CHECKBOXES: Record<keyof LadderFlags, string> = {
+  leveler:    '#ChckAddLeveler',
+  claw:       '#ChckAddClaw',
+  vrung:      '#ChckAddVbar',
+  lubricated: '#ChckAddPropLube',
+};
+
+// Tri-state, and only ever ticks.
+//
+// null means the tech never assessed it, which is not the same as "no". false
+// means they looked and it has none — and for a NEW box that is already the
+// state of an untouched checkbox, so there is nothing to do either way. On a
+// serial BSI already knows, unticking would throw away what BSI holds on the
+// strength of a field that may simply have been left blank.
+//
+// Playwright's check() is a no-op when the box is already ticked, which is
+// what we want: with a click handler, "click it again to make sure" is how you
+// untick the thing you meant to set.
+async function applyLadderFlags(
+  page: Page,
+  flags: LadderFlags | undefined,
+  opts: AutomationOptions,
+): Promise<void> {
+  if (!flags) return;
+  for (const [key, selector] of Object.entries(FLAG_CHECKBOXES) as [keyof LadderFlags, string][]) {
+    if (flags[key] !== true) continue;
+    try {
+      const box = page.locator(selector);
+      if (await box.count() === 0) {
+        console.warn(`  [WARN] ${selector} is not on this page — ${key} not set`);
+        continue;
+      }
+      await box.check();
+      console.log(`  [FLAG] ${key} → ticked (${selector})`);
+      await pause(opts.actionDelay);
+    } catch (err) {
+      // A flag is an annotation on the repair, not the repair. Losing one is
+      // worth a warning; it is not worth abandoning the box.
+      console.warn(`  [WARN] Could not tick ${selector} for ${key}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
 async function fillNewSerialFields(
   page: Page,
   record: LadderRecord,
@@ -281,6 +335,10 @@ async function fillNewSerialFields(
     await locField.press('Tab');
     await pause(opts.actionDelay);
   }
+
+  // 6. The four checkboxes. Last, so nothing that reloads part of the form
+  // above them can clear what we just ticked.
+  await applyLadderFlags(page, record.flags, opts);
 }
 
 // Find the most recently added #box-N element.
@@ -597,6 +655,10 @@ async function addLadderBox(
       await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
       await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
       await selectIfEmpty(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
+      // The flags are the tech's observation of the ladder in front of them
+      // this visit, so they are applied on a serial BSI already knows as well
+      // as on a new one. Ticking only, so nothing BSI already holds is lost.
+      await applyLadderFlags(page, record.flags, opts);
     } else {
       // New or not-found serial — BSI fields are blank and require keyboard navigation
       // for validation (Tab between fields, ArrowDown inside dropdowns).
