@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld('api', {
   getLogsDir:    ()         => ipcRenderer.invoke('app:get-logs-dir'),
 
   // ── Multi-tech merge ─────────────────────────────────────────────────────
+  fieldList:       (archived)    => ipcRenderer.invoke('field:list', archived),
+  fieldSetArchived:(p)           => ipcRenderer.invoke('field:set-archived', p),
+  fieldAmend:      (p)           => ipcRenderer.invoke('field:amend', p),
+  fieldDelete:     (p)           => ipcRenderer.invoke('field:delete', p),
+  fieldRestore:    (p)           => ipcRenderer.invoke('field:restore', p),
   mergeWorkOrders: ()            => ipcRenderer.invoke('merge:work-orders'),
   mergePull:       (workOrderId) => ipcRenderer.invoke('merge:pull', workOrderId),
   mergeToCsv:      (payload)     => ipcRenderer.invoke('merge:to-csv', payload),

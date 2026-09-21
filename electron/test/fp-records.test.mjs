@@ -92,7 +92,9 @@ await p.addInitScript(({ rows, detail }) => {
 
 await p.goto(BASE + '/index.html');
 await p.waitForTimeout(400);
-await p.click('#home-fpr'); await p.waitForTimeout(400);
+// FP Records lost its home card when Merge Field Work and FP Records became
+// one Field Work screen. The screen itself is unchanged and still reachable.
+await p.evaluate(() => { showScreen('fpr'); loadFpr(); }); await p.waitForTimeout(400);
 
 ok('the records screen opens', await p.evaluate(() => $('screen-fpr').classList.contains('active')), true);
 ok('items are listed', await p.$$eval('#fpr-list .sup-item', e => e.length), 2);

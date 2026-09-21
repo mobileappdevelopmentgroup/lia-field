@@ -307,6 +307,67 @@ ipcMain.handle('merge:work-orders', async () => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── IPC: Field Work ──────────────────────────────────────────────────────────
+// One list of every work order carrying field records. The state of each is
+// DERIVED in the database from its records — see 26_field_work.sql — so a work
+// order cannot sit on a stale "processed" flag while three ladders added the
+// next morning go unbilled behind it.
+
+ipcMain.handle('field:list', async (_event, archived) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('field_work_orders', { p_archived: !!archived });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, workOrders: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// Archiving is the lead saying "this is approved and done with". It is not a
+// delete and not a billing fact, and it is reversible from Work History.
+ipcMain.handle('field:set-archived', async (_event, payload) => {
+  try {
+    const p = payload || {};
+    if (typeof p.workOrderId !== 'string' || !p.workOrderId.trim()) {
+      return { ok: false, error: 'Pick a work order first.' };
+    }
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('set_work_order_archived', {
+      p: { work_order_id: p.workOrderId, archived: !!p.archived, scope: p.scope || 'ladder' },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// Correcting what the field recorded. Every one of these demands a typed
+// reason — the RPC refuses without it, and so does this, so the screen cannot
+// be the only thing standing between a silent edit and the audit trail.
+function fieldRecordCall(channel, rpc, verb) {
+  ipcMain.handle(channel, async (_event, payload) => {
+    try {
+      const p = payload || {};
+      if (typeof p.inspectionId !== 'string' || !p.inspectionId) {
+        return { ok: false, error: 'No record picked.' };
+      }
+      if (typeof p.reason !== 'string' || !p.reason.trim()) {
+        return { ok: false, error: `Say why this record is being ${verb}.` };
+      }
+      const sb = await getSupabase();
+      const body = Object.assign({}, p.fields || {}, {
+        inspection_id: p.inspectionId, reason: p.reason.trim(),
+      });
+      const fn = p.scope === 'fall_protection' ? rpc.fp : rpc.ladder;
+      if (!fn) return { ok: false, error: 'That cannot be done to this kind of record.' };
+      const { data, error } = await sb.rpc(fn, { p: body });
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, record: data };
+    } catch (err) { return { ok: false, error: String(err) }; }
+  });
+}
+fieldRecordCall('field:amend',   { ladder: 'amend_inspection',   fp: 'amend_fp_inspection' },  'corrected');
+fieldRecordCall('field:delete',  { ladder: 'delete_inspection',  fp: 'delete_fp_inspection' },  'deleted');
+fieldRecordCall('field:restore', { ladder: 'restore_inspection', fp: 'restore_fp_inspection' }, 'restored');
+
 ipcMain.handle('merge:pull', async (_event, workOrderId) => {
   try {
     if (typeof workOrderId !== 'string' || !workOrderId.trim()) {

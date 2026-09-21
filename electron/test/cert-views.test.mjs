@@ -74,7 +74,10 @@ await p.addInitScript((summary) => {
 
 await p.goto(BASE + '/index.html');
 await p.waitForTimeout(400);
-await p.click('#home-views'); await p.waitForTimeout(400);
+// Certificate Views is not a card on the home screen any more — it is one of
+// the screens buried under Advanced, because it is not part of a normal day.
+await p.click('#home-advanced'); await p.waitForTimeout(200);
+await p.click('#adv-views'); await p.waitForTimeout(400);
 
 ok('the views screen opens', await p.evaluate(() => $('screen-views').classList.contains('active')), true);
 // 30 days is the default because it is the window a monthly conversation uses.
