@@ -32,6 +32,8 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**24 was applied 2026-09-21** — `inspections.parts`, so a field ladder keeps
+what the tech tapped and the office can import its work into BSI.
 **23 was applied 2026-09-20** — removing somebody from a crew, and the
 `acting_is_umbrella` flag the office draws the impersonated home screen from.
 **22 was applied 2026-09-20** — it is what Lia Office's *Your Crew* and

@@ -23,7 +23,7 @@ suite and the only path to rebuilding the database from nothing.
 ## Applied to the live database
 
 **01–17** landed between June and 2026-08-30. **18–23** on 2026-09-19/20.
-**24 is written and not yet applied** — `supabase/dist/apply-24.sql`.
+**24** on 2026-09-21.
 
 | | What it did |
 |---|---|
