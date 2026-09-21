@@ -23,3 +23,9 @@ field-app/capacitor/ios/App/Pods/
 DerivedData/
 *.ipa
 *.dSYM.zip
+
+# BSI's price list. Part numbers and descriptions ship to the phone via
+# field-app/js/parts-catalog.js; materials and labor are Batavia's pricing and
+# do not belong in a git history. Regenerate with tools/bsi-products.mjs.
+bsi-products.json
+bsi-form-dump.json

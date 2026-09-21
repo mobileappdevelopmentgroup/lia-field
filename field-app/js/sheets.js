@@ -180,7 +180,12 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
       item.className = 'ac-item';
       item.dataset.name = p.name;
       const dq = p.defaultQty || 1;
-      item.innerHTML = esc(p.name) + (dq > 1 ? `<span class="ac-dqty">adds ${dq}</span>` : '');
+      // The description is why the catalogue is worth carrying: "LGH125ILC"
+      // means nothing on a phone screen, "LEG CAP FOR FOOT REP INT" does.
+      const desc = typeof partDescription === 'function' ? partDescription(p.name) : '';
+      item.innerHTML = esc(p.name)
+        + (desc ? `<span class="ac-desc">${esc(desc)}</span>` : '')
+        + (dq > 1 ? `<span class="ac-dqty">adds ${dq}</span>` : '');
       function pickPart(name) {
         input.value = name;
         list.classList.remove('open');

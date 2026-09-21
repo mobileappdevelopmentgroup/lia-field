@@ -9,7 +9,7 @@
     "codegen": "playwright codegen https://bsiwebapp.com",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts src/core/*.test.ts",
-    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs && node field-app/test/fp-types.test.mjs && node field-app/test/fp-capture.test.mjs && node field-app/test/sync.test.mjs && node field-app/test/boot.test.mjs && node field-app/test/upload.test.mjs && node field-app/test/export.test.mjs && node field-app/test/dropdown.test.mjs && node field-app/test/nfc.test.mjs && node field-app/test/tag-link.test.mjs && node field-app/test/tag-write.test.mjs && node field-app/test/help.test.mjs && node field-app/test/assignments.test.mjs && node field-app/test/fp-batch.test.mjs && node field-app/test/farewell.test.mjs",
+    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs && node field-app/test/fp-types.test.mjs && node field-app/test/fp-capture.test.mjs && node field-app/test/sync.test.mjs && node field-app/test/boot.test.mjs && node field-app/test/upload.test.mjs && node field-app/test/export.test.mjs && node field-app/test/dropdown.test.mjs && node field-app/test/catalog.test.mjs && node field-app/test/nfc.test.mjs && node field-app/test/tag-link.test.mjs && node field-app/test/tag-write.test.mjs && node field-app/test/help.test.mjs && node field-app/test/assignments.test.mjs && node field-app/test/fp-batch.test.mjs && node field-app/test/farewell.test.mjs",
     "schema": "./supabase/tools/schema-snapshot.sh",
     "schema:check": "./supabase/tools/schema-snapshot.sh --check",
     "test:sql": "./supabase/test/run.sh",

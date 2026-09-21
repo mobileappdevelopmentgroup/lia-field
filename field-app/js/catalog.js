@@ -14,6 +14,30 @@ function loadPartsLibrary() {
 }
 function savePartsLibrary(lib) { localStorage.setItem('lia-parts-library', JSON.stringify(lib)); }
 
+// Everything BSI knows, folded into the library.
+//
+// The library used to be ~30 part numbers somebody typed in, so a tech working
+// a job with anything else got no autocomplete and no description — the part
+// went in as free text and the importer had to guess at it. This brings the
+// real catalogue, 1,936 parts, and it is merged rather than assigned:
+// favourites, their slot order and parts a tech added by hand all survive.
+//
+// Returns true if it changed anything.
+function mergeCatalogIntoLibrary(lib) {
+  if (typeof PARTS_CATALOG === 'undefined') return false;
+  const have = new Set(lib.map(p => p.name.toLowerCase()));
+  let added = 0;
+  for (let i = 0; i < PARTS_CATALOG.length; i++) {
+    const name = PARTS_CATALOG[i][0];
+    if (have.has(name.toLowerCase())) continue;
+    // Not favourited: 1,936 favourites is no favourites. The tech pins what
+    // they actually reach for, and the seed's own picks stay pinned.
+    lib.push({ name, favorited: false, defaultQty: 1, fromCatalog: true });
+    added++;
+  }
+  return added > 0;
+}
+
 function getLibrary() {
   let lib = loadPartsLibrary();
   if (lib) {
@@ -23,6 +47,8 @@ function getLibrary() {
       lib.push({ name: 'L33', favorited: false, defaultQty: 2 });
       dirty = true;
     }
+    // Migration: an install from before the BSI catalogue existed.
+    if (mergeCatalogIntoLibrary(lib)) dirty = true;
     // Migration: assign slot order to favorited parts that don't have one
     const favs = lib.filter(p => p.favorited);
     if (favs.some(p => p.order == null)) {
@@ -33,7 +59,10 @@ function getLibrary() {
     if (dirty) savePartsLibrary(lib);
     return lib;
   }
+  // A fresh install: the seed first, so its favourites and quantities are the
+  // ones that stick, then everything else BSI knows behind them.
   lib = PARTS_SEED.map(p => ({ ...p }));
+  mergeCatalogIntoLibrary(lib);
   // Migrate old lia-quick-parts if present
   try {
     const old = JSON.parse(localStorage.getItem('lia-quick-parts') || 'null');
