@@ -115,6 +115,32 @@ catalogue authoring and tag links do not follow an impersonation session.
 Chromium is missing (`npx playwright install chromium` restores it). The new
 test uses system Chrome, like the automation does, so it runs regardless.
 
+### Done 2026-09-21 — the field round trip actually works
+
+**The upload bug.** The queue stopped at the first record the server refused and
+waited on it for ever, so one bad record meant nothing behind it uploaded while
+the app said "waiting". A record refused three times now steps aside (never
+dropped, named in Settings with the server's own words), a job goes up in one
+call instead of one record at a time, and uploads start seconds after capture.
+
+**Ladders never uploaded at all** before this — `sendOne` handled them, the
+office's merge screen expected them, nothing ever queued one. They do now, with
+their parts (migration 24), which is what made importing field work possible.
+
+**A shared phone is safe.** The queue is scoped to whoever captured the record,
+jobs are labelled with the address that owns them, assignments are cleared at
+sign-out and say which lead assigned them (migration 25), and jobs can be
+archived rather than deleted.
+
+**Lia Office** gained a How To covering the real process — CSV, field work,
+merging several techs, and the checking step after an import — plus *Import
+this into BSI* from Merge Field Work, *Run this again*, a way home from every
+screen, a working layout from 800×640 up, and issue/feature reporting.
+
+Shipped as **1.11.0**: Android versionCode 9, iOS build 10 (VALID), all three
+desktop builds in `~/Desktop/Lia-Deliverables/`. Migrations **24 and 25 applied**.
+
+
 ### Still needed from you
 
 1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
