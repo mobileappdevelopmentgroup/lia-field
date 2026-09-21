@@ -69,8 +69,12 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 860,
     height: 820,
-    minWidth: 660,
-    minHeight: 600,
+    // 800x640 is the size the layout is checked against: three cards a row,
+    // the two-column screens folded into one, and nothing off the right edge.
+    // Below 700 the folded screens start losing their own content, so that is
+    // the floor rather than a number picked for looks.
+    minWidth: 700,
+    minHeight: 560,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#0f0f1a',
     webPreferences: {
@@ -312,7 +316,7 @@ ipcMain.handle('merge:pull', async (_event, workOrderId) => {
 
     const [ladders, fp] = await Promise.all([
       sb.from('inspections')
-        .select('id, serial_num, tech_name, tech_user_id, captured_at, uploaded_at, is_deleted, brand, type, length, notes, lubricated, has_leveler, has_claw, has_vrung')
+        .select('id, serial_num, tech_name, tech_user_id, captured_at, uploaded_at, is_deleted, brand, type, length, notes, parts, lubricated, has_leveler, has_claw, has_vrung')
         .eq('work_order_id', workOrderId).eq('is_current', true),
       sb.from('fp_inspections')
         .select('id, tech_user_id, collector_name, captured_at, uploaded_at, is_deleted, overall_pass, manufacturer, model, item_type, lot_number, mfg_month, mfg_year, assets(serial_raw)')
@@ -326,7 +330,7 @@ ipcMain.handle('merge:pull', async (_event, workOrderId) => {
       clientId: r.id, serialNum: r.serial_num, scope: 'ladder',
       capturedAt: r.captured_at, uploadedAt: r.uploaded_at,
       techName: r.tech_name, techUserId: r.tech_user_id, deleted: r.is_deleted,
-      brand: r.brand, type: r.type, length: r.length, notes: r.notes,
+      brand: r.brand, type: r.type, length: r.length, notes: r.notes, parts: r.parts || [],
       lubricated: r.lubricated, has_leveler: r.has_leveler,
       has_claw: r.has_claw, has_vrung: r.has_vrung,
     }));
@@ -808,6 +812,68 @@ async function recordInspections(sb, rows, workOrderId, techName, source) {
   return { written, errors };
 }
 
+// ── Importing what the field collected, without a CSV in the middle ────────
+// The merge screen could show a lead what his techs captured and then leave
+// him to ask them for a CSV and import that — a round trip through a phone,
+// an email and a Downloads folder, for records the office already had.
+//
+// This writes the merged set to a CSV in the format the importer already
+// understands and hands back the path. Deliberately a real file rather than a
+// new code path into the runner: the diff, the part matching, the cost flags
+// and the re-run behaviour are all exercised exactly as they are for a CSV a
+// tech sends in, so there is one import to trust rather than two.
+ipcMain.handle('merge:to-csv', async (_event, payload) => {
+  try {
+    const items = (payload && payload.items) || [];
+    const workOrderId = (payload && payload.workOrderId) || '';
+    if (!items.length) return { ok: false, error: 'Nothing to import.' };
+
+    // Every part any record carries becomes a column, so the importer sees the
+    // same shape a tech's own export would give it.
+    const partNames = [];
+    items.forEach(it => (it.parts || []).forEach(p => {
+      const n = String(p.name || '').trim();
+      if (n && !partNames.includes(n)) partNames.push(n);
+    }));
+
+    const headers = ['Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description']
+      .concat(partNames);
+    const esc = (v) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+
+    const lines = [headers.join(',')];
+    items.forEach((it, i) => {
+      const byName = {};
+      (it.parts || []).forEach(p => { byName[String(p.name || '').trim()] = p.qty || 1; });
+      const row = [
+        i + 1,
+        it.serialNum || '',
+        it.locationId || '',
+        it.brand || '',
+        it.type || '',
+        it.length || '',
+        it.notes || '',
+      ].concat(partNames.map(n => {
+        const qty = byName[n];
+        if (!qty) return '';
+        // The same inline quantity the CSV format already uses: "(2) G13".
+        return qty > 1 ? `(${qty}) ${n}` : n;
+      }));
+      lines.push(row.map(esc).join(','));
+    });
+
+    const dir = path.join(app.getPath('temp'), 'lia-field-imports');
+    fs.mkdirSync(dir, { recursive: true });
+    const safeWo = String(workOrderId).replace(/[^A-Za-z0-9_-]+/g, '-') || 'work-order';
+    const file = path.join(dir, `field-${safeWo}-${Date.now()}.csv`);
+    fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
+
+    return { ok: true, path: file, rows: items.length, parts: partNames.length };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
   // Kill any previous run (e.g. user clicked Start Over without stopping first)
   if (automationChild) { automationChild.kill(); automationChild = null; }
@@ -835,6 +901,9 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
         const Papa = require('papaparse');
         const _content = fs.readFileSync(csvPath, 'utf-8');
         const _parsed = Papa.parse(_content, { header: true, skipEmptyLines: true });
+        // Records from a work-order-less import still upload — they simply
+        // cannot be matched to a work order later, which is the tradeoff the
+        // screen states before the run starts.
         _serials = _parsed.data
           .map(r => ({
             serial: (r['Serial #'] ?? '').trim(),
@@ -853,9 +922,16 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
       //
       // We still check up front so a tech with no credits is stopped now
       // rather than after importing 200 ladders.
-      const { data: pre, error } = await _sb.rpc('preflight_work_order', {
-        p_wo_number: workOrderId,
-      });
+      // An import with no work order is allowed and simply is not billed.
+      // Blank must never become a work order of its own: it used to fall back
+      // to the literal 'unknown', and under (account, wo_key) uniqueness that
+      // made the FIRST blank import charge and every one after it free for
+      // ever. So no work order means no work_orders row, no preflight and no
+      // charge — not a shared one called "unknown".
+      const _billable = typeof workOrderId === 'string' && workOrderId.trim() !== '';
+      const { data: pre, error } = _billable
+        ? await _sb.rpc('preflight_work_order', { p_wo_number: workOrderId })
+        : { data: null, error: null };
       if (error) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('automation:credit-error', error.message);
@@ -921,7 +997,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             // Charge and log only for a run that actually succeeded. This used
             // to fire on every 'complete', so a failed or cancelled run still
             // wrote inspection records for ladders that were never imported.
-            if (event.success && _sb) {
+            if (event.success && _sb && _billable) {
               (async () => {
                 try {
                   const { data, error } = await _sb.rpc('charge_work_order', {

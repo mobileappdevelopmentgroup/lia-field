@@ -102,6 +102,12 @@
     .ctx-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
     #ctx-error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
 
+    @media (max-height: 720px) {
+      .mode-icon { font-size: 22px; }
+      .mode-card { padding: 14px 12px; }
+      #screen-home { padding: 16px 14px; }
+    }
+
     /* ── Screens ────────────────────────────────────────────────────────── */
     .screen { display: none; flex: 1; overflow: hidden; }
     .screen.active { display: flex; flex-direction: column; }
@@ -135,7 +141,8 @@
        dragged wider than most displays. */
     #screen-home { align-items: center; justify-content: center; gap: 0;
                    overflow-y: auto; padding: 28px 16px; }
-    .home-inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
+    .home-inner { display: flex; flex-direction: column; align-items: center;
+                  gap: clamp(16px, 3vh, 32px); width: 100%; max-width: 1180px; }
     .home-title { font-size: 22px; font-weight: 700; color: var(--text); }
     .home-sub   { font-size: 13px; color: var(--muted); margin-top: -24px; }
     /* ── Merge review ── */
@@ -185,6 +192,16 @@
     .back-link { background: none; border: none; color: var(--accent-fg); font-size: 13px;
                  cursor: pointer; font-family: inherit; padding: 0; }
     .cat-body { flex: 1; min-height: 0; display: flex; }
+    /* Below this the list and the detail cannot both be usable side by side,
+       so they stack and the whole thing scrolls — which is what a narrow
+       window wants anyway. */
+    @media (max-width: 820px) {
+      .cat-body { flex-direction: column; overflow-y: auto; }
+      .cat-list { width: 100% !important; min-width: 0 !important; flex-shrink: 1;
+                  border-right: 0; border-bottom: 1px solid var(--border);
+                  max-height: 42vh; }
+      .cat-detail { padding: 16px 18px; }
+    }
     .cat-list { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border);
                 display: flex; flex-direction: column; overflow-y: auto; }
     .cat-list-hdr { display: flex; align-items: center; justify-content: space-between;
@@ -408,11 +425,20 @@
     .cat-msg { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 18px; }
     .cat-msg.err { color: var(--err); }
 
-    .mode-cards { display: flex; flex-wrap: wrap; justify-content: center;
-                  gap: 20px; max-width: 900px; }
+    /* A real grid: the columns are computed from the width available, so the
+       same markup fills an 800px window and a 27-inch one without a media
+       query per size. Wrapping fixed-width cards left a ragged gap down one
+       side at most widths. */
+    .mode-cards { display: grid; width: 100%; max-width: 1180px;
+                  grid-template-columns: repeat(auto-fit, minmax(186px, 1fr));
+                  gap: clamp(12px, 1.6vw, 20px); }
     .mode-card  { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
-                  padding: 32px 28px; width: 200px; display: flex; flex-direction: column;
-                  align-items: center; gap: 12px; cursor: pointer; transition: border-color .2s, background .2s;
+                  /* Padding and type track the window: at 800px the cards stay
+                     legible instead of eating the row. */
+                  padding: clamp(16px, 2.4vw, 30px) clamp(14px, 2vw, 26px);
+                  width: auto; min-width: 0; display: flex; flex-direction: column;
+                  align-items: center; gap: clamp(7px, 1vw, 12px); cursor: pointer;
+                  transition: border-color .2s, background .2s;
                   text-align: center; -webkit-app-region: no-drag; }
     .mode-card:hover { border-color: var(--accent); background: rgba(79,110,247,.06); }
     .mode-icon  { font-size: 36px; }
@@ -426,7 +452,15 @@
     .qr-section { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start;
                   justify-content: center; }
     .qr-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-    .qr-item svg { border-radius: 8px; display: block; }
+    .qr-item svg { border-radius: 8px; display: block;
+                   width: clamp(104px, 13vw, 160px); height: auto; }
+    .wo-warning { margin-top: 7px; font-size: 11.5px; line-height: 1.5;
+                  color: var(--warn-fg, #d29922); }
+
+    .mg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+                  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .mg-actions-note { flex-basis: 100%; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+
     .qr-label { font-size: 12px; font-weight: 700; color: var(--text); letter-spacing: .01em; }
     .qr-sub   { font-size: 10.5px; color: var(--muted); text-align: center; line-height: 1.4;
                 max-width: 170px; }
@@ -768,6 +802,18 @@
             <span class="cat-ver" id="merge-count"></span>
           </div>
           <div id="merge-items"></div>
+          <!-- The whole point of merging: do something with it. Without this
+               the lead had to ask his techs for a CSV and import that, which
+               is a round trip through a phone and an inbox for records the
+               office already has. -->
+          <div class="mg-actions" id="merge-actions" style="display:none;">
+            <button class="btn-ok" id="btn-merge-import">Import this into BSI</button>
+            <button class="btn-g" id="btn-merge-save">Save as CSV</button>
+            <div class="mg-actions-note">
+              Imports exactly as a tech's own CSV would — same diff, same part
+              matching, same cost flags — with the work order already filled in.
+            </div>
+          </div>
           <div class="cat-msg" id="merge-msg"></div>
         </div>
       </div>
@@ -1285,6 +1331,10 @@
         <div class="wo-row">
           <span class="wo-lbl">Work Order #</span>
           <input type="text" id="work-order-input" placeholder="Optional — used for billing">
+          <div id="wo-warning" class="wo-warning" style="display:none;">
+            No work order: this import will not be billed, and the office will
+            not be able to match it to what the techs recorded in the field.
+          </div>
         </div>
         <div class="row">
           <button class="btn-ok" id="btn-open-browser">Open BSI &amp; Start Import →</button>
@@ -1637,6 +1687,7 @@ function renderMerge() {
   }
   $('merge-warnings').innerHTML = warns.join('');
   $('merge-count').textContent = `${m.items.length} item${m.items.length !== 1 ? 's' : ''}`;
+  $('merge-actions').style.display = m.items.length ? 'flex' : 'none';
 
   const list = $('merge-items');
   list.innerHTML = '';
@@ -3601,6 +3652,58 @@ async function loadCsvFile(p) {
   setStep(2);
 }
 
+// ── From the field, straight into an import ─────────────────────────────────
+// The merged set is written to a CSV in the format the importer already knows
+// and then handed to the ordinary import screen. One import path, exercised the
+// same way whether the rows came from a tech's export or from the server.
+function mergedRows() {
+  const m = _mgMerge;
+  if (!m) return [];
+  return m.items.map(i => {
+    const w = i.winner || {};
+    return {
+      serialNum: i.serialNum || w.serialNum,
+      brand: w.brand, type: w.type, length: w.length,
+      notes: w.notes, locationId: w.locationId,
+      parts: w.parts || [],
+    };
+  });
+}
+
+$('btn-merge-import').addEventListener('click', async () => {
+  const items = mergedRows();
+  const wo = (_mgSel || '').trim();
+  $('merge-msg').className = 'cat-msg';
+  $('merge-msg').textContent = 'Preparing…';
+
+  const res = await window.api.mergeToCsv({ items, workOrderId: wo });
+  if (!res.ok) {
+    $('merge-msg').className = 'cat-msg err';
+    $('merge-msg').textContent = res.error;
+    return;
+  }
+  $('merge-msg').textContent = '';
+
+  // Hand it to the import screen exactly as a chosen file would be, with the
+  // work order filled in — it is the one thing the office already knows and
+  // the one a tech most often mistypes.
+  await requireAuth('office');
+  await loadCsvFile(res.path);
+  // The work order is the one thing the office already knows for certain and
+  // the one a tech most often mistypes, so it is filled in rather than asked
+  // for again.
+  const woField = $('work-order-input');
+  if (woField && wo) woField.value = wo;
+});
+
+$('btn-merge-save').addEventListener('click', async () => {
+  const res = await window.api.mergeToCsv({ items: mergedRows(), workOrderId: (_mgSel || '').trim() });
+  $('merge-msg').className = res.ok ? 'cat-msg' : 'cat-msg err';
+  $('merge-msg').textContent = res.ok
+    ? `Saved ${res.rows} record${res.rows !== 1 ? 's' : ''} to ${res.path}`
+    : res.error;
+});
+
 $('btn-choose').addEventListener('click', async () => {
   const p = await window.api.openCsv();
   if (p) await loadCsvFile(p);
@@ -3645,18 +3748,22 @@ function setCreditDisplay(credits) {
     : `${credits} import credit${credits !== 1 ? 's' : ''} remaining`;
 }
 
+// Said once, plainly, at the moment it matters — not as a blocked button.
+function setWoWarning(on) {
+  const el = $('wo-warning');
+  if (el) el.style.display = on ? '' : 'none';
+}
+
 $('btn-open-browser').addEventListener('click', () => {
   const workOrderId = $('work-order-input').value.trim();
 
-  // The work order number is the billing key: a token is charged once per work
-  // order. This used to fall back to the literal string 'unknown', which under
-  // (account, work order) uniqueness would make the first blank-work-order
-  // import charge and every one after it free forever.
+  // Optional. A work order is the billing key and the only thing the office can
+  // match a tech's field records on, so leaving it out costs both — but plenty
+  // of imports are neither billed nor matched, and refusing to run without one
+  // made those impossible. Blank never becomes a work order of its own: main
+  // skips the preflight and the charge entirely rather than inventing one.
   if (!workOrderId) {
-    show('err-card');
-    $('err-msg').textContent = 'Enter the work order number before starting — it is what the import is billed against.';
-    $('work-order-input').focus();
-    return;
+    setWoWarning(true);
   }
   if (workOrderId.length > MAX_WO_LEN) {
     show('err-card');

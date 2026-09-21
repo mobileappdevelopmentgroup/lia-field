@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('api', {
   // ── Multi-tech merge ─────────────────────────────────────────────────────
   mergeWorkOrders: ()            => ipcRenderer.invoke('merge:work-orders'),
   mergePull:       (workOrderId) => ipcRenderer.invoke('merge:pull', workOrderId),
+  mergeToCsv:      (payload)     => ipcRenderer.invoke('merge:to-csv', payload),
 
   // ── Fall protection catalog ──────────────────────────────────────────────
   fpListModels:    ()                 => ipcRenderer.invoke('fp:list-models'),

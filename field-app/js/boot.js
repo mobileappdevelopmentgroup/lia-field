@@ -87,7 +87,24 @@
     const pass = ($('auth-pass') || {}).value || '';
     if (!email.trim() || !pass) { msg('auth-msg', 'Enter your email and password.', true); return; }
     msg('auth-msg', 'Signing in…');
+
+    // "Signing in…" sat there for minutes. There was no timeout: on a phone
+    // with a bar of signal the request simply never came back and never
+    // failed, so the screen had nothing to say and the tech had nothing to do.
+    if (root_offline()) {
+      msg('auth-msg', 'This phone has no connection. Signing in needs one — you can still work on this phone and upload later.', true);
+      return;
+    }
+    var settled = false;
+    var giveUp = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      msg('auth-msg', 'No answer from the server. Check your signal and try again — nothing was changed.', true);
+    }, 20000);
+
     window.LiaSync.signIn(email.trim(), pass).then(function () {
+      if (settled) return;            // already timed out and said so
+      settled = true; clearTimeout(giveUp);
       markAuthOffered();
       const pw = $('auth-pass'); if (pw) pw.value = '';
       return window.LiaCache.status();
@@ -96,8 +113,14 @@
       if (s.ready) { goScreen('jobs'); renderJobList(); renderSyncStatus(); }
       else goScreen('sync');
     }).catch(function (err) {
+      if (settled) return;
+      settled = true; clearTimeout(giveUp);
       msg('auth-msg', err.message || 'Could not sign in.', true);
     });
+  }
+
+  function root_offline() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
   }
 
   function wire() {
@@ -329,14 +352,8 @@
     resend(jobEntries(job), job.workOrderNum ? `WO ${job.workOrderNum}` : 'That job');
   });
 
-  const rsAll = $('btn-resend-all');
-  if (rsAll) rsAll.addEventListener('click', function () {
-    let all = [];
-    try {
-      Object.values(loadJobs()).forEach(function (j) { all = all.concat(jobEntries(j)); });
-    } catch (_) { /* fall through to the empty case */ }
-    resend(all, 'Everything on this phone');
-  });
+  // "Everything" moved to the jobs screen, where a tech thinks in days rather
+  // than in one job's settings. Re-send here stays scoped to the job he opened.
 
   // Every record in a job, in the shape the queue takes. Ladders need the job
   // for their work order, which is why this lives here rather than in the
@@ -355,6 +372,7 @@
           type: l.type || undefined,
           length: l.length || undefined,
           notes: l.desc || undefined,
+          parts: (l.parts && l.parts.length) ? l.parts : undefined,
           source: 'field',
           captured_at: l.capturedAt || undefined,
         },

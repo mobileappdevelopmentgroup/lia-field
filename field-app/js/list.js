@@ -92,3 +92,48 @@ window.addEventListener('lia-record-sent', function () {
   if (typeof fpRenderItems === 'function' &&
       document.getElementById('screen-fp')?.classList.contains('active')) fpRenderItems();
 });
+
+// ── "Send my day", on the screen where a tech starts and ends it ────────────
+// The jobs list is where he lands, so what the phone still owes the server
+// belongs here rather than inside one job's settings.
+function renderJobsUpload() {
+  const box = document.getElementById('jobs-upload');
+  if (!box || !window.LiaSync || !window.LiaSync.pendingSummary) return;
+
+  Promise.resolve(window.LiaSyncState ? window.LiaSyncState.syncing() : false).then(function (on) {
+    const p = window.LiaSync.pendingSummary();
+    if (!on || !p.total) { box.style.display = 'none'; return; }
+    box.style.display = 'flex';
+    box.className = 'jobs-upload' + (p.failing ? ' warn' : '');
+    const t = document.getElementById('jobs-upload-text');
+    t.innerHTML = p.failing
+      ? `${p.total} record${p.total !== 1 ? 's' : ''} not yet uploaded` +
+        `<span class="ju-sub">${p.failing} the server refused — Settings says why</span>`
+      : `${p.total} record${p.total !== 1 ? 's' : ''} waiting to upload` +
+        `<span class="ju-sub">Uploads on its own with signal. Tap to send now.</span>`;
+  }).catch(function () {});
+}
+window.renderJobsUpload = renderJobsUpload;
+
+(function wireUploadAll() {
+  const btn = document.getElementById('btn-upload-all');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    const t = document.getElementById('jobs-upload-text');
+    t.textContent = 'Uploading…';
+    window.LiaSync.drain({ onProgress: (s, tot) => { t.textContent = `Uploading ${s} of ${tot}…`; } })
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.error) {
+          t.innerHTML = `${r.sent ? r.sent + ' uploaded. ' : ''}${esc(r.error)}` +
+                        `<span class="ju-sub">Settings → Show what is waiting names the record.</span>`;
+        } else {
+          renderJobsUpload();
+        }
+        if (typeof renderJobList === 'function') renderJobList();
+      });
+  });
+})();
+
+window.addEventListener('lia-record-sent', function () { renderJobsUpload(); });

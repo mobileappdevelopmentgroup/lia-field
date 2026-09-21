@@ -133,6 +133,11 @@ echo "Running crew removal assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/20_crew_removal_test.sql"
 
+echo
+echo "Running field parts assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/21_field_parts_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

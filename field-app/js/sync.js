@@ -143,6 +143,24 @@
   }
 
   // clientId makes a retry idempotent: the same capture sent twice is one row.
+  // Records used to sit until the two-minute timer, a lock/unlock, or the tech
+  // going to Settings. On a job with signal the work should be in the cloud
+  // while he is still standing at the rack, so a queued record nudges the
+  // drain — debounced, because adding forty ladders in a row should still be
+  // one upload rather than forty.
+  var _soon = null;
+  function uploadSoon(ms) {
+    if (_soon) clearTimeout(_soon);
+    _soon = setTimeout(function () {
+      _soon = null;
+      if (root.navigator && root.navigator.onLine === false) return;
+      if (!queueLength()) return;
+      drain({}).then(function (r) {
+        if (r && r.sent && typeof root.fpOnUploaded === 'function') root.fpOnUploaded(r);
+      });
+    }, ms || 6000);
+  }
+
   function enqueue(entry) {
     var q = readQueue();
     q.push({
@@ -154,6 +172,7 @@
       lastError: null,
     });
     writeQueue(q);
+    uploadSoon();
     return q.length;
   }
 
@@ -277,6 +296,32 @@
   // Drains in order and STOPS at the first failure rather than skipping past it.
   // Ploughing on would reorder records and could bury a permanent error behind a
   // growing queue; stopping keeps the failure visible and the order intact.
+  // The server has it. This is the only place that knows that, and the only
+  // place allowed to say so — see sync-state.js.
+  function announceSent(entry) {
+    try {
+      root.dispatchEvent(new CustomEvent('lia-record-sent', {
+        detail: { clientId: entry.clientId, kind: entry.kind },
+      }));
+    } catch (_) { /* older webview: the queue still shortened */ }
+  }
+
+  // Ladders from the front of the queue, up to a batch. Stops at the first
+  // entry of any other kind so order is preserved exactly as before.
+  var BATCH_MAX = 50;
+  function takeLadderBatch(q) {
+    var out = [];
+    for (var i = 0; i < q.length && out.length < BATCH_MAX; i++) {
+      if (q[i].kind !== 'ladder') break;
+      out.push(q[i]);
+    }
+    return out;
+  }
+
+  function sendLadderBatch(sb, batch) {
+    return sb.rpc('record_inspections', { p: batch.map(function (e) { return e.payload; }) });
+  }
+
   function drain(opts) {
     opts = opts || {};
     var onProgress = opts.onProgress || function () {};
@@ -293,10 +338,41 @@
       var sent = 0;
       var deferred = 0;
 
+      var parked = {};        // clientIds moved to the back this pass
+
       function step() {
         var q = readQueue();
         if (!q.length) return Promise.resolve();
+
+        // Consecutive ladders go up as ONE call. A job of forty was forty round
+        // trips, each waiting on the last — minutes on a bad signal, and every
+        // one of them a chance to be interrupted half way.
+        var batch = takeLadderBatch(q);
+        if (batch.length > 1) {
+          return sendLadderBatch(sb, batch).then(function (res) {
+            if (res && res.error) {
+              // One bad record must not condemn the other thirty-nine, and the
+              // batch cannot say which one it was. Fall back to sending them
+              // singly, which isolates the bad one with its own message.
+              return stepOne();
+            }
+            var q2 = readQueue();
+            q2.splice(0, batch.length);
+            writeQueue(q2);
+            sent += batch.length;
+            batch.forEach(function (e) { announceSent(e); });
+            onProgress(sent, sent + q2.length);
+            return step();
+          });
+        }
+        return stepOne();
+      }
+
+      function stepOne() {
+        var q = readQueue();
+        if (!q.length) return Promise.resolve();
         var entry = q[0];
+        if (parked[entry.clientId]) return Promise.resolve();   // came round again
         return sendOne(sb, entry).then(function (res) {
           var q2 = readQueue();
           if (res && res.error) {
@@ -318,23 +394,30 @@
               return step();
             }
 
+            // A record the server keeps refusing used to stop the queue for
+            // good: everything behind it waited on something that was never
+            // going to be accepted, so a tech with one bad record uploaded
+            // nothing all day and the app called it "waiting".
+            //
+            // It is still never dropped. After three tries it moves to the
+            // BACK, the rest of the day's work goes up, and Settings names it
+            // with the server's own words.
+            if (entry.attempts >= 3) {
+              q2.shift();
+              q2.push(entry);
+              writeQueue(q2);
+              parked[entry.clientId] = true;
+              return step();
+            }
+
             q2[0] = entry;
             writeQueue(q2);
-            // Never dropped. A record the server rejects is surfaced to the
-            // tech, not discarded — losing an inspection silently is worse
-            // than a stuck queue.
             throw new Error(res.error.message);
           }
           q2.shift();
           writeQueue(q2);
           sent++;
-          // The server has it. This is the only place that knows that, and the
-          // only place allowed to say so — see sync-state.js.
-          try {
-            root.dispatchEvent(new CustomEvent('lia-record-sent', {
-              detail: { clientId: entry.clientId, kind: entry.kind },
-            }));
-          } catch (_) { /* older webview: the queue still shortened */ }
+          announceSent(entry);
           onProgress(sent, sent + q2.length);
           return step();
         });
@@ -432,6 +515,7 @@
     pullTypes: pullTypes,
     enqueue: enqueue,
     requeue: requeue,
+    uploadSoon: uploadSoon,
     dequeue: dequeue,
     queueLength: queueLength,
     pendingSummary: pendingSummary,

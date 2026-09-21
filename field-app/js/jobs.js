@@ -13,6 +13,7 @@
 // Jobs Screen
 // ════════════════════════════════════════════════════════════════
 function renderJobList() {
+  if (typeof renderJobsUpload === 'function') renderJobsUpload();
   const all    = loadJobs();
   const sorted = Object.values(all).sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const body   = $('jobs-body');

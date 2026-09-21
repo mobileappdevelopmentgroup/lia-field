@@ -61,7 +61,14 @@ function saveNow() {
   _job.name         = $('job-name').value.trim();
   // Never taken from the box on an assigned job: a readOnly input is a UI
   // convention, not a guarantee, and the number is the lead's.
-  if (!_job.assignedId) _job.workOrderNum = $('job-wo').value.trim();
+  if (!_job.assignedId) {
+    const wasWo = _job.workOrderNum || '';
+    _job.workOrderNum = $('job-wo').value.trim();
+    // Records already uploaded without one carry no work order on the server,
+    // so the office cannot match them. Sending them again attaches it: the
+    // write path supersedes, so this corrects rather than duplicates.
+    if (_job.workOrderNum && _job.workOrderNum !== wasWo) requeueJobLadders();
+  }
   _job.updatedAt    = new Date().toISOString();
   const all = loadJobs(); all[_job.id] = _job; saveJobs(all);
   setSaveStatus('saved');
@@ -371,6 +378,9 @@ function ladderPayload(l) {
     type:          l.type || undefined,
     length:        l.length || undefined,
     notes:         l.desc || undefined,
+    // What the office bills the job on. Without these a field record imports
+    // into BSI as a ladder with no line items.
+    parts:         (l.parts && l.parts.length) ? l.parts : undefined,
     source:        'field',
     captured_at:   l.capturedAt || new Date().toISOString(),
     // Null means "not asked", which is not the same as false. Only a decision
@@ -382,13 +392,28 @@ function ladderPayload(l) {
   };
 }
 
+// Every ladder in this job, sent again with the work order now attached.
+function requeueJobLadders() {
+  const sync = window.LiaSync;
+  if (!sync || !_job || !(_job.ladders || []).length) return;
+  const state = window.LiaSyncState;
+  (_job.ladders || []).forEach((l) => {
+    if (!l.serialNum) return;
+    if (state) state.markUnsent(l.id);     // the server holds a copy with no WO
+    sync.enqueue({ clientId: l.id, kind: 'ladder', payload: ladderPayload(l) });
+  });
+  if (typeof renderLadderList === 'function') renderLadderList();
+}
+
 function queueLadder(l) {
   const sync = window.LiaSync;
   if (!sync || !l || !l.serialNum) return;
-  // A work order is what the office matches the day's work on. Without one the
-  // record would land unattached, so it stays on the phone until the job has
-  // one — and the CSV still carries it either way.
-  if (!(_job && _job.workOrderNum)) return;
+  // A work order is NOT required. It is what the office matches the day's work
+  // on, so a record without one is harder to place later — but holding the
+  // record hostage until somebody types it meant a tech who filled it in at
+  // the end of the job uploaded nothing all morning, and could not tell why.
+  //
+  // It goes up now, and re-queues itself if a work order arrives later.
   sync.enqueue({ clientId: l.id, kind: 'ladder', payload: ladderPayload(l) });
   if (typeof renderPending === 'function') renderPending();
 }
