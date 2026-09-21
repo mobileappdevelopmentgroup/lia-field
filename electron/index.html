@@ -33,6 +33,10 @@
                 display: flex; align-items: center; justify-content: space-between;
                 padding: 0 16px 0 80px; font-size: 12px; font-weight: 600;
                 color: var(--muted); letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+    /* The 80px on the left is the gutter macOS puts its traffic lights in
+       under `hiddenInset`. Windows and Linux have no lights there, so the
+       gutter is just a hole the greeting hides behind. */
+    body.not-mac .titlebar { padding-left: 16px; }
     .titlebar-right { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 12px; }
     .tb-home { -webkit-app-region: no-drag; background: none; border: 1px solid var(--border);
                color: var(--muted); font-size: 11px; border-radius: 6px; padding: 2px 9px;
@@ -143,7 +147,13 @@
        twelve cards off-screen with no way to reach them — Job Board, FP
        Records, Certificate Views and Support among them, unless the window was
        dragged wider than most displays. */
-    #screen-home { align-items: center; justify-content: center; gap: 0;
+    /* `justify-content: center` on a scrolling box puts the overflow past the
+       scroll origin at BOTH ends, and the top end cannot be scrolled back to —
+       which is why the greeting was sheared off on macOS and gone entirely on
+       Windows, where the OS draws its own title bar and there is less room.
+       `safe center` centres only while everything fits and falls back to
+       flex-start when it does not. */
+    #screen-home { align-items: center; justify-content: safe center; gap: 0;
                    overflow-y: auto; padding: 28px 16px; }
     .home-inner { display: flex; flex-direction: column; align-items: center;
                   gap: clamp(16px, 3vh, 32px); width: 100%; max-width: 1180px; }
@@ -1615,6 +1625,13 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 // attribute. Support tickets carry free text written by techs straight into
 // innerHTML, so the distinction has to be made rather than assumed away.
 const escA = s => esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+// macOS reserves the top-left of the window for its traffic lights; nothing
+// else does. Marked on the body so the titlebar can stop holding a gutter
+// open on Windows, where the greeting was hiding in it.
+if (!/mac/i.test(navigator.userAgentData?.platform || navigator.platform || '')) {
+  document.body.classList.add('not-mac');
+}
 
 let _supabaseConfigured = false;
 let _session = null;

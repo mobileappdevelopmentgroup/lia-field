@@ -132,6 +132,52 @@ function updateSerialWarnState() {
 $('fi-serial').addEventListener('input', updateSerialWarnState);
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
+
+// Where to hang an open suggestion list.
+//
+// These used to be pinned upwards in the markup, which put Brand and Type over
+// the serial field the tech had just filled in, and on a short handset the
+// list ran off the top with no way to reach the rest of it.
+//
+// Down is the default, because that is where a list is expected and because
+// the row it hangs off is near the top of the form. It flips up only when the
+// list genuinely does not fit below AND there is more room above.
+//
+// Room is measured against `visualViewport`, not `innerHeight`: when the
+// keyboard is up, the layout viewport does not change on either platform, so
+// anything measured against it happily places a list behind the keys. Called
+// again on every visualViewport change while a list is open, so the list moves
+// when the keyboard does.
+function placeAcList(input, list) {
+  const vv  = window.visualViewport;
+  const top = vv ? vv.offsetTop : 0;
+  const bot = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const r   = input.getBoundingClientRect();
+
+  const below = bot - r.bottom - 8;
+  const above = r.top - top - 8;
+  const want  = Math.min(list.scrollHeight || 180, 180);
+
+  const up = below < want && above > below;
+  list.classList.toggle('drop-up', up);
+  // Never taller than the space it is in, and never so short it is useless:
+  // at 88px two rows show and the list scrolls, which beats a list that is
+  // present but clipped to nothing.
+  list.style.maxHeight = Math.max(88, Math.min(180, up ? above : below)) + 'px';
+}
+
+// Keep the field the tech is typing in above the keyboard. The keyboard's
+// arrival is a visualViewport resize — there is no event for it — and on
+// Android it lands late enough that scrolling on focus alone does nothing.
+function keepInputVisible(input) {
+  const vv = window.visualViewport;
+  if (!vv) { input.scrollIntoView({ block: 'center' }); return; }
+  const r = input.getBoundingClientRect();
+  if (r.bottom > vv.offsetTop + vv.height - 8 || r.top < vv.offsetTop + 8) {
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
 function setupAutocomplete(inputId, listId, options) {
   const input = $(inputId);
   const list  = $(listId);
@@ -151,10 +197,23 @@ function setupAutocomplete(inputId, listId, options) {
       list.appendChild(item);
     });
     list.classList.add('open');
+    placeAcList(input, list);
   }
 
+  // While a list is open the keyboard may still be animating in, which moves
+  // the input under it. Re-place on every viewport change rather than trusting
+  // the measurement taken at the moment of opening.
+  const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
+  window.visualViewport?.addEventListener('resize', reflow);
+  window.visualViewport?.addEventListener('scroll', reflow);
+
   input.addEventListener('input',  () => showList(input.value));
-  input.addEventListener('focus',  () => { input.select(); showList(input.value); });
+  input.addEventListener('focus',  () => {
+    input.select();
+    showList(input.value);
+    // Late enough for the keyboard to have started coming up.
+    setTimeout(() => { keepInputVisible(input); reflow(); }, 300);
+  });
   input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
   input.addEventListener('keydown', e => {
     const items = list.querySelectorAll('.ac-item');

@@ -229,6 +229,11 @@
                background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
                z-index: 200; max-height: 180px; overflow-y: auto; display: none;
                box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+    /* Down by default. `drop-up` is set by placeAcList() only when the list
+       genuinely will not fit below — measured against the VISUAL viewport, so
+       the on-screen keyboard counts as taking up room. It used to be a fixed
+       class in the markup, which meant the list opened upwards over the serial
+       field even when there was space below it. */
     .ac-list.drop-up { top: auto; bottom: calc(100% + 2px); }
     .ac-list.open { display: block; }
     .ac-item { padding: 11px 12px; font-size: 14px; cursor: pointer; }
@@ -969,7 +974,7 @@
             <input type="text" id="fi-brand" class="field-input" placeholder="Brand" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-brand">×</button>
           </div>
-          <div class="ac-list drop-up" id="ac-brand-list"></div>
+          <div class="ac-list" id="ac-brand-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -979,7 +984,7 @@
             <input type="text" id="fi-type" class="field-input" placeholder="Type" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-type">×</button>
           </div>
-          <div class="ac-list drop-up" id="ac-type-list"></div>
+          <div class="ac-list" id="ac-type-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -1107,7 +1112,7 @@
       <div class="ac-wrap">
         <input type="text" id="fi-part-manual" class="field-input"
                placeholder="Other part #…" autocomplete="off">
-        <div class="ac-list drop-up" id="ac-part-list"></div>
+        <div class="ac-list" id="ac-part-list"></div>
       </div>
       <input type="number" id="fi-part-qty" value="1" min="1" max="99" inputmode="numeric">
       <button class="parts-add-btn" id="btn-add-part-manual" title="Add to ladder">+</button>

@@ -47,14 +47,65 @@ function buildCsv(job) {
   return [headers.map(escape).join(','), ...dataRows].join('\r\n');
 }
 
+// ── Handing the file over ─────────────────────────────────────────────────────
+//
+// Three environments, and the browser's two ways both fail silently in the one
+// that matters:
+//
+//   * Android WebView, which is what the Play build runs in, implements
+//     NEITHER. The Web Share API is a Chrome feature, not a WebView one, so
+//     `navigator.canShare` is undefined; and a WebView has no download manager
+//     wired up, so `<a download>` clicks through to nothing at all. The button
+//     appeared to work and produced no file — which is what was reported.
+//   * iOS WKWebView does have Web Share, which is why the same button worked
+//     on the iPhone and hid the problem.
+//   * A real browser (the PWA) has both.
+//
+// So on a native build the file is written with Capacitor and handed to the
+// system share sheet. The web paths stay for the PWA.
+
+function isNative() {
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+
+async function shareCsvNative(fileName, csv) {
+  const { Filesystem, Share } = window.Capacitor.Plugins;
+  if (!Filesystem || !Share) return false;
+  // Cache, not Documents: this is a hand-off, not the tech's copy of record —
+  // that is the job on the device and, once signed in, the server.
+  const written = await Filesystem.writeFile({
+    path: fileName,
+    data: csv,
+    directory: 'CACHE',
+    encoding: 'utf8',
+  });
+  await Share.share({ title: fileName, files: [written.uri] });
+  return true;
+}
+
 $('btn-share-csv').addEventListener('click', async () => {
   if (!_job) return;
   saveNow();
   const csv      = buildCsv(_job);
   const safeName = (_job.name || 'job').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'job';
   const fileName = `${safeName}.csv`;
-  const blob     = new Blob([csv], { type: 'text/csv' });
-  const file     = new File([blob], fileName, { type: 'text/csv' });
+
+  if (isNative()) {
+    try {
+      if (await shareCsvNative(fileName, csv)) return;
+    } catch (err) {
+      // A cancelled share sheet is not a failure.
+      if (/cancel/i.test(err && err.message || '')) return;
+      // Anything else has to be said out loud. A silent no-op here is the bug
+      // being fixed: the tech taps, nothing happens, and they assume the file
+      // went somewhere.
+      setSaveStatus('Could not save the CSV — ' + (err && err.message || err));
+      return;
+    }
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const file = new File([blob], fileName, { type: 'text/csv' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], title: fileName }); return; }
     catch (err) { if (err.name === 'AbortError') return; }

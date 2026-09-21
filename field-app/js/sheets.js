@@ -191,10 +191,19 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
       list.appendChild(item);
     });
     list.classList.add('open');
+    placeAcList(input, list);
   }
 
+  const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
+  window.visualViewport?.addEventListener('resize', reflow);
+  window.visualViewport?.addEventListener('scroll', reflow);
+
   input.addEventListener('input',  () => showList(input.value.trim()));
-  input.addEventListener('focus',  () => { input.select(); showList(input.value.trim()); });
+  input.addEventListener('focus',  () => {
+    input.select();
+    showList(input.value.trim());
+    setTimeout(() => { keepInputVisible(input); reflow(); }, 300);
+  });
   input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
   input.addEventListener('keydown', e => {
     const items = list.querySelectorAll('.ac-item');
