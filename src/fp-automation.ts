@@ -1,97 +1,41 @@
 import type { Page } from 'playwright';
 import {
-  buildFpBoxRecords, diffFpAgainstWorkOrder, groupByWorkOrder,
+  buildFpBoxRecords, diffFpAgainstWorkOrder, fpBoxAsLadderRecord, groupByWorkOrder,
   type FpInspectionForBsi, type FpBoxRecord,
 } from './core/fp-bsi.js';
+import { runAutomation } from './automation.js';
+import type { AutomationOptions, LadderRecord } from './types.js';
 
 // Putting fall-protection work onto a BSI work order.
 //
-// ── The preflight, and why it refuses ───────────────────────────────────────
-// The ladder importer was written against a form somebody had in front of them.
-// This one was not: BSI's fall-protection flow has not been confirmed field by
-// field. The tempting thing is to assume it matches the ladder form and let it
-// run — and the failure mode of that assumption is boxes full of wrong values
-// on a live customer work order, discovered at invoicing.
+// ── What this file used to be ───────────────────────────────────────────────
+// A parallel importer with its own form mapping (`FP_FORM`) and a preflight
+// that refused to run, because BSI's fall-protection flow had never been
+// confirmed field by field and filling forty boxes with guessed values on a
+// live customer work order was the failure to avoid.
 //
-// So every selector this needs is declared once, below, and checked against the
-// real page before anything is typed. If the form does not look the way this
-// expects, the run STOPS and names exactly which controls are missing. A run
-// that refuses costs an afternoon; a run that silently mis-fills forty boxes
-// costs a customer relationship.
+// Work order 98471, read on 2026-09-21, showed the guess was not merely
+// unconfirmed but unnecessary: **fall protection is the ladder form.** One box
+// for the whole work order, the items collapsed onto it as parts by equipment
+// type. There is no second form, so there is no second importer, so there is
+// nothing for a preflight to refuse.
 //
-// When the FP form is confirmed, correct FP_FORM and delete nothing else.
-
-export interface FpFormSpec {
-  /** Selector, and what it is for, so a failure report is readable. */
-  serial: string;
-  description: string;
-  addBox: string;
-  /** Optional — absent on the ladder form, may exist on the FP one. */
-  manufacturer?: string;
-  model?: string;
-}
-
-// Declared in ONE place. Everything else in this file reads from it.
-export const FP_FORM: FpFormSpec = {
-  serial: '#WoSerialNumber',
-  description: '#WoLadDesc',
-  addBox: 'button:has-text("Add Box")',
-  manufacturer: '#LadderBrand',
-  model: undefined,
-};
-
-export interface PreflightReport {
-  ok: boolean;
-  missing: string[];
-  found: string[];
-  message: string;
-}
+// What is left here is a translation and a call. The box goes through
+// runAutomation() — the same path that has been putting ladders on real work
+// orders for months, with its diff, its retries, its per-part dedupe and its
+// verification pass — rather than a parallel path with none of that history.
+//
+// See docs/BSI-FORM.md for the form itself and src/core/fp-bsi.ts for the
+// mapping, which is pure and unit-tested away from Playwright.
 
 /**
- * Checks the page carries the controls this importer intends to drive.
- * Called before ANY value is entered.
- */
-export async function fpPreflight(page: Page, spec: FpFormSpec = FP_FORM): Promise<PreflightReport> {
-  const required: Array<[string, string]> = [
-    ['serial number', spec.serial],
-    ['description', spec.description],
-    ['Add Box button', spec.addBox],
-  ];
-
-  const missing: string[] = [];
-  const found: string[] = [];
-
-  for (const [name, sel] of required) {
-    // count() rather than isVisible(): a field inside a collapsed section is
-    // present and drivable, and demanding visibility would refuse a form that
-    // is actually fine.
-    const n = await page.locator(sel).count().catch(() => 0);
-    if (n > 0) found.push(`${name} (${sel})`);
-    else missing.push(`${name} (${sel})`);
-  }
-
-  const ok = missing.length === 0;
-  return {
-    ok,
-    missing,
-    found,
-    message: ok
-      ? 'The work order form matches what the importer expects.'
-      : 'This work order does not have the fields the fall-protection importer ' +
-        'expects, so nothing was entered. Missing: ' + missing.join(', ') +
-        '. Confirm the BSI fall-protection form and update FP_FORM in ' +
-        'src/fp-automation.ts before running this again.',
-  };
-}
-
-/**
- * Serials already on the work order, so a re-run adds only what is missing.
+ * Serials already on the work order, so a re-run adds nothing twice.
  *
  * Always an array, whatever the page gives back. If this returned something
- * else the diff would throw BEFORE the loop starts, killing a run that would
- * otherwise have worked — and a page that has been navigated away, or is
- * mid-reload, is exactly when that happens. An empty list is the safe answer:
- * the per-item dedupe in fp-bsi still catches repeats within the run.
+ * else the diff would throw BEFORE the run starts, killing a run that would
+ * otherwise have worked — and a page mid-reload is exactly when that happens.
+ * An empty list is the safe answer: the box serial is derived from the work
+ * order, so the ladder importer's own box diff still catches a repeat.
  */
 export async function scrapeFpSerials(page: Page): Promise<string[]> {
   const raw = await page.evaluate(() => {
@@ -109,103 +53,91 @@ export interface FpPushResult {
   pushed: Array<{ inspectionId: string; serialNum: string; boxRef: string }>;
   skipped: Array<{ inspection_id: string; serial_num: string; reason: string }>;
   failed: Array<{ inspectionId: string; serialNum: string; error: string }>;
-  preflight: PreflightReport;
+  /** What was billed, by code — the operator sees this before and after. */
+  lines: Array<{ code: string; description: string; quantity: number }>;
 }
 
 export interface FpPushOptions {
   actionDelay?: number;
-  /** Called per item so the UI can show progress on a long run. */
   onProgress?: (done: number, total: number, serial: string) => void;
   /**
-   * Called the moment a box actually lands, BEFORE the next one is attempted.
+   * Called the moment the box lands, BEFORE anything else is attempted.
    *
-   * This is where the fault tolerance lives. BSI drops connections, hangs on a
-   * save, and occasionally kills the popup outright. If "what landed" were only
-   * reported at the end of the run, a crash at item 20 of 40 would leave the
-   * database believing none of the 20 went in — and the re-run would add them a
-   * second time, billing the customer twice. Reporting per box means a re-run
-   * starts from 21.
+   * BSI drops connections and hangs on a save. If "what landed" were reported
+   * only at the end, a crash mid-run would leave the database believing
+   * nothing went in — and the re-run would bill the customer a second time.
    */
   onPushed?: (rec: { inspectionId: string; serialNum: string; boxRef: string }) => void;
 }
 
-const pause = (ms: number) => new Promise(r => setTimeout(r, ms));
-
 /**
- * Pushes one work order's fall-protection items.
+ * Pushes one work order's fall-protection items as a single box.
  *
- * Never re-adds. Never continues past a failed preflight. A per-item failure is
- * recorded and the run carries on, because one bad serial should not strand the
- * other thirty — that is the same rule the ladder importer follows.
+ * Never re-adds: the box serial is `1111` + the work order, so a second run
+ * recognises its own box. Items that cannot be billed — an equipment type with
+ * no code — come back in `skipped` with a reason and are never guessed at.
  */
 export async function pushFpToWorkOrder(
   page: Page,
   items: FpInspectionForBsi[],
   opts: FpPushOptions = {},
 ): Promise<FpPushResult> {
-  const delay = opts.actionDelay ?? 1_200;
-  const { records, skipped } = buildFpBoxRecords(items);
-  const preflight = await fpPreflight(page);
+  const { records, skipped, lines } = buildFpBoxRecords(items);
 
-  if (!preflight.ok) {
-    return { pushed: [], skipped, failed: [], preflight };
+  if (!records.length) {
+    return { pushed: [], skipped, failed: [], lines };
   }
 
-  // Re-adding is what double-bills a customer, so what is already there is
-  // established before anything is typed.
+  // Establish what is already there before anything is typed: re-adding the
+  // box is what would bill the customer twice.
   const existing = await scrapeFpSerials(page);
   const { toAdd, alreadyThere } = diffFpAgainstWorkOrder(records, existing);
 
   for (const r of alreadyThere) {
-    skipped.push({ inspection_id: r.inspectionId, serial_num: r.serialNum,
-                   reason: 'Already on this work order' });
+    skipped.push({
+      inspection_id: r.inspectionIds.join(','),
+      serial_num: r.serialNum,
+      reason: 'This work order already has its fall protection box',
+    });
   }
+  if (!toAdd.length) return { pushed: [], skipped, failed: [], lines };
 
   const pushed: FpPushResult['pushed'] = [];
   const failed: FpPushResult['failed'] = [];
-  let done = 0;
 
   for (const rec of toAdd) {
-    opts.onProgress?.(done, toAdd.length, rec.serialNum);
+    opts.onProgress?.(0, 1, rec.serialNum);
     try {
-      await page.fill(FP_FORM.serial, rec.serialNum);
-      await pause(delay);
+      const ladder = fpBoxAsLadderRecord(rec) as LadderRecord;
+      const automationOpts: AutomationOptions = {
+        actionDelay: opts.actionDelay ?? 1_200,
+        pauseBetweenLadders: opts.actionDelay ?? 1_200,
+      } as AutomationOptions;
 
-      // BSI's selects are driven by jQuery handlers that a native Playwright
-      // selectOption bypasses entirely — the value changes and nothing reacts.
-      // Both events have to be fired by hand. Same quirk as the ladder form;
-      // see keyboardSelectDropdown() in automation.ts.
-      await page.evaluate(({ sel, value }) => {
-        const el = document.querySelector(sel) as HTMLSelectElement | HTMLInputElement | null;
-        if (!el) return;
-        (el as HTMLInputElement).value = value;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        const w = window as unknown as { $?: (e: Element) => { trigger: (n: string) => void } };
-        if (w.$) w.$(el).trigger('change');
-      }, { sel: FP_FORM.description, value: rec.desc });
-      await pause(delay);
-
-      await page.click(FP_FORM.addBox);
-      await pause(delay * 2);
+      const [result] = await runAutomation([ladder], page, automationOpts);
+      if (!result || result.status === 'error') {
+        throw new Error(result?.errorMsg || 'BSI would not take the box');
+      }
 
       const boxRef = await latestBoxRef(page);
-      const landed = { inspectionId: rec.inspectionId, serialNum: rec.serialNum, boxRef };
-      pushed.push(landed);
-      // Recorded now, not at the end — see onPushed above.
-      opts.onPushed?.(landed);
+      // Every inspection on the box is marked, not just one: they were all
+      // billed by it, and a crash before the next step must not leave half of
+      // them looking unbilled.
+      for (const id of rec.inspectionIds) {
+        const landed = { inspectionId: id, serialNum: rec.serialNum, boxRef };
+        pushed.push(landed);
+        opts.onPushed?.(landed);
+      }
     } catch (err) {
-      // One bad serial must not strand the other thirty.
-      failed.push({
-        inspectionId: rec.inspectionId,
-        serialNum: rec.serialNum,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      for (const id of rec.inspectionIds) {
+        failed.push({ inspectionId: id, serialNum: rec.serialNum, error: message });
+      }
     }
-    done++;
   }
 
-  opts.onProgress?.(done, toAdd.length, '');
-  return { pushed, skipped, failed, preflight };
+  opts.onProgress?.(1, 1, '');
+  return { pushed, skipped, failed, lines };
 }
 
 async function latestBoxRef(page: Page): Promise<string> {
@@ -217,4 +149,4 @@ async function latestBoxRef(page: Page): Promise<string> {
   }).catch(() => '');
 }
 
-export { groupByWorkOrder };
+export { groupByWorkOrder, diffFpAgainstWorkOrder, type FpBoxRecord };

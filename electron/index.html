@@ -3497,18 +3497,29 @@ if (window.api.onFpPushLog) {
   window.api.onFpPushComplete(res => {
     fppSetRunning(false);
     const t = (res && res.totals) || { pushed: 0, skipped: 0, failed: 0 };
-    const refused = ((res && res.workOrders) || []).filter(w => w.preflight && !w.preflight.ok);
     let html = '<b>' + (res && res.success ? 'Push finished.' : 'Push finished with problems.') +
-      '</b><br>' + t.pushed + ' added · ' + t.skipped + ' skipped · ' + t.failed + ' failed.';
+      '</b><br>' + t.pushed + ' billed · ' + t.skipped + ' not invoiced · ' + t.failed + ' failed.';
     if (res && res.error) html += '<br><span class="err">' + esc(res.error) + '</span>';
-    for (const w of refused) {
-      html += '<br><span class="err">' + esc(w.workOrderId) + ': ' + esc(w.preflight.message) + '</span>';
+
+    // What actually went on the invoice, by code. Fall protection is one box
+    // carrying quantities, so without this the operator has a box and no way
+    // to check it against what the techs recorded.
+    for (const w of (res && res.workOrders) || []) {
+      if (!(w.lines || []).length) continue;
+      html += '<br><br><b>' + esc(w.workOrderId) + ' billed as</b>';
+      for (const l of w.lines) {
+        html += '<br>' + esc(l.code) + ' × ' + l.quantity + '  ' + esc(l.description);
+      }
     }
-    // Failures are named, not summarised into a count. An unnamed failure is one
-    // nobody goes back for.
+
+    // Failures and uninvoiced items are named, not summarised into a count.
+    // Six of the fourteen equipment types have no billing code yet, so
+    // "inspected, not invoiced" is a normal outcome — and the office has to
+    // see which items it applied to rather than wonder where they went.
     for (const w of (res && res.workOrders) || []) {
       for (const f of w.failed || []) {
-        html += '<br>' + esc(w.workOrderId) + ' · ' + esc(f.serialNum) + ': ' + esc(f.error);
+        html += '<br><span class="err">' + esc(w.workOrderId) + ' · ' +
+                esc(f.serialNum || '—') + ': ' + esc(f.error) + '</span>';
       }
       for (const sk of w.skipped || []) {
         html += '<br>' + esc(w.workOrderId) + ' · ' + esc(sk.serial_num || '—') + ': ' + esc(sk.reason);

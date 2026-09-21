@@ -121,23 +121,33 @@ await p.evaluate(() => window.__handlers.complete({
   success: false,
   totals: { pushed: 1, skipped: 1, failed: 1 },
   workOrders: [
-    { workOrderId: 'WO-100', preflight: { ok: true, message: '' },
+    { workOrderId: 'WO-100',
+      // Fall protection is ONE box carrying quantities, so what was billed has
+      // to be shown by code — otherwise the operator has a box and no way to
+      // check it against what the techs actually recorded.
+      lines: [{ code: 'FP1', description: 'BODY HARNESS INSPECTION', quantity: 3 }],
       pushed: [{ inspectionId: 'i1', serialNum: 'H-1', boxRef: 'box-4' }],
-      skipped: [{ inspection_id: 'i2', serial_num: 'H-2', reason: 'Already on this work order' }],
+      skipped: [{ inspection_id: 'i2', serial_num: 'C-9',
+                  reason: 'Crane lift sling has no billing code — inspected, not invoiced' }],
       failed: [] },
-    { workOrderId: 'WO-200',
-      preflight: { ok: false, missing: ['serial number (#WoSerialNumber)'],
-                   message: 'This work order does not have the fields the fall-protection importer expects, so nothing was entered.' },
-      pushed: [], skipped: [], failed: [{ inspectionId: 'i3', serialNum: 'H-3', error: 'Timeout' }] },
+    { workOrderId: 'WO-200', lines: [],
+      pushed: [], skipped: [],
+      failed: [{ inspectionId: '', serialNum: '',
+                 error: 'No BSI work order window was open, so nothing was entered.' }] },
   ],
 }));
 await p.waitForTimeout(250);
 const done = await p.$eval('#fpp-done', e => e.textContent);
 ok('a run with problems does not report as finished cleanly', /finished with problems/.test(done), true);
-// A refusal that is not explained gets retried blindly until somebody gives up.
-ok('a refused work order says why nothing was entered', /nothing was entered/.test(done), true);
-ok('each failure is named rather than counted', /H-3: Timeout/.test(done), true);
-ok('and so is each skip, with its reason', /H-2: Already on this work order/.test(done), true);
+ok('what went on the invoice is shown by code', /FP1 × 3\s+BODY HARNESS INSPECTION/.test(done), true);
+// A failure that is not explained gets retried blindly until somebody gives up.
+ok('a work order that took nothing says why', /nothing was entered/.test(done), true);
+// Six of the fourteen equipment types have no code yet, so this is a normal
+// outcome and the item has to be named rather than quietly missing.
+ok('an item with no billing code is named, not dropped',
+   /C-9: Crane lift sling has no billing code/.test(done), true);
+ok('and is described as inspected rather than failed',
+   /inspected, not invoiced/.test(done), true);
 ok('the screen is no longer running',
    await p.evaluate(() => !$('btn-fpp-start').disabled || $('btn-fpp-stop').style.display === 'none'), true);
 

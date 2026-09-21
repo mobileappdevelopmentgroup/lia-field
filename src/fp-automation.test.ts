@@ -1,134 +1,57 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fpPreflight, pushFpToWorkOrder, FP_FORM } from './fp-automation.js';
+import { scrapeFpSerials, diffFpAgainstWorkOrder } from './fp-automation.js';
+import { buildFpBoxRecords, type FpInspectionForBsi } from './core/fp-bsi.js';
 
-// The preflight exists because BSI's fall-protection form has not been
-// confirmed field by field. Every test here is about what happens when the page
-// is not the one this code was written for — because the alternative to
-// refusing is forty boxes of wrong values on a live customer work order.
+// This file used to be entirely about the preflight — what happens when BSI's
+// page is not the one the code was written for. That preflight existed because
+// FP_FORM was a guess at a fall-protection form nobody had seen, and the
+// alternative to refusing was forty boxes of wrong values on a live work order.
+//
+// The form turned out to be the ladder form. There is no second importer now,
+// so there is nothing to refuse: the box goes through runAutomation(), which
+// has its own diff, retries and verification and has been run against real
+// work orders for months.
+//
+// What is left to test here is the part that is still this file's own job:
+// reading what is already on the page, and never adding the box twice.
 
-/** A stand-in page: says which selectors exist, records everything typed. */
-function fakePage(present: string[], opts: { throwOn?: string; existing?: string[] } = {}) {
-  const typed: Array<[string, string]> = [];
-  const clicked: string[] = [];
-  return {
-    typed, clicked,
-    locator: (sel: string) => ({ count: async () => (present.includes(sel) ? 1 : 0) }),
-    fill: async (sel: string, value: string) => {
-      if (opts.throwOn && value === opts.throwOn) throw new Error('BSI dropped the connection');
-      typed.push([sel, value]);
-    },
-    click: async (sel: string) => { clicked.push(sel); },
-    evaluate: async (fn: unknown, arg?: unknown) => {
-      // Three call sites, told apart by what the page function actually asks
-      // for rather than by call order — order changes, intent does not.
-      if (arg && typeof arg === 'object' && 'sel' in (arg as object)) {
-        const a = arg as { sel: string; value: string };
-        typed.push([a.sel, a.value]);
-        return undefined;
-      }
-      const src = String(fn);
-      if (src.includes('boxserialnumberh-')) return opts.existing ?? [];
-      return 'box-1';
-    },
-  } as never;
-}
-
-const ALL = [FP_FORM.serial, FP_FORM.description, FP_FORM.addBox];
-
-test('a page carrying the expected controls passes the preflight', async () => {
-  const r = await fpPreflight(fakePage(ALL));
-  assert.equal(r.ok, true);
-  assert.deepEqual(r.missing, []);
+const item = (o: Partial<FpInspectionForBsi>): FpInspectionForBsi => ({
+  inspection_id: o.inspection_id ?? 'i1',
+  work_order_id: o.work_order_id ?? '98471',
+  serial_num: o.serial_num ?? 'H-1',
+  equipment_type: o.equipment_type ?? 'Body harness',
+  ...o,
 });
 
-test('a missing control fails the preflight and is NAMED', async () => {
-  const r = await fpPreflight(fakePage([FP_FORM.serial]));
-  assert.equal(r.ok, false);
-  // "Something went wrong" sends somebody hunting; the selector does not.
-  assert.match(r.message, /description/);
-  assert.match(r.message, /Add Box/);
-  assert.match(r.message, /FP_FORM/);
+test('existing box serials are read off the page', async () => {
+  const page = { evaluate: async () => ['1719761', '111198471'] };
+  assert.deepEqual(await scrapeFpSerials(page as never), ['1719761', '111198471']);
 });
 
-test('a failed preflight means NOTHING is typed on the page', async () => {
-  const page = fakePage([]) as unknown as { typed: string[][]; clicked: string[] };
-  const res = await pushFpToWorkOrder(page as never, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-  ]);
-  assert.equal(res.preflight.ok, false);
-  assert.equal(res.pushed.length, 0);
-  assert.deepEqual(page.typed, []);
-  assert.deepEqual(page.clicked, []);
+test('a page that cannot be read gives an empty list, not a crash', async () => {
+  // A page mid-reload is exactly when this throws, and throwing here would
+  // kill a run before it started. Empty is safe: the box serial is derived,
+  // so the ladder importer's own diff still catches a repeat.
+  const page = { evaluate: async () => { throw new Error('Execution context destroyed'); } };
+  assert.deepEqual(await scrapeFpSerials(page as never), []);
 });
 
-test('a good page gets the serial and the description, and one Add Box', async () => {
-  const page = fakePage(ALL) as unknown as { typed: string[][]; clicked: string[] };
-  const res = await pushFpToWorkOrder(page as never, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-  ], { actionDelay: 0 });
-  assert.equal(res.pushed.length, 1);
-  assert.equal(res.pushed[0].boxRef, 'box-1');
-  assert.deepEqual(page.typed, [[FP_FORM.serial, 'H-1'],
-                                [FP_FORM.description, 'Fall Protection Inspection']]);
-  assert.equal(page.clicked.length, 1);
+test('junk from the page is filtered rather than trusted', async () => {
+  const page = { evaluate: async () => ['1719761', null, 42, ''] };
+  assert.deepEqual(await scrapeFpSerials(page as never), ['1719761', '']);
 });
 
-// Re-adding is what double-bills a customer, and BSI runs die halfway often
-// enough that re-running is normal rather than exceptional.
-test('a serial already on the work order is skipped, not added again', async () => {
-  // Matched loosely, the way BSI matches: 'h 1' on the page is 'H-1' here.
-  const page = fakePage(ALL, { existing: ['h 1'] }) as unknown as { typed: string[][] };
-  const res = await pushFpToWorkOrder(page as never, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-    { inspection_id: 'i2', work_order_id: 'WO-1', serial_num: 'H-2' },
-  ], { actionDelay: 0 });
-  assert.deepEqual(res.pushed.map(r => r.serialNum), ['H-2']);
-  assert.equal(res.skipped.length, 1);
-  assert.match(res.skipped[0].reason, /Already on this work order/);
-  // And it was never typed — the skip is real, not cosmetic.
-  assert.equal(page.typed.some(t => t[1] === 'H-1'), false);
+test('a work order that already has its box gets nothing added', async () => {
+  const { records } = buildFpBoxRecords([item({})]);
+  const { toAdd, alreadyThere } = diffFpAgainstWorkOrder(records, ['111198471']);
+  assert.equal(toAdd.length, 0);
+  assert.equal(alreadyThere.length, 1);
 });
 
-// A page that has been navigated away mid-run answers nonsense. That used to
-// throw before the loop even started, killing a run that was otherwise fine.
-test('a page that cannot say what is on it does not kill the run', async () => {
-  const page = fakePage(ALL, { existing: undefined });
-  const broken = { ...(page as object), evaluate: async (fn: unknown, arg?: unknown) => {
-    if (arg && typeof arg === 'object' && 'sel' in (arg as object)) return undefined;
-    if (String(fn).includes('boxserialnumberh-')) return null;  // not an array
-    return 'box-1';
-  } };
-  const res = await pushFpToWorkOrder(broken as never, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-  ], { actionDelay: 0 });
-  assert.equal(res.pushed.length, 1);
-});
-
-test('one bad serial does not strand the rest of the run', async () => {
-  const page = fakePage(ALL, { throwOn: 'H-2' }) as unknown as { typed: string[][] };
-  const res = await pushFpToWorkOrder(page as never, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-    { inspection_id: 'i2', work_order_id: 'WO-1', serial_num: 'H-2' },
-    { inspection_id: 'i3', work_order_id: 'WO-1', serial_num: 'H-3' },
-  ], { actionDelay: 0 });
-  assert.deepEqual(res.pushed.map(r => r.serialNum), ['H-1', 'H-3']);
-  assert.equal(res.failed.length, 1);
-  assert.match(res.failed[0].error, /dropped the connection/);
-});
-
-// The whole fault-tolerance story: what landed is known before the next attempt,
-// so a crash cannot leave the database believing nothing went in.
-test('each landed box is reported before the next one is attempted', async () => {
-  const page = fakePage(ALL, { throwOn: 'H-2' });
-  const order: string[] = [];
-  await pushFpToWorkOrder(page, [
-    { inspection_id: 'i1', work_order_id: 'WO-1', serial_num: 'H-1' },
-    { inspection_id: 'i2', work_order_id: 'WO-1', serial_num: 'H-2' },
-  ], {
-    actionDelay: 0,
-    onPushed: r => order.push('landed:' + r.serialNum),
-    onProgress: (_d, _t, s) => { if (s) order.push('start:' + s); },
-  });
-  assert.deepEqual(order, ['start:H-1', 'landed:H-1', 'start:H-2']);
+test('a work order with other boxes still gets its fall protection box', async () => {
+  const { records } = buildFpBoxRecords([item({})]);
+  const { toAdd } = diffFpAgainstWorkOrder(records, ['1719761', '1719760']);
+  assert.equal(toAdd.length, 1);
+  assert.equal(toAdd[0].serialNum, '111198471');
 });

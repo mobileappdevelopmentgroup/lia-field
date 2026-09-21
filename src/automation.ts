@@ -321,8 +321,10 @@ async function fillNewSerialFields(
     await pause(400);
   }
 
-  // 4. Description — always "Ladder Repair"
-  await keyboardSelectDropdown(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
+  // 4. Description — "Ladder Repair" for a ladder, and the record's own when
+  // it has one. A fall-protection box is this same form with "Fall Protection"
+  // here; hardcoding the ladder value would have filed it as a ladder repair.
+  await keyboardSelectDropdown(page, '#WoLadDesc', record.desc || 'Ladder Repair', opts.actionDelay);
   await pause(400);
 
   // 5. Location ID — filled last so BSI validation fires correctly.
@@ -654,7 +656,7 @@ async function addLadderBox(
       await selectIfEmpty(page, '#LadderBrand', expandAbbrev(BRAND_ABBREV, record.brand), opts.actionDelay);
       await selectIfEmpty(page, '#WoLadType',   expandAbbrev(TYPE_ABBREV,  record.type),  opts.actionDelay);
       await selectIfEmpty(page, '#LadderLength', record.length, opts.actionDelay);
-      await selectIfEmpty(page, '#WoLadDesc', 'Ladder Repair', opts.actionDelay);
+      await selectIfEmpty(page, '#WoLadDesc', record.desc || 'Ladder Repair', opts.actionDelay);
       // The flags are the tech's observation of the ladder in front of them
       // this visit, so they are applied on a serial BSI already knows as well
       // as on a new one. Ticking only, so nothing BSI already holds is lost.

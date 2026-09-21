@@ -1,5 +1,5 @@
 import { launchBrowser, findWorkOrderPage } from './automation.js';
-import { fpPreflight, pushFpToWorkOrder, type FpPushResult } from './fp-automation.js';
+import { pushFpToWorkOrder, type FpPushResult } from './fp-automation.js';
 import { groupByWorkOrder, buildFpBoxRecords, type FpInspectionForBsi } from './core/fp-bsi.js';
 
 // Driving fall-protection work onto BSI, one work order at a time.
@@ -13,13 +13,18 @@ import { groupByWorkOrder, buildFpBoxRecords, type FpInspectionForBsi } from './
 // ── Fault tolerance ────────────────────────────────────────────────────────
 // BSI is flaky. Three things follow from that, and all three are load-bearing:
 //
-//   1. Nothing is typed until the preflight confirms the form is the one this
-//      code was written for (see fp-automation.ts).
-//   2. Every box that lands is reported IMMEDIATELY, so a crash halfway through
-//      leaves the database knowing exactly what went in. A re-run then adds
-//      only the remainder instead of billing the customer twice.
-//   3. A per-item failure is recorded and the run continues. One bad serial
-//      must not strand the other thirty.
+//   1. Nothing is typed until the operator confirms the right work order is
+//      open. Nothing on the BSI page says reliably which one it is, and a box
+//      on the wrong work order has to be undone by hand.
+//   2. The box that lands is reported IMMEDIATELY, for every inspection it
+//      bills, so a crash halfway through leaves the database knowing exactly
+//      what went in. A re-run then adds nothing instead of billing twice.
+//   3. A failure on one work order is recorded and the run continues to the
+//      next. One bad page must not strand the rest.
+//
+// There is no preflight any more. It existed because FP_FORM was a guess at a
+// form nobody had seen; the form turned out to be the ladder form, so the box
+// goes through runAutomation() and there is nothing left to refuse.
 
 export interface FpRunResult {
   success: boolean;
@@ -29,7 +34,8 @@ export interface FpRunResult {
     pushed: FpPushResult['pushed'];
     skipped: FpPushResult['skipped'];
     failed: FpPushResult['failed'];
-    preflight: FpPushResult['preflight'];
+    /** What each code billed, so the operator can check the invoice. */
+    lines: FpPushResult['lines'];
   }>;
   totals?: { pushed: number; skipped: number; failed: number };
 }
@@ -60,7 +66,10 @@ export async function runFpPush(
 
   console.log(`${items.length} record(s) → ${records.length} box(es) across ${groups.size} work order(s).`);
   if (unpushable.length) {
-    console.log('\nNot pushed:');
+    // Named, never dropped. Six of the fourteen equipment types have no
+    // billing code yet, so "inspected and not invoiced" is a normal outcome
+    // and the office has to be able to see which items it applied to.
+    console.log('\nInspected, not invoiced:');
     for (const s of unpushable) console.log(`  ${s.serial_num || '(no serial)'}: ${s.reason}`);
   }
   if (groups.size === 0) {
@@ -88,9 +97,10 @@ export async function runFpPush(
 
       const workPage = await waitForPopup(context, mainPage);
       if (!workPage) {
-        out.push({ workOrderId, pushed: [], skipped: [], failed: [],
-          preflight: { ok: false, missing: [], found: [],
-            message: 'No BSI work order window was open, so nothing was entered.' } });
+        out.push({ workOrderId, pushed: [], skipped: [], lines: [],
+          failed: [{ inspectionId: '', serialNum: '',
+            error: 'No BSI work order window was open, so nothing was entered.' }] });
+        totals.failed += 1;
         continue;
       }
 
@@ -102,10 +112,9 @@ export async function runFpPush(
         },
       });
 
-      if (!res.preflight.ok) {
-        // Refused, deliberately. Reported and moved on rather than throwing, so
-        // a second work order in the same run still gets its chance.
-        console.log('\n' + res.preflight.message + '\n');
+      if (res.lines.length) {
+        console.log('\nBilled as:');
+        for (const l of res.lines) console.log(`  ${l.code} × ${l.quantity}  ${l.description}`);
       }
 
       totals.pushed += res.pushed.length;
@@ -130,8 +139,8 @@ export async function runFpPush(
 
   await browser.close().catch(() => {});
 
-  const anyRefused = out.some(w => !w.preflight.ok);
-  return { success: totals.pushed > 0 && !anyRefused, workOrders: out, totals };
+  const anyFailed = out.some(w => w.failed.length > 0);
+  return { success: totals.pushed > 0 && !anyFailed, workOrders: out, totals };
 }
 
 /** Finds the BSI popup, waiting up to five minutes for the operator to open it. */
@@ -150,5 +159,3 @@ async function waitForPopup(
   }
   return null;
 }
-
-export { fpPreflight };

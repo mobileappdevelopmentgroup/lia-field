@@ -55,28 +55,12 @@ Deliverables are in `~/Desktop/Lia-Deliverables/`.
 **Apply both, then update `CLAUDE.md`'s migration state.** Until then Field
 Work and the shared catalogue do not work; everything else in 1.12.0 does.
 
-## 2. Fall protection billing, rebuilt on the real model
+## 2. Later, and deliberately not now
 
-**One box per work order, always.** Serial is `1111` + the work order number.
-Ladder Type `Other`, Description `Fall Protection`, Information `Other`. Items
-become parts by type with the quantity as the count.
-
-`src/core/fp-bsi.ts` builds one box per item and is wrong at the premise; its
-tests pass because they check it against itself. `FP_FORM` and the preflight in
-`src/fp-automation.ts` are guesses against a form that does not exist. This
-deletes more than it adds.
-
-The derived serial means the existing diff catches the box on a re-run, so
-double-billing is preventable — the open question in `CLAUDE.md` is answered.
-
-Eight of the fourteen equipment types map by name; **six are deliberately
-unmapped** and stay that way until the office knows what they bill as — see
-`docs/BSI-FORM.md`. They remain fully inspectable. The push must **name** the
-items it cannot bill rather than dropping them: *"3 items on this work order
-have no billing code — they were inspected and are not on this invoice."*
-
-## 3. Later, and deliberately not now
-
+* **The six unmapped equipment types.** Add a row to `FP_TYPE_CODES` in
+  `src/core/fp-bsi.ts` when the office knows what each bills as — that is the
+  whole change, no migration. Until then those items are inspected, named on
+  the push screen, and not invoiced.
 * **Drive `#BoxLaderInfoEdit`** so a correction can be pushed to a box already
   in BSI, and `needs_bsi_edit` clears itself.
 * **Estimating in Lia Office** from materials/labor, priced per customer type —
