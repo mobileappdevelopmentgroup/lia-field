@@ -106,6 +106,20 @@
       if (settled) return;            // already timed out and said so
       settled = true; clearTimeout(giveUp);
       markAuthOffered();
+      // The capture path asks this synchronously, so it must be re-learned the
+      // moment somebody signs in or out.
+      if (window.LiaSyncState) {
+        window.LiaSyncState.forgetSyncing();
+        window.LiaSyncState.syncing();
+      }
+      // Remember who this is before anything asks, then adopt the work done
+      // while nobody was signed in.
+      if (window.LiaSync.rememberUser) {
+        window.LiaSync.rememberUser().then(function () {
+          if (typeof claimUnownedJobs === 'function') claimUnownedJobs();
+          if (typeof renderJobList === 'function') renderJobList();
+        });
+      }
       const pw = $('auth-pass'); if (pw) pw.value = '';
       return window.LiaCache.status();
     }).then(function (s) {
@@ -182,6 +196,7 @@
     if (!sync) { goScreen('jobs'); return; }
 
     sync.startAutoDrain();
+    if (window.LiaSyncState) window.LiaSyncState.syncing();
 
     sync.isConfigured().then(function (configured) {
       // A local-only build behaves exactly as it did before sync existed.
@@ -419,6 +434,15 @@
     const pending = window.LiaSync ? window.LiaSync.queueLength() : 0;
     if (pending && !confirm(`${pending} record${pending !== 1 ? 's have' : ' has'} not uploaded yet. Sign out anyway?`)) return;
     window.LiaSync.signOut().then(function () {
+      if (window.LiaSyncState) {
+        window.LiaSyncState.forgetSyncing();
+        window.LiaSyncState.syncing();
+      }
+      // Their jobs stay on the device, labelled as theirs. Their assignments
+      // do not: those are the lead's plan for one person, and the next tech
+      // must not open the app onto somebody else's day.
+      if (window.LiaAssignments && window.LiaAssignments.clear) window.LiaAssignments.clear();
+      if (typeof renderJobList === 'function') renderJobList();
       if (typeof closeSettings === 'function') closeSettings();
       goScreen('auth');
     });

@@ -780,6 +780,20 @@
     .up-wait { color: var(--muted); }
     .up-bad  { color: var(--bad-fg, #f85149); }
 
+    /* Whose work this is, shown only on a phone carrying more than one
+       person's. A job somebody else captured is dimmed and says so: it can be
+       opened and exported, but it uploads under them, not under whoever is
+       signed in now. */
+    .job-owner { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .job-owner.other { color: var(--warn-fg, #d29922); }
+    .job-card.not-mine { opacity: .72; }
+
+    .jobs-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 10px; }
+    .jf-btn { background: var(--surf); color: var(--fg); border: 1px solid var(--border);
+              border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-weight: 600; }
+    .jf-btn.on { border-color: var(--accent, #4f6ef7); color: var(--accent, #4f6ef7); }
+    .jf-note { flex: 1; min-width: 180px; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+
     .jobs-upload { display: flex; align-items: center; gap: 10px; margin: 0 0 10px;
                    padding: 11px 13px; border-radius: 11px; background: var(--surf);
                    border: 1px solid var(--border); }
@@ -896,6 +910,7 @@
       <div class="ju-text" id="jobs-upload-text"></div>
       <button class="ju-btn" id="btn-upload-all">Upload now</button>
     </div>
+    <div id="jobs-filters" class="jobs-filters" style="display:none;"></div>
     <div id="assigned-body"></div>
     <div class="job-empty" id="jobs-empty" style="display:none;">
       No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.

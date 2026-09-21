@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 23
+-- Migrations included: 25
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -3020,6 +3020,13 @@ BEGIN
              'team_count', CASE WHEN j.share_peer_work THEN (
                SELECT coalesce(sum(pr.n), 0)::int FROM public.job_progress(v_account, j.wo_key, j.scope) pr)
                ELSE 0 END,
+             -- Who planned this. On a shared phone, and on any phone whose
+             -- tech works for more than one lead, "who told me to do this"
+             -- is the first question and there was no answer on the device.
+             'assigned_by', (
+               SELECT coalesce(u.name, u.email) FROM public.users u WHERE u.id = j.created_by),
+             'assigned_by_email', (
+               SELECT u.email FROM public.users u WHERE u.id = j.created_by),
              'updated_at', j.updated_at
            ) ORDER BY j.status, j.due_date NULLS LAST, j.updated_at DESC), '[]'::json)
       FROM public.jobs j
@@ -3861,7 +3868,7 @@ BEGIN
     brand, type, length, account_id, asset_id, tech_user_id,
     version, supersedes, is_current, source, captured_at,
     lubricated, has_leveler, has_claw, has_vrung,
-    rep_number, collected_by, collector_name
+    rep_number, collected_by, collector_name, parts
   ) VALUES (
     v_serial, v_date, v_who,
     coalesce(nullif(p->>'work_order_id', ''), v_prev.work_order_id),
@@ -3878,7 +3885,11 @@ BEGIN
     coalesce((p->>'has_leveler')::boolean, v_prev.has_leveler),
     coalesce((p->>'has_claw')::boolean,    v_prev.has_claw),
     coalesce((p->>'has_vrung')::boolean,   v_prev.has_vrung),
-    v_rep, v_user_id, v_who
+    v_rep, v_user_id, v_who,
+    -- The parts a tech tapped on the phone. Without them a field record
+    -- imports into BSI as a ladder with no line items, which is a ladder
+    -- nobody can bill for.
+    coalesce(p->'parts', v_prev.parts)
   )
   RETURNING id INTO v_id;
 
@@ -5235,8 +5246,16 @@ CREATE TABLE public.inspections (
     collector_name text,
     rep_name text,
     verified_by text,
-    impersonation_id uuid
+    impersonation_id uuid,
+    parts jsonb
 );
+
+
+--
+-- Name: COLUMN inspections.parts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inspections.parts IS 'Parts tapped in the field: [{"name","qty"}]. Fed into the BSI import.';
 
 
 --

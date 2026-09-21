@@ -158,7 +158,15 @@
     });
   }
 
+  // The lead's plan for THIS tech, pulled at sign-in. On a shared phone it
+  // must not outlive the session: the next person would see somebody else's
+  // day, with their work orders on it.
+  function clear() {
+    try { localStorage.removeItem(KEY); } catch (_) {}
+  }
+
   var api = {
+    clear: clear,
     list: list,
     fetchedAt: fetchedAt,
     refresh: refresh,

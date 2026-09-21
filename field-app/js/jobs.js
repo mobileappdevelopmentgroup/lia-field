@@ -12,17 +12,56 @@
 // ════════════════════════════════════════════════════════════════
 // Jobs Screen
 // ════════════════════════════════════════════════════════════════
+// Whose jobs these are, and which of them the tech wants to see.
+//
+// A phone gets handed between techs. Somebody else's jobs must not clutter this
+// tech's list — but they are NOT deleted and NOT uploaded: the first tech may
+// sign back in this evening expecting his day's work exactly where he left it.
+// So a job remembers who made it, and the list shows the current tech's own
+// work plus anything captured while nobody was signed in.
+function jobOwner(job) { return job.ownerId || null; }
+
+function jobIsMine(job) {
+  const me = window.LiaSync && window.LiaSync.currentUid ? window.LiaSync.currentUid() : null;
+  const owner = jobOwner(job);
+  if (!owner) return true;            // captured signed out: nobody else claims it
+  if (!me) return false;
+  return owner === me;
+}
+
+// Whether this phone is carrying more than one person's work. Only then is a
+// name on every card worth the space: on a single-tech phone it is noise about
+// something that cannot be in doubt.
+function deviceHasSeveralOwners(jobs) {
+  const owners = new Set(jobs.map(j => j.ownerId || '').filter(Boolean));
+  const me = window.LiaSync && window.LiaSync.currentUid ? window.LiaSync.currentUid() : null;
+  if (me) owners.add(me);
+  return owners.size > 1;
+}
+
+let _showArchived = false;
+
 function renderJobList() {
   if (typeof renderJobsUpload === 'function') renderJobsUpload();
   const all    = loadJobs();
-  const sorted = Object.values(all).sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const every  = Object.values(all);
+  // Everybody's work is shown, and whose it is said on the card. Hiding it
+  // left a tech staring at a phone that had thrown away his day; labelling it
+  // says where the day went and who can send it.
+  const shared = deviceHasSeveralOwners(every);
+  const archived = every.filter(j => j.archivedAt);
+  const sorted = every
+    .filter(j => _showArchived ? j.archivedAt : !j.archivedAt)
+    .sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  renderJobsFilters(archived.length, 0);
   const body   = $('jobs-body');
   [...body.querySelectorAll('.job-card:not(.assigned)')].forEach(el => el.remove());
   renderAssignedList();
   // "No jobs yet" while the lead's assignments are sitting right above it reads
   // as though the assignments were not real.
   const assignedCount = window.LiaAssignments ? window.LiaAssignments.list().length : 0;
-  $('jobs-empty').style.display = (sorted.length === 0 && assignedCount === 0) ? '' : 'none';
+  $('jobs-empty').style.display =
+    (sorted.length === 0 && assignedCount === 0 && !_showArchived) ? '' : 'none';
   sorted.forEach(job => {
     // A fall protection job counts items, not ladders.
     const count = jobScope(job) === 'fall_protection'
@@ -31,18 +70,36 @@ function renderJobList() {
     const sc    = SCOPES[jobScope(job)] || SCOPES.ladder;
     const date  = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
     const card  = document.createElement('div');
-    card.className = 'job-card';
+    const mine  = jobIsMine(job);
+    card.className = 'job-card' + (mine ? '' : ' not-mine');
     card.innerHTML = `
       <div class="job-card-info">
         <div class="job-card-name">${esc(job.name || 'Untitled Job')}</div>
+        ${shared ? `<div class="job-owner${mine ? '' : ' other'}">${
+          esc(job.ownerEmail || (mine ? 'you' : 'another sign-in'))}${
+          mine ? '' : ' · uploads when they sign in'}</div>` : ''}
         <div class="job-card-meta"><span class="scope-badge ${sc.badge}">${esc(sc.label)}</span>${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${count} ${esc(sc.unit)}${count !== 1 ? 's' : ''} · ${date}</div>
       </div>
       <div class="job-actions">
         <button class="btn-p" style="font-size:13px;padding:7px 12px;" data-open="${esc(job.id)}">Open</button>
+        <button class="btn-g" style="font-size:13px;padding:7px 10px;" data-arch="${esc(job.id)}">${job.archivedAt ? 'Restore' : 'Archive'}</button>
         <button class="btn-g" style="font-size:13px;padding:7px 10px;color:var(--err);border-color:rgba(var(--err-rgb),.3);" data-del="${esc(job.id)}">✕</button>
       </div>
     `;
     card.querySelector('[data-open]').addEventListener('click', () => openJob(job.id));
+    // Archiving hides a finished job from the list and changes nothing else:
+    // the ladders, the CSV and anything still waiting to upload are all exactly
+    // where they were. It is the tidying-up a tech wants at the end of a job,
+    // and it is not the delete button next to it.
+    card.querySelector('[data-arch]').addEventListener('click', e => {
+      e.stopPropagation();
+      const store = loadJobs();
+      const j = store[job.id];
+      if (!j) return;
+      if (j.archivedAt) delete j.archivedAt; else j.archivedAt = new Date().toISOString();
+      saveJobs(store);
+      renderJobList();
+    });
     card.querySelector('[data-del]').addEventListener('click', e => {
       e.stopPropagation();
       if (!confirm(`Delete "${job.name || 'Untitled Job'}"?`)) return;
@@ -121,6 +178,9 @@ function renderAssignedList() {
     card.innerHTML = `
       <div class="job-card-info">
         <div class="job-card-name">${esc(a.title || a.wo_number || 'Work order')}</div>
+        ${a.assigned_by ? `<div class="job-owner">Assigned by ${esc(a.assigned_by)}${
+          a.assigned_by_email && a.assigned_by_email !== a.assigned_by
+            ? ` · ${esc(a.assigned_by_email)}` : ''}</div>` : ''}
         <div class="job-card-meta">
           <span class="scope-badge ${sc.badge}">${esc(sc.label)}</span>
           <span class="asg-badge${a.team_wide ? ' team' : ''}">${a.team_wide ? 'Team' : 'You'}</span>
@@ -209,7 +269,51 @@ function createJob(scope) {
     id, name: '', workOrderNum: '',
     scope: SCOPES[scope] ? scope : 'ladder',
     ladders: [], items: [], createdAt: now, updatedAt: now,
+    // Who this belongs to on a shared phone. Null while signed out, and
+    // claimed on the next sign-in — see claimUnownedJobs().
+    ownerId: (window.LiaSync && window.LiaSync.currentUid) ? window.LiaSync.currentUid() : null,
+    ownerEmail: (window.LiaSync && window.LiaSync.currentEmail) ? window.LiaSync.currentEmail() : null,
   };
   const all = loadJobs(); all[id] = job; saveJobs(all);
   openJob(id);
 }
+
+
+// The line above the list: archived jobs.
+function renderJobsFilters(archivedCount, otherCount) {
+  const bar = document.getElementById('jobs-filters');
+  if (!bar) return;
+  const bits = [];
+  if (archivedCount) {
+    bits.push(`<button class="jf-btn${_showArchived ? ' on' : ''}" id="jf-archived">` +
+              `${_showArchived ? 'Back to active jobs' : `Archived (${archivedCount})`}</button>`);
+  } else if (_showArchived) {
+    bits.push('<button class="jf-btn on" id="jf-archived">Back to active jobs</button>');
+  }
+  if (otherCount) {
+    bits.push(`<span class="jf-note">${otherCount} job${otherCount !== 1 ? 's' : ''} belong to another sign-in on this phone. ` +
+              `They are kept, and reappear when that person signs back in.</span>`);
+  }
+  bar.innerHTML = bits.join('');
+  bar.style.display = bits.length ? 'flex' : 'none';
+  const btn = document.getElementById('jf-archived');
+  if (btn) btn.addEventListener('click', () => { _showArchived = !_showArchived; renderJobList(); });
+}
+
+
+// Work captured while signed out belongs to whoever signs in next: they are
+// the person who did it. Anything already owned is left alone, so signing in
+// never takes another tech's jobs.
+function claimUnownedJobs() {
+  const me = window.LiaSync && window.LiaSync.currentUid ? window.LiaSync.currentUid() : null;
+  if (!me) return 0;
+  const all = loadJobs();
+  let n = 0;
+  const email = window.LiaSync.currentEmail ? window.LiaSync.currentEmail() : null;
+  Object.values(all).forEach((j) => {
+    if (!j.ownerId) { j.ownerId = me; j.ownerEmail = email; n++; }
+  });
+  if (n) saveJobs(all);
+  return n;
+}
+window.claimUnownedJobs = claimUnownedJobs;

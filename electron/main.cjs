@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
+const crypto = require('crypto');
 const { fork } = require('child_process');
 
 let mainWindow = null;
@@ -515,6 +516,26 @@ ipcMain.handle('support:am-i-developer', async () => {
     if (error) return { ok: true, developer: false };
     return { ok: true, developer: data === true };
   } catch (_) { return { ok: true, developer: false }; }
+});
+
+// Anybody signed in can file one. The developer's inbox already reads these;
+// until now only the phone app could write one, so a lead watching an import go
+// wrong had to go and find a phone.
+ipcMain.handle('support:submit', async (_event, ticket) => {
+  try {
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, error: 'Sign in first — a ticket has to come from somebody.' };
+    const { data, error } = await sb.rpc('submit_support_ticket', {
+      p: {
+        subject: ticket && ticket.subject,
+        body: ticket && ticket.body,
+        client_id: (ticket && ticket.clientId) || crypto.randomUUID(),
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, ticket: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
 });
 
 ipcMain.handle('support:inbox', async (_event, status) => {

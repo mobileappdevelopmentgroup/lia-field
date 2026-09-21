@@ -418,8 +418,30 @@ function queueLadder(l) {
   if (typeof renderPending === 'function') renderPending();
 }
 
+// A work order is optional on a phone that only logs locally — the CSV carries
+// everything and the tech knows which job it was. Once signed in it is
+// REQUIRED before the first ladder: the record goes to the company's account
+// the moment it is captured, and one without a work order is work nobody can
+// place afterwards. Better to ask for it now than to find it unattached later.
+function needsWorkOrder() {
+  if (_job && _job.workOrderNum) return false;
+  if (_job && _job.assignedId) return false;          // the lead set it
+  const st = window.LiaSyncState;
+  return !!(st && st.syncingNow && st.syncingNow());
+}
+
+function demandWorkOrder() {
+  const el = $('job-wo');
+  if (!el) return;
+  el.focus();
+  el.style.borderColor = 'var(--err)';
+  setTimeout(() => { el.style.borderColor = ''; }, 2000);
+  setSaveStatus('Enter the work order number first — signed in, your work uploads to the company and needs one to be placed.');
+}
+
 function addLadder() {
   const serial = $('fi-serial').value.trim();
+  if (needsWorkOrder()) { demandWorkOrder(); return; }
   if (!serial) {
     const el = $('fi-serial');
     el.focus(); el.style.borderColor = 'var(--err)';

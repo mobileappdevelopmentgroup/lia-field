@@ -85,6 +85,11 @@
   }
   function forgetSyncing() { _syncs = null; }   // after signing in or out
 
+  // The capture path cannot wait on a promise to decide whether to accept a
+  // tap, so it gets the last known answer. syncing() keeps it warm; until it
+  // has run once this says no, which errs toward letting the tech work.
+  function syncingNow() { return _syncs === true; }
+
   function stateOf(clientId, q) {
     q = q || queued();
     if (sentAt(clientId)) return 'uploaded';
@@ -137,6 +142,7 @@
     queued: queued,
     waiting: waiting,
     syncing: syncing,
+    syncingNow: syncingNow,
     forgetSyncing: forgetSyncing,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

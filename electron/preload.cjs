@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('api', {
   // Support inbox — developer only. The gate is server-side (see
   // supabase/migrations/13_support.sql); this flag only decides whether the card is drawn.
   supportAmIDeveloper: ()                    => ipcRenderer.invoke('support:am-i-developer'),
+  supportSubmit:   (ticket) => ipcRenderer.invoke('support:submit', ticket),
   supportInbox:        (status)              => ipcRenderer.invoke('support:inbox', status),
   supportCounts:       ()                    => ipcRenderer.invoke('support:counts'),
   supportReply:        (ticketId, body)      => ipcRenderer.invoke('support:reply', ticketId, body),

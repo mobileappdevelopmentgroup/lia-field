@@ -32,6 +32,7 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**25 was applied 2026-09-21** — `my_jobs()` says who assigned a job.
 **24 was applied 2026-09-21** — `inspections.parts`, so a field ladder keeps
 what the tech tapped and the office can import its work into BSI.
 **23 was applied 2026-09-20** — removing somebody from a crew, and the

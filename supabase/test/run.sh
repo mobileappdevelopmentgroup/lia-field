@@ -138,6 +138,11 @@ echo "Running field parts assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/21_field_parts_test.sql"
 
+echo
+echo "Running assigned-by assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/22_assigned_by_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

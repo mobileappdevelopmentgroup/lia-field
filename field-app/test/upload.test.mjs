@@ -45,8 +45,12 @@ window.supabase = { createClient: function () { return {
   },
   rpc: function (fn, args) {
     window.__calls.push({ fn: fn, p: args && args.p });
-    if (fn === 'account_snapshot_meta') return Promise.resolve({ data: { total: 0, changed: 0, next_since: null }, error: null });
-    if (fn === 'account_snapshot') return Promise.resolve({ data: [], error: null });
+    // One catalogue row, so the first-sync gate is satisfied and a job will
+    // open — the gate itself is tested in boot.test.mjs.
+    if (fn === 'account_snapshot_meta') return Promise.resolve({ data: { total: 1, changed: 1, next_since: '2026-01-01T00:00:00Z' }, error: null });
+    if (fn === 'account_snapshot') return Promise.resolve({ data: window.__snapDone ? [] : (window.__snapDone = true, [
+      { asset_id: 'a1', serial_raw: 'L-1', serial_key: 'L1', kind: 'ladder', is_deleted: false, updated_at: '2026-01-01T00:00:00Z' }
+    ]), error: null });
     var bad = ${JSON.stringify(badSerial)};
     if (fn === 'record_inspections') {
       var rows = args.p || [];
@@ -166,6 +170,47 @@ ok('which the server was told about',
    await p.evaluate(() => window.__calls.filter(c => /record_inspection/.test(c.fn)).pop().p.work_order_id
                        || window.__calls.filter(c => /record_inspection/.test(c.fn)).pop().p[0]?.work_order_id),
    'WO-LATE');
+ok('no page errors', errs, []);
+await p.close(); await ctx.close();
+
+// ── Signed in, a work order is asked for before the first ladder ───────────
+// Optional on a phone that only logs locally — the CSV carries everything and
+// the tech knows which job it was. Signed in, the record reaches the company's
+// account the moment it is captured, and one with no work order is work nobody
+// can place later.
+({ p, ctx, errs } = await open(null));
+// A job will not open until the catalogue has come down once — that gate is
+// tested in boot.test.mjs; here it just has to be satisfied.
+await p.evaluate(() => LiaSync.pullCatalog({}));
+await p.reload();                       // the gate is checked at boot
+await p.waitForTimeout(700);
+await p.evaluate(() => { LiaSyncState.forgetSyncing(); return LiaSyncState.syncing(); });
+await p.evaluate(() => {
+  const all = loadJobs();
+  const id = Object.keys(all)[0];
+  all[id].workOrderNum = '';
+  saveJobs(all);
+  openJob(id);
+});
+await p.waitForTimeout(400);
+// The app seeds a demo job, so this counts the CHANGE rather than the total.
+const before = await p.evaluate(() => (_job.ladders || []).length);
+await p.fill('#fi-serial', 'WO-TEST-1');
+await p.click('#btn-add-ladder');
+await p.waitForTimeout(200);
+ok('signed in with no work order, the ladder is not taken',
+   await p.evaluate((n) => (_job.ladders || []).length - n, before), 0);
+ok('and the screen says what is needed',
+   await p.$eval('#save-status', e => /work order number first/i.test(e.textContent)), true);
+
+await p.fill('#job-wo', 'WO-9');
+await p.evaluate(() => { document.getElementById('job-wo').dispatchEvent(new Event('input')); saveNow(); });
+await p.click('#btn-add-ladder');
+await p.waitForTimeout(300);
+ok('with one, it is taken',
+   await p.evaluate((n) => (_job.ladders || []).length - n, before), 1);
+ok('and queued with the work order attached',
+   await p.evaluate(() => LiaSync._readQueue().pop().payload.work_order_id), 'WO-9');
 ok('no page errors', errs, []);
 await p.close(); await ctx.close();
 

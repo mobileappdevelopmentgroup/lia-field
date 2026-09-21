@@ -65,17 +65,24 @@
   }
 
   function signIn(email, password) {
+    _uid = null;
     return client().then(function (sb) {
       if (!sb) throw new Error('This build is not configured to sync.');
       return sb.auth.signInWithPassword({ email: email, password: password })
         .then(function (r) {
           if (r.error) throw new Error(r.error.message);
+          // Whoever just signed in owns what they capture from here on, and
+          // must not inherit the last tech's queue.
+          var u = r.data && r.data.session && r.data.session.user;
+          _uid = u ? u.id : null;
+          _email = u ? (u.email || null) : null;
           return r.data.session;
         });
     });
   }
 
   function signOut() {
+    _uid = null; _email = null;
     // The lead's plan names sites and work orders belonging to one company, so
     // it goes first and unconditionally: a sign-out that could not reach the
     // server, or a build whose client would not construct, must still not leave
@@ -161,6 +168,22 @@
     }, ms || 6000);
   }
 
+  // Who captured a record. A phone gets handed between techs, and without this
+  // the next person to sign in would upload the last person's queue into their
+  // own company's account — work in the wrong place, under the wrong name,
+  // billed to the wrong job.
+  var _uid = null, _email = null;
+  function rememberUser() {
+    return session().then(function (s) {
+      _uid = s && s.user ? s.user.id : null;
+      _email = s && s.user ? (s.user.email || null) : null;
+      return _uid;
+    }).catch(function () { return null; });
+  }
+  function currentUid() { return _uid; }
+  function currentEmail() { return _email; }
+  rememberUser();
+
   function enqueue(entry) {
     var q = readQueue();
     q.push({
@@ -170,6 +193,7 @@
       queuedAt: new Date().toISOString(),
       attempts: 0,
       lastError: null,
+      userId: _uid,          // null on a local-only phone, which is fine
     });
     writeQueue(q);
     uploadSoon();
@@ -313,6 +337,8 @@
     var out = [];
     for (var i = 0; i < q.length && out.length < BATCH_MAX; i++) {
       if (q[i].kind !== 'ladder') break;
+      // Never mix one tech's records into another's upload.
+      if (out.length && q[i].userId !== out[0].userId) break;
       out.push(q[i]);
     }
     return out;
@@ -373,6 +399,18 @@
         if (!q.length) return Promise.resolve();
         var entry = q[0];
         if (parked[entry.clientId]) return Promise.resolve();   // came round again
+
+        // Somebody else's work. Held, not sent and not dropped: it belongs to
+        // the tech who captured it, and uploading it now would file it under
+        // whoever happens to be signed in.
+        if (entry.userId && _uid && entry.userId !== _uid) {
+          var qOther = readQueue();
+          qOther.shift();
+          qOther.push(entry);
+          writeQueue(qOther);
+          parked[entry.clientId] = true;
+          return step();
+        }
         return sendOne(sb, entry).then(function (res) {
           var q2 = readQueue();
           if (res && res.error) {
@@ -507,6 +545,9 @@
     client: client,
     session: session,
     signIn: signIn,
+    rememberUser: rememberUser,
+    currentUid: currentUid,
+    currentEmail: currentEmail,
     signOut: signOut,
     profile: profile,
     pullCatalog: pullCatalog,

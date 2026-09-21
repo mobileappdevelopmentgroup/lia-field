@@ -23,7 +23,7 @@ suite and the only path to rebuilding the database from nothing.
 ## Applied to the live database
 
 **01–17** landed between June and 2026-08-30. **18–23** on 2026-09-19/20.
-**24** on 2026-09-21.
+**24–25** on 2026-09-21.
 
 | | What it did |
 |---|---|
@@ -49,6 +49,7 @@ suite and the only path to rebuilding the database from nothing.
 | `20_impersonation` | the office can act as a subcontractor: expiring, recorded, downward only |
 | `21_impersonation_write_paths` | the write paths follow that session — without it, work lands in the wrong account and looks fine |
 | `22_onboarding_rpcs` | crew and subcontractors added from Lia Office; fixes `add_crew_member` putting people in the wrong account |
+| `25_assigned_by` | an assigned job tells the tech which lead assigned it |
 | `24_field_parts` | a field ladder keeps the parts the tech tapped, so the office can import its work into BSI |
 | `23_crew_removal` | removing somebody ends access and keeps their work; rehiring restores the same membership |
 

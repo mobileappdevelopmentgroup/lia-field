@@ -461,6 +461,17 @@
     .wo-warning { margin-top: 7px; font-size: 11.5px; line-height: 1.5;
                   color: var(--warn-fg, #d29922); }
 
+    .hx { border-bottom: 1px solid var(--border); padding: 4px 0 20px; margin-bottom: 20px; }
+    .hx:last-child { border-bottom: 0; }
+    .hx h3 { font-size: 15px; margin: 0 0 10px; }
+    .hx p, .hx li { font-size: 13px; line-height: 1.65; color: var(--muted); }
+    .hx b { color: var(--text); font-weight: 600; }
+    .hx ol, .hx ul { margin: 0 0 4px; padding-left: 20px; }
+    .hx li { margin-bottom: 6px; }
+    .hx code { font-family: var(--mono); font-size: 12px; }
+    .hx.important { border-left: 3px solid var(--accent); padding-left: 14px; }
+    #screen-help textarea.ob-input { resize: vertical; font-family: inherit; }
+
     .mg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
                   margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
     .mg-actions-note { flex-basis: 100%; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
@@ -545,6 +556,8 @@
     .no-parts   { color: var(--muted); font-size: 11px; font-style: italic; }
     .wo-row     { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
     .wo-lbl     { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 94px; }
+    .wo-req     { color: var(--warn-fg, #d29922); font-size: 10.5px; text-transform: uppercase;
+                  letter-spacing: .04em; }
     #work-order-input { flex: 1; max-width: 240px; }
     .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
             padding: 4px 12px; border-radius: 99px; margin-bottom: 12px; }
@@ -701,6 +714,11 @@
         <div class="mode-name">Office Mode</div>
         <div class="mode-desc">Import a CSV into BSI work order.</div>
         <div class="mode-credits" id="home-credits" style="display:none;"></div>
+      </div>
+      <div class="mode-card" id="home-help">
+        <div class="mode-icon">📖</div>
+        <div class="mode-name">How To</div>
+        <div class="mode-desc">The way a job actually goes: CSV, field work, merging, and checking it landed.</div>
       </div>
       <div class="mode-card" id="home-team" style="display:none;">
         <div class="mode-icon">👷</div>
@@ -956,6 +974,106 @@
      networks lives on this screen rather than in settings — the label is the
      thing that makes the report mean anything. No visitor address is stored;
      see supabase/14_certificate_views.sql. -->
+<!-- ═══════════════ SCREEN: HOW TO ═══════════════ -->
+<div id="screen-help" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-help-home">← Home</button>
+      <div class="cat-title">How Lia Office is used</div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-detail" style="max-width:860px;">
+
+        <div class="hx">
+          <h3>1 · A CSV from one tech</h3>
+          <ol>
+            <li><b>Office Mode → Choose CSV.</b> The file a tech exported with <i>Share CSV</i>.</li>
+            <li><b>Enter the work order number.</b> Required: it is what the import is billed
+                against — one token per work order, however many times you run it — and the only
+                thing tying this import to what the techs recorded.</li>
+            <li><b>Review</b> the parsed ladders and parts, then <b>Open Browser</b>.</li>
+            <li><b>Sign in to BSI yourself</b> and open the work order. Lia waits: nothing on the
+                page reliably says which work order is open, so a person confirms it.</li>
+            <li>Lia reads what is already on the work order and offers to add
+                <b>everything</b>, <b>only what is missing</b>, or to stop.</li>
+          </ol>
+        </div>
+
+        <div class="hx">
+          <h3>2 · What one tech recorded in the field</h3>
+          <p>No CSV, no email. Their work is already here.</p>
+          <ol>
+            <li><b>Merge Field Work.</b> Work orders appear as techs upload, with who
+                contributed to each.</li>
+            <li>Open one. You get every record, with the parts they tapped.</li>
+            <li><b>Import this into BSI</b> — it becomes an import with the work order already
+                filled in, and runs exactly as a CSV does.</li>
+          </ol>
+        </div>
+
+        <div class="hx">
+          <h3>3 · Several techs on one work order</h3>
+          <p>Same screen. Two techs on one job is the normal case, not an exception.</p>
+          <ul>
+            <li><b>Newest capture wins</b> when two techs recorded the same serial — except that
+                a <b>FAIL always beats a PASS</b>. A condemnation is evidence, not an opinion,
+                so there is no button to override it.</li>
+            <li>Disagreements are listed with <b>both values</b>, so you can see what was
+                decided for you.</li>
+            <li>A record a tech <b>deleted</b> after uploading is left out, and named.</li>
+            <li>If a phone's clock is well out, you are told which records "newest wins" used
+                it on.</li>
+          </ul>
+          <p>Then <b>Import this into BSI</b>, once, for the merged set.</p>
+        </div>
+
+        <div class="hx important">
+          <h3>4 · Check the work after every import</h3>
+          <p>
+            This is the step people skip. An import that finishes is not an import that put
+            everything on the work order, and the summary is where the difference shows.
+          </p>
+          <ul>
+            <li><b>Read the run summary.</b> It says how many boxes were added and which ladders
+                were skipped — usually because they were already on the work order, or because
+                BSI would not accept a value.</li>
+            <li><b>Cost flags.</b> Boxes with PM36 over $90, and any box over $250, are called
+                out. They are not errors; they are the ones worth looking at before the customer
+                does.</li>
+            <li><b>Compare the count</b> with what the tech recorded. If the tech has 40 and the
+                work order has 38, the two skipped ones are named in the summary.</li>
+            <li><b>Run this again</b> is safe: it re-reads the work order and offers only what is
+                still missing. It never adds a second copy of a box it already put there.</li>
+            <li>The full log is kept in <code>Documents/Lia Logs</code>.</li>
+          </ul>
+        </div>
+
+        <div class="hx">
+          <h3>5 · Something wrong, or something missing?</h3>
+          <p>
+            Tell us here. It reaches the developer with your account and version attached, and
+            you can be replied to. Techs can do the same from the phone app under <b>?</b>.
+          </p>
+          <label class="ob-label" for="help-kind">What is this</label>
+          <select class="ob-input" id="help-kind">
+            <option value="Issue">Something is broken</option>
+            <option value="Feature request">Something is missing</option>
+            <option value="Question">A question</option>
+          </select>
+          <label class="ob-label" for="help-subject">One line</label>
+          <input class="ob-input" id="help-subject" type="text" placeholder="e.g. Import skipped six ladders on WO-1042">
+          <label class="ob-label" for="help-body">What happened, and what you expected</label>
+          <textarea class="ob-input" id="help-body" rows="5"
+                    placeholder="What you were doing, what happened instead, and the work order number if there is one."></textarea>
+          <div class="ob-actions"><button class="btn-ok" id="btn-help-send">Send</button></div>
+          <div id="help-msg" class="ob-msg"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ SCREEN: TEAM ═══════════════ -->
 <div id="screen-team" class="screen">
   <div class="cat-wrap">
@@ -1339,11 +1457,12 @@
           </table>
         </div>
         <div class="wo-row">
-          <span class="wo-lbl">Work Order #</span>
-          <input type="text" id="work-order-input" placeholder="Optional — used for billing">
+          <span class="wo-lbl">Work Order # <span class="wo-req">required</span></span>
+          <input type="text" id="work-order-input" placeholder="Required — the import is billed against this">
           <div id="wo-warning" class="wo-warning" style="display:none;">
-            No work order: this import will not be billed, and the office will
-            not be able to match it to what the techs recorded in the field.
+            A work order number is required. It is the billing key — a token is
+            charged once per work order — and the only thing that ties this
+            import to what the techs recorded in the field.
           </div>
         </div>
         <div class="row">
@@ -1403,8 +1522,17 @@
         <div id="sum-detail"></div>
         <div id="sum-extra"></div>
         <div class="result-note" id="result-note"></div>
-        <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center;">
-          <button class="btn-p" id="btn-restart">↺ Start Over</button>
+        <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="row" style="gap:10px;">
+            <!-- The same CSV and the same work order, run again. A run that
+                 stopped half way, or a BSI page that lost its session, leaves
+                 the lead wanting exactly this — and re-picking the file to get
+                 it is where the wrong file gets picked. The import itself is
+                 idempotent: it diffs against what is already on the work order
+                 and offers to add only what is missing. -->
+            <button class="btn-p" id="btn-rerun">↻ Run this again</button>
+            <button class="btn-g" id="btn-restart">Import another work order</button>
+          </div>
           <div class="log-path" id="log-path"></div>
         </div>
         <div class="log-toggle" id="log-toggle" style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">
@@ -1590,6 +1718,7 @@ function goToDestination(dest) {
   else if (dest === 'jobs')    { showScreen('jobs');    loadJobBoard(); }
   else if (dest === 'team')    { showScreen('team');    loadTeam(); }
   else if (dest === 'subs')    { showScreen('subs');    loadSubs(); }
+  else if (dest === 'help')    { showScreen('help'); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -3521,6 +3650,34 @@ $('home-views').addEventListener('click', () => requireAuth('views'));
 $('home-fpr').addEventListener('click', () => requireAuth('fpr'));
 $('home-jobs').addEventListener('click', () => requireAuth('jobs'));
 $('home-team').addEventListener('click', () => requireAuth('team'));
+// No sign-in needed to read how the thing works.
+$('home-help').addEventListener('click', () => showScreen('help'));
+$('btn-help-home').addEventListener('click', () => showScreen('home'));
+
+$('btn-help-send').addEventListener('click', async () => {
+  const msg = $('help-msg');
+  const subject = `${$('help-kind').value}: ${$('help-subject').value.trim()}`.trim();
+  const body = $('help-body').value.trim();
+  msg.className = 'ob-msg';
+  if (!$('help-subject').value.trim() || !body) {
+    msg.className = 'ob-msg err';
+    msg.textContent = 'A line saying what it is, and a few words about what happened.';
+    return;
+  }
+  $('btn-help-send').disabled = true;
+  msg.textContent = 'Sending…';
+  const res = await window.api.supportSubmit({ subject, body });
+  $('btn-help-send').disabled = false;
+  if (!res || !res.ok) {
+    msg.className = 'ob-msg err';
+    msg.textContent = (res && res.error) || 'Could not send it — you may need to sign in first.';
+    return;
+  }
+  msg.className = 'ob-msg ok';
+  msg.textContent = 'Sent. You will get a reply on this account.';
+  $('help-subject').value = ''; $('help-body').value = '';
+});
+
 $('home-subs').addEventListener('click', () => {
   if ($('home-subs').classList.contains('disabled')) {
     // Silence here reads as a broken button. Say whose limitation it is.
@@ -3782,14 +3939,23 @@ function setWoWarning(on) {
 $('btn-open-browser').addEventListener('click', () => {
   const workOrderId = $('work-order-input').value.trim();
 
-  // Optional. A work order is the billing key and the only thing the office can
-  // match a tech's field records on, so leaving it out costs both — but plenty
-  // of imports are neither billed nor matched, and refusing to run without one
-  // made those impossible. Blank never becomes a work order of its own: main
-  // skips the preflight and the charge entirely rather than inventing one.
+  // Required, and said so before the button is pressed rather than after. The
+  // field used to be labelled "optional" and then refuse to run without one,
+  // which is the worst of both: a promise the screen immediately broke.
+  //
+  // It is the billing key — a token is charged once per work order — and the
+  // only thing that ties an import to what the techs recorded. Blank must also
+  // never become a work order of its own: it used to fall back to the literal
+  // 'unknown', and under (account, wo_key) uniqueness that made the first
+  // blank import charge and every one after it free for ever.
   if (!workOrderId) {
     setWoWarning(true);
+    show('err-card');
+    $('err-msg').textContent = 'Enter the work order number before starting — it is what the import is billed against.';
+    $('work-order-input').focus();
+    return;
   }
+  setWoWarning(false);
   if (workOrderId.length > MAX_WO_LEN) {
     show('err-card');
     $('err-msg').textContent = `That work order number is too long (max ${MAX_WO_LEN} characters).`;
@@ -3924,7 +4090,34 @@ $('btn-resume').addEventListener('click', () => {
   window.api.resumeAutomation();
 });
 
-$('btn-restart').addEventListener('click', () => { window.api.stopAutomation(); officeReset(); });
+// Start clean: no file, no work order, back at step one.
+$('btn-restart').addEventListener('click', () => {
+  window.api.stopAutomation();
+  officeReset();
+  $('work-order-input').value = '';
+  $('file-lbl').textContent = 'No file chosen';
+  $('file-lbl').classList.remove('has-file');
+  window._csvPath = null;
+  setWoWarning(false);
+});
+
+// Same file, same work order, from the top.
+$('btn-rerun').addEventListener('click', async () => {
+  const csv = window._csvPath;
+  const wo = $('work-order-input').value.trim();
+  if (!csv) {
+    show('err-card');
+    $('err-msg').textContent = 'The file this ran from is no longer known — choose it again.';
+    return;
+  }
+  window.api.stopAutomation();
+  officeReset();
+  $('work-order-input').value = wo;
+  await loadCsvFile(csv);
+  // Straight back to where it left off: the operator already decided this
+  // work order and this file, twice now.
+  $('btn-open-browser').click();
+});
 $('btn-err-restart').addEventListener('click', () => { window.api.stopAutomation(); officeReset(); });
 
 window.api.onPaused(() => {
