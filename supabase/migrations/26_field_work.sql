@@ -71,7 +71,7 @@ BEGIN
    WHERE user_id = auth.uid() AND removed_at IS NULL;
   IF NOT FOUND THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
   IF v_role <> 'lead' THEN
-    RAISE EXCEPTION 'Only a lead technician can correct field records';
+    RAISE EXCEPTION 'Only a lead technician can do that';
   END IF;
   RETURN public.my_account_id();
 END;

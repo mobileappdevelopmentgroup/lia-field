@@ -8,9 +8,7 @@ Last reviewed 2026-09-21.
 
 ---
 
-## Shipped today, not yet released
-
-Committed on `fall-protection`, waiting on a build going out:
+## Released as 1.12.0 — Android vc10, iOS build 11, all three desktop builds
 
 * Suggestion lists drop **down**, and flip up only when measured to not fit —
   against `visualViewport`, so the keyboard counts as taking up room.
@@ -23,24 +21,15 @@ Committed on `fall-protection`, waiting on a build going out:
   `#ChckAddClaw`, `#ChckAddVbar`, `#ChckAddPropLube`. They had never been
   wired up at all. In use from next week.
 
-Version is **1.12.0**; Android **versionCode 10** is built and not uploaded.
-iOS and the desktop builds are not cut yet.
+Also in it: the phone carries all 1,936 BSI part numbers with descriptions,
+merged behind whatever the tech already had; and Lia Office's home screen is
+the new one, with Field Work and Advanced.
+
+Deliverables are in `~/Desktop/Lia-Deliverables/`.
 
 ---
 
-## 1. The parts catalogue on the phone
-
-1,936 distinct part numbers pulled from BSI, about 75 KB with descriptions.
-Seeds the field app's library, merged into an existing install rather than
-replacing it — a tech's own favourites and their order survive.
-
-Descriptions are new to the app: the library and the autocomplete currently
-show a bare part number.
-
-**Prices stay out.** Materials and labor are Batavia's pricing; they are for
-estimating in Lia Office and do not belong on a handset or in a git history.
-
-## 2. Migration 26 — written, not tested, not applied
+## 1. Migrations 26 and 27 — written and tested, NOT applied
 
 `supabase/migrations/26_field_work.sql`:
 
@@ -56,45 +45,30 @@ estimating in Lia Office and do not belong on a handset or in a git history.
 * `field_work_orders(p_archived)` — one row per work order with the state
   **derived**, never stored.
 
-Then: `npm run test:sql`, write `supabase/test/17_field_work_test.sql`,
-`npm run schema`, apply, update `CLAUDE.md`'s migration state.
+`supabase/migrations/27_shared_parts_catalog.sql`:
 
-## 3. Lia Office — the home screen
+* `account_parts` + `save_account_parts` + `account_parts_catalog(p_since)` —
+  the lead's own parts list, flowing DOWN the umbrella like every other
+  catalogue. Removals are tombstoned, because a phone that has been in a
+  basement for a week has to be told a part went.
 
-| Was | Becomes |
-|---|---|
-| Office Mode | **Import CSVs Manually** |
-| Merge Field Work + FP Records | **Field Work** |
-| Job Board | **Work Order Assigning** |
-| Fall Protection | **Catalog** |
-| Log Inspections, Certificate Views, certificate lookup | under **Advanced** |
+**Apply both, then update `CLAUDE.md`'s migration state.** Until then Field
+Work and the shared catalogue do not work; everything else in 1.12.0 does.
 
-## 4. Field Work
+## 2. The two halves of the catalogue work still to build
 
-One list of work orders carrying field records, processed and not.
+The **server side of sharing is done and tested** (27). What is left is the
+authoring screen in Lia Office — the lead's parts list, on the renamed
+**Catalog** screen beside the fall-protection types — and the field app pulling
+`account_parts_catalog()` on sync and merging it the way it already merges the
+BSI list.
 
-* **Green** — every current record is in BSI. **Orange** — edits outstanding.
-  Neutral — never processed. The label says which, with the date.
-* Full edit rights: the lead can correct any record, with a typed reason.
-* **Archive** files it away to Work History. Work History is **read-only** and
-  can **unarchive** back, keeping its processed-on date.
-* Start a BSI import from here, the same as from Import CSVs Manually.
+The merge rule is already built and tested in `catalog.js`: a published
+catalogue arrives BEHIND the tech's own favourites, their order, their
+quantities and anything they added. Publishing must never rearrange the buttons
+under somebody's thumb mid-job.
 
-A record corrected *after* it was pushed is its own state, `needs_bsi_edit`.
-Re-running will not clear it, because the importer only adds boxes BSI does not
-have. BSI does have an edit form (`#BoxLaderInfoEdit`), so this is automatable
-later — see §7.
-
-## 5. Sharing a catalogue
-
-The lead builds their ladder-parts and fall-protection catalogue in Lia Office
-and pushes it to their techs, replacing the seed shipped in the app.
-
-A tech's own added parts and their favourites layer on top and survive an
-update. Pushing a catalogue must not wipe the favourites a tech arranged for
-their own hands.
-
-## 6. Fall protection billing, rebuilt on the real model
+## 3. Fall protection billing, rebuilt on the real model
 
 **One box per work order, always.** Serial is `1111` + the work order number.
 Ladder Type `Other`, Description `Fall Protection`, Information `Other`. Items
@@ -111,7 +85,7 @@ double-billing is preventable — the open question in `CLAUDE.md` is answered.
 **Blocked on the office:** nine part codes (FP1–FP9) against fourteen
 equipment types. The mapping is a billing decision, not something to infer.
 
-## 7. Later, and deliberately not now
+## 4. Later, and deliberately not now
 
 * **Drive `#BoxLaderInfoEdit`** so a correction can be pushed to a box already
   in BSI, and `needs_bsi_edit` clears itself.

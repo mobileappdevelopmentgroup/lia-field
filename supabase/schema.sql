@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 26
+-- Migrations included: 27
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -78,6 +78,31 @@ CREATE FUNCTION public.account_descendants(p_account uuid) RETURNS TABLE(account
     SELECT a.id FROM public.accounts a JOIN tree t ON a.parent_account_id = t.id
   )
   SELECT id FROM tree;
+$$;
+
+
+--
+-- Name: account_parts_catalog(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.account_parts_catalog(p_since timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS TABLE(part_number text, description text, favorited boolean, default_qty integer, ord integer, is_deleted boolean, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN QUERY
+  SELECT DISTINCT ON (a.part_key)
+         a.part_number, a.description, a.favorited,
+         a.default_qty, a.ord, a.is_deleted, a.updated_at
+    FROM public.account_parts a
+   WHERE public.can_use_catalog(a.account_id)
+     AND (p_since IS NULL OR a.updated_at > p_since)
+   -- The account's own row beats one inherited from the umbrella: a
+   -- subcontractor who has set a quantity for a part means it.
+   ORDER BY a.part_key, (a.account_id = v_account) DESC, a.updated_at DESC;
+END;
 $$;
 
 
@@ -4322,7 +4347,7 @@ BEGIN
    WHERE user_id = auth.uid() AND removed_at IS NULL;
   IF NOT FOUND THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
   IF v_role <> 'lead' THEN
-    RAISE EXCEPTION 'Only a lead technician can correct field records';
+    RAISE EXCEPTION 'Only a lead technician can do that';
   END IF;
   RETURN public.my_account_id();
 END;
@@ -4452,6 +4477,65 @@ BEGIN
           auth.uid(), v_who);
 
   RETURN (SELECT row_to_json(i) FROM public.inspections i WHERE i.id = v_prev.id);
+END;
+$$;
+
+
+--
+-- Name: save_account_parts(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_account_parts(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_items   jsonb := coalesce(p->'parts', '[]'::jsonb);
+  v_seen    text[] := '{}';
+  v_n       integer := 0;
+  e         jsonb;
+BEGIN
+  IF jsonb_typeof(v_items) <> 'array' THEN
+    RAISE EXCEPTION 'parts must be a list';
+  END IF;
+
+  FOR e IN SELECT * FROM jsonb_array_elements(v_items) LOOP
+    CONTINUE WHEN nullif(btrim(coalesce(e->>'part_number','')), '') IS NULL;
+
+    INSERT INTO public.account_parts
+      (account_id, part_number, description, favorited, default_qty, ord, created_by)
+    VALUES (
+      v_account,
+      btrim(e->>'part_number'),
+      nullif(btrim(coalesce(e->>'description','')), ''),
+      coalesce((e->>'favorited')::boolean, false),
+      greatest(1, coalesce((e->>'default_qty')::integer, 1)),
+      (e->>'ord')::integer,
+      auth.uid())
+    ON CONFLICT (account_id, part_key) DO UPDATE
+      SET part_number = excluded.part_number,
+          description = coalesce(excluded.description, public.account_parts.description),
+          favorited   = excluded.favorited,
+          default_qty = excluded.default_qty,
+          ord         = excluded.ord,
+          is_deleted  = false,
+          updated_at  = now();
+
+    v_seen := v_seen || upper(btrim(e->>'part_number'));
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Anything the lead removed. Tombstoned, not deleted: a phone that has been
+  -- in a basement for a week needs to be told a part went, and a row that
+  -- simply vanished tells it nothing.
+  UPDATE public.account_parts
+     SET is_deleted = true, updated_at = now()
+   WHERE account_id = v_account AND NOT is_deleted AND NOT (part_key = ANY (v_seen));
+
+  RETURN json_build_object('saved', v_n,
+    'removed', (SELECT count(*) FROM public.account_parts
+                 WHERE account_id = v_account AND is_deleted));
 END;
 $$;
 
@@ -5093,6 +5177,27 @@ CREATE TABLE public.account_members (
     removed_by uuid,
     removed_reason text,
     CONSTRAINT account_members_role_check CHECK ((role = ANY (ARRAY['lead'::text, 'tech'::text])))
+);
+
+
+--
+-- Name: account_parts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_parts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    part_number text NOT NULL,
+    part_key text GENERATED ALWAYS AS (upper(btrim(part_number))) STORED,
+    description text,
+    favorited boolean DEFAULT false NOT NULL,
+    default_qty integer DEFAULT 1 NOT NULL,
+    ord integer,
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT account_parts_default_qty_check CHECK ((default_qty >= 1))
 );
 
 
@@ -5823,6 +5928,14 @@ ALTER TABLE ONLY public.account_members
 
 
 --
+-- Name: account_parts account_parts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_parts
+    ADD CONSTRAINT account_parts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: accounts accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6105,6 +6218,13 @@ CREATE INDEX account_members_active_idx ON public.account_members USING btree (a
 --
 
 CREATE INDEX account_members_rep_idx ON public.account_members USING btree (rep_number) WHERE (rep_number IS NOT NULL);
+
+
+--
+-- Name: account_parts_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX account_parts_uq ON public.account_parts USING btree (account_id, part_key);
 
 
 --
@@ -6613,6 +6733,14 @@ ALTER TABLE ONLY public.account_members
 
 ALTER TABLE ONLY public.account_members
     ADD CONSTRAINT account_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_parts account_parts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_parts
+    ADD CONSTRAINT account_parts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -7165,6 +7293,19 @@ CREATE POLICY account_members_select_own ON public.account_members FOR SELECT US
 
 
 --
+-- Name: account_parts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_parts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: account_parts account_parts_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY account_parts_read ON public.account_parts FOR SELECT TO authenticated USING (public.can_use_catalog(account_id));
+
+
+--
 -- Name: accounts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7534,6 +7675,14 @@ GRANT ALL ON FUNCTION public.account_ancestors(p_account uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.account_descendants(p_account uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.account_descendants(p_account uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION account_parts_catalog(p_since timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.account_parts_catalog(p_since timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.account_parts_catalog(p_since timestamp with time zone) TO authenticated;
 
 
 --
@@ -8064,6 +8213,14 @@ GRANT ALL ON FUNCTION public.restore_inspection(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION save_account_parts(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_account_parts(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_account_parts(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION save_fp_equipment_type(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8172,6 +8329,13 @@ GRANT ALL ON FUNCTION public.visible_account_ids() TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.account_members TO authenticated;
+
+
+--
+-- Name: TABLE account_parts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.account_parts TO authenticated;
 
 
 --
