@@ -98,6 +98,28 @@ for (const [w, h, minCols] of [[800, 640, 3], [1024, 700, 4], [1440, 900, 4], [1
        m.dir, w < 820 ? 'column' : 'row');
   }
 
+  // Finishing an import hides the office sidebar, which used to take the only
+  // way home with it.
+  const stranded = await p.evaluate(() => {
+    showScreen('office');
+    document.body.classList.add('summary-mode');
+    const sidebarHome = document.getElementById('btn-office-home');
+    const titlebarHome = document.getElementById('btn-titlebar-home');
+    const visible = (el) => !!el && el.offsetParent !== null;
+    const out = { sidebar: visible(sidebarHome), titlebar: visible(titlebarHome) };
+    document.body.classList.remove('summary-mode');
+    return out;
+  });
+  ok(`${w}x${h}: the summary hides the sidebar's way home`, stranded.sidebar, false);
+  ok(`${w}x${h}: but there is still a way home`, stranded.titlebar, true);
+
+  const onHome = await p.evaluate(() => {
+    showScreen('home');
+    const el = document.getElementById('btn-titlebar-home');
+    return el.style.display === 'none';
+  });
+  ok(`${w}x${h}: and it is not offered on the home screen itself`, onHome, true);
+
   ok(`${w}x${h}: no page errors`, errs, []);
   await ctx.close();
 }

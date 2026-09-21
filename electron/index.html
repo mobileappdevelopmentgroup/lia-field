@@ -34,6 +34,10 @@
                 padding: 0 16px 0 80px; font-size: 12px; font-weight: 600;
                 color: var(--muted); letter-spacing: .04em; border-bottom: 1px solid var(--border); }
     .titlebar-right { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 12px; }
+    .tb-home { -webkit-app-region: no-drag; background: none; border: 1px solid var(--border);
+               color: var(--muted); font-size: 11px; border-radius: 6px; padding: 2px 9px;
+               cursor: pointer; }
+    .tb-home:hover { color: var(--text); border-color: var(--accent); }
     #user-badge { font-size: 11px; color: var(--muted); }
     #credit-badge { font-size: 11px; font-weight: 700; background: rgba(79,110,247,.15);
                     color: #8fa4ff; border: 1px solid rgba(79,110,247,.25);
@@ -646,6 +650,12 @@
 <div class="titlebar">
   <span>Lia</span>
   <div class="titlebar-right">
+    <!-- Home, from anywhere. Every screen had its own back link except the one
+         that mattered: the summary hides the office sidebar, which is where
+         that screen kept its only way out, so finishing an import left you
+         stranded on it. A button in the titlebar cannot be hidden by a screen
+         deciding to hide its own furniture. -->
+    <button id="btn-titlebar-home" class="tb-home" style="display:none;">← Home</button>
     <span id="user-badge" style="display:none;"></span>
     <span id="credit-badge" style="display:none;"></span>
   </div>
@@ -1489,6 +1499,10 @@ function showScreen(name) {
     el.classList.toggle('active', el.id === `screen-${name}`);
   });
   document.body.classList.remove('summary-mode');
+  // Offered everywhere except home itself and the sign-in screen, where there
+  // is nothing to go back to.
+  const home = document.getElementById('btn-titlebar-home');
+  if (home) home.style.display = (name === 'home' || name === 'login') ? 'none' : '';
 }
 
 // ── User badge ────────────────────────────────────────────────────────────────
@@ -3538,6 +3552,17 @@ $('btn-signout').addEventListener('click', async () => {
 // ════════════════════════════════════════════════════════════════
 // Office Mode
 // ════════════════════════════════════════════════════════════════
+
+$('btn-titlebar-home').addEventListener('click', () => {
+  // Leaving the office screen must stop the run and close the browser, exactly
+  // as its own back button does — the titlebar is a second door to the same
+  // room, not a way to slip out while a child process is still going.
+  if (document.getElementById('screen-office').classList.contains('active')) {
+    window.api.stopAutomation();
+    officeReset();
+  }
+  showScreen('home');
+});
 
 $('btn-office-home').addEventListener('click', () => {
   window.api.stopAutomation(); // kill child + close browser when navigating away
