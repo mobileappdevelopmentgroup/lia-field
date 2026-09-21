@@ -140,6 +140,15 @@ screen, a working layout from 800×640 up, and issue/feature reporting.
 Shipped as **1.11.0**: Android versionCode 9, iOS build 10 (VALID), all three
 desktop builds in `~/Desktop/Lia-Deliverables/`. Migrations **24 and 25 applied**.
 
+**1.11.1 — office only.** Merge Field Work asked `inspections` for
+`uploaded_at`, a column only `fp_inspections` has, and failed the whole pull in
+front of a work order; it reads `created_at` now, which is the same fact. Every
+desktop test stubs the Supabase client and a stub answers to any column name, so
+`electron/test/columns.test.mjs` checks the app's real column lists against the
+committed schema snapshot. The three desktop builds in
+`~/Desktop/Lia-Deliverables/` are 1.11.1; the phones stay on 1.11.0 and need no
+reinstall.
+
 
 ### Still needed from you
 
