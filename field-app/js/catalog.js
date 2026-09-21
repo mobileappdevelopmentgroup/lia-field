@@ -38,6 +38,82 @@ function mergeCatalogIntoLibrary(lib) {
   return added > 0;
 }
 
+// The lead's published list, arriving from Lia Office.
+//
+// Same rule as the BSI catalogue and for the same reason: it is a BASELINE,
+// not an assignment. A tech has favourites, an order they put them in, a
+// quantity they set and parts they added by hand. That is an arrangement made
+// for their own hands, on an app used with gloves on, and a lead publishing
+// a list on a Tuesday must not rearrange it mid-job.
+//
+// So what the lead sends is applied only where the tech has not already
+// spoken:
+//
+//   * a part that is new to the device is added, with the lead's suggested
+//     favourite and quantity
+//   * a part the tech already has keeps THEIR favourite, order and quantity
+//   * a part the lead removed is dropped only if the tech never touched it —
+//     a part somebody pinned is a part they use, whatever the office thinks
+//
+// `rows` is what account_parts_catalog() returns, tombstones included:
+// is_deleted is how a device learns a part went away.
+function mergeCrewParts(rows) {
+  if (!Array.isArray(rows) || !rows.length) return false;
+  const lib = getLibrary();
+  const byName = new Map(lib.map(p => [p.name.toLowerCase(), p]));
+  let dirty = false;
+
+  rows.forEach(r => {
+    const name = String(r.part_number || '').trim();
+    if (!name) return;
+    const have = byName.get(name.toLowerCase());
+
+    if (r.is_deleted) {
+      if (!have || have.touched) return;   // theirs; the office does not decide
+      // Withdrawing is the lead taking back a SUGGESTION, not deleting a part.
+      // If BSI knows the part it stays in the library — it is still a real
+      // part, still searchable, still billable, and a tech who reaches for it
+      // should find it. Only the lead's pin and quantity go.
+      if (typeof PARTS_DESC !== 'undefined' && PARTS_DESC[name.toLowerCase()] !== undefined) {
+        if (have.favorited || have.defaultQty !== 1) {
+          have.favorited = false;
+          delete have.order;
+          have.defaultQty = 1;
+          dirty = true;
+        }
+        return;
+      }
+      // Not a BSI part: it only ever existed because the lead put it there,
+      // so there is nothing left for it to be.
+      if (have.fromCrew && !have.favorited) {
+        lib.splice(lib.indexOf(have), 1);
+        dirty = true;
+      }
+      return;
+    }
+
+    if (!have) {
+      lib.push({ name, favorited: !!r.favorited,
+                 defaultQty: Math.max(1, Number(r.default_qty) || 1),
+                 order: r.ord == null ? undefined : Number(r.ord),
+                 fromCrew: true });
+      dirty = true;
+      return;
+    }
+    // Already on the device. A description is the one thing worth filling in
+    // without asking — it is never something a tech chose.
+    if (have.fromCatalog && !have.touched && !have.favorited) {
+      const q = Math.max(1, Number(r.default_qty) || 1);
+      if (have.defaultQty !== q) { have.defaultQty = q; dirty = true; }
+      if (r.favorited && !have.favorited) { have.favorited = true; have.order = Number(r.ord) || undefined; dirty = true; }
+    }
+    if (!have.fromCrew) { have.fromCrew = true; dirty = true; }
+  });
+
+  if (dirty) { normalizeOrders(lib); savePartsLibrary(lib); }
+  return dirty;
+}
+
 function getLibrary() {
   let lib = loadPartsLibrary();
   if (lib) {

@@ -15,7 +15,12 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC  = process.argv[2];
+// Both apps need it: the phone to autocomplete and describe, and Lia Office
+// so a lead builds their crew's list by picking from what BSI will actually
+// pay for. electron/** is what electron-builder packages, so the office copy
+// lives there rather than being reached across the repo.
 const OUT  = path.join(ROOT, 'field-app', 'js', 'parts-catalog.js');
+const OUT2 = path.join(ROOT, 'electron', 'parts-catalog.js');
 
 if (!SRC || !fs.existsSync(SRC)) {
   console.error('Give me the file tools/bsi-products.mjs wrote.');
@@ -82,5 +87,8 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 `);
 
+fs.copyFileSync(OUT, OUT2);
+
 const bytes = fs.statSync(OUT).size;
-console.log(`${parts.length} parts → ${path.relative(ROOT, OUT)} (${(bytes / 1024).toFixed(0)} KB)`);
+console.log(`${parts.length} parts → ${path.relative(ROOT, OUT)}`);
+console.log(`${parts.length} parts → ${path.relative(ROOT, OUT2)} (${(bytes / 1024).toFixed(0)} KB each)`);

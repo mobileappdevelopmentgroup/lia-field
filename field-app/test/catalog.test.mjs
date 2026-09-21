@@ -129,6 +129,77 @@ const again = await p.evaluate(() => { getLibrary(); return getLibrary().length;
 ok('merging is idempotent', again, first);
 await p.close(); await ctx.close();
 
+// ── The lead publishes a list from Lia Office ───────────────────────────────
+// Same rule again, and this is the one that would hurt: the lead publishes on
+// a Tuesday and every tech's quick buttons rearrange themselves mid-job.
+({ p, ctx, errs } = await open(`
+  localStorage.setItem('lia-parts-library', JSON.stringify([
+    { name: 'M23',   favorited: true,  defaultQty: 1, order: 1, touched: true },
+    { name: 'MINE',  favorited: true,  defaultQty: 7, order: 2, touched: true },
+    { name: 'G13',   favorited: false, defaultQty: 1, fromCatalog: true },
+    { name: 'W44',   favorited: false, defaultQty: 1, fromCatalog: true }
+  ]));
+`));
+
+const published = [
+  // New to the device, and the lead suggests it as a quick button.
+  { part_number: 'PM36', description: 'PIVOT MOUNT', favorited: true, default_qty: 1, ord: 1, is_deleted: false },
+  // Already there, untouched by the tech: the lead's quantity may apply.
+  { part_number: 'G13',  description: 'GRAB RAIL',   favorited: false, default_qty: 4, ord: 2, is_deleted: false },
+  // Already there, and the tech has made it theirs. Hands off.
+  { part_number: 'MINE', description: 'WHATEVER',    favorited: false, default_qty: 1, ord: 3, is_deleted: false },
+];
+await p.evaluate((rows) => mergeCrewParts(rows), published);
+
+ok('a part the lead published arrives',
+   await p.evaluate(() => getLibrary().some(x => x.name === 'PM36')), true);
+ok('with the lead\'s suggested quick button',
+   await p.evaluate(() => getLibrary().find(x => x.name === 'PM36').favorited), true);
+ok('an untouched part takes the lead\'s quantity',
+   await p.evaluate(() => getLibrary().find(x => x.name === 'G13').defaultQty), 4);
+
+// The point of the whole thing.
+ok('a part the TECH set is left alone',
+   await p.evaluate(() => {
+     const x = getLibrary().find(y => y.name === 'MINE');
+     return [x.favorited, x.defaultQty];
+   }), [true, 7]);
+ok('and their own favourite is still pinned',
+   await p.evaluate(() => getFavoritedParts().some(x => x.name === 'M23')), true);
+
+ok('publishing the same list twice changes nothing the second time',
+   await p.evaluate((rows) => {
+     const before = JSON.stringify(getLibrary());
+     mergeCrewParts(rows);
+     return JSON.stringify(getLibrary()) === before;
+   }, published), true);
+
+// ── The lead withdraws one ──────────────────────────────────────────────────
+// Withdrawing is taking back a SUGGESTION, not deleting a part. G13 is a real
+// BSI part: it stays in the library, searchable and billable, because a tech
+// who reaches for it must still find it. Only the lead's pin and quantity go.
+// (The first version of this deleted it outright, and the BSI catalogue simply
+// put it back on the next read — a withdrawal that could never take.)
+await p.evaluate(() => mergeCrewParts([
+  { part_number: 'PM36', is_deleted: true },
+  { part_number: 'G13',  is_deleted: true },
+  { part_number: 'MINE', is_deleted: true },
+]));
+
+ok('a withdrawn BSI part is still in the library',
+   await p.evaluate(() => getLibrary().some(x => x.name === 'G13')), true);
+ok('but the lead\'s quantity is taken back with it',
+   await p.evaluate(() => getLibrary().find(x => x.name === 'G13').defaultQty), 1);
+ok('and a pin the LEAD put there is unpinned',
+   await p.evaluate(() => getLibrary().find(x => x.name === 'PM36').favorited), false);
+ok('a part the tech had made theirs is left entirely alone',
+   await p.evaluate(() => {
+     const x = getLibrary().find(y => y.name === 'MINE');
+     return [x.favorited, x.defaultQty];
+   }), [true, 7]);
+ok('no page errors', errs, []);
+await p.close(); await ctx.close();
+
 await b.close();
 server.close();
 console.log(fails ? `\n${fails} failed` : '\nAll parts catalogue assertions passed.');

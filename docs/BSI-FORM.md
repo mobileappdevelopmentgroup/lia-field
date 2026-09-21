@@ -102,9 +102,46 @@ that happened to be on one work order:
 | FP8 | Self rescue device | 11.00 | 11.00 |
 | FP9 | Self rescue device w bag | 16.00 | 16.00 |
 
-Nine codes against fourteen equipment types in `fp_equipment_types`, so the
-mapping is not one-to-one and some types share a code or have none. That
-mapping is a billing decision and belongs to the office, not to a guess here.
+### Which equipment type bills as which code
+
+Eight match by name and were confirmed with the office. **Six are deliberately
+unmapped** — the office does not yet know what they bill as, and a guessed code
+bills a customer the wrong amount silently and consistently, which nobody
+notices until an audit.
+
+| Equipment type | Code |
+|---|---|
+| Body harness | FP1 |
+| Lanyard | FP2 |
+| SRL (self-retracting lifeline) | FP3 |
+| Climbing belt | FP4 |
+| Pole climbing device | FP6 |
+| Positioning strap | FP7 |
+| Self rescue device | FP8 |
+| Self rescue with bag | FP9 |
+| Crane lift sling | — |
+| Tie off adaptor | — |
+| Rescue device — R550 | — |
+| Temporary horizontal lifeline | — |
+| Vertical lifelines and fall arresters | — |
+| Positioning lanyard | — |
+
+FP5 (*Anchorage inspection*) is not yet claimed by any type.
+
+**Unmapped does not mean uninspectable.** All fourteen stay in the catalogue
+with their checklists. They are recorded, they appear on certificates, and they
+simply do not become a BSI line until a code is known — the push must **name
+them on screen** rather than drop them: *"3 items on this work order have no
+billing code — they were inspected and are not on this invoice."* With nine
+codes against fourteen types that case exists regardless, so it is handled
+rather than designed around.
+
+Taking the six out of the catalogue instead was considered and rejected: there
+is no write path to `fp_equipment_types` for a field tech (the three that exist
+are the seed, the lead-gated checklist fork at `schema.sql:3450`, and account
+setup), and the field app's type field is a `<select>` with no free text. A tech
+meeting a crane lift sling would have had nothing to pick and no way to record
+it.
 
 ### Two consequences
 

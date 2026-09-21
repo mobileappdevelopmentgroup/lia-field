@@ -272,6 +272,9 @@ function renderLibList() {
       const libData = getLibrary();
       const item = libData.find(x => x.name === p.name);
       if (!item) return;
+      // Touched: from here on this part is the tech's, and a catalogue
+      // published from the office leaves it alone.
+      item.touched = true;
       item.favorited = !item.favorited;
       if (item.favorited) {
         const maxOrder = libData.filter(x => x.favorited).reduce((m, x) => Math.max(m, x.order ?? 0), 0);
@@ -289,6 +292,7 @@ function renderLibList() {
         const libData = getLibrary();
         const item = libData.find(x => x.name === p.name);
         if (!item) return;
+        item.touched = true;
         const favs = libData.filter(x => x.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         const newPos = Math.max(1, Math.min(favs.length, parseInt(posEl.value, 10) || 1));
         const idx = favs.indexOf(item);
@@ -305,7 +309,7 @@ function renderLibList() {
       qtyEl.value = v;
       const libData = getLibrary();
       const item = libData.find(x => x.name === p.name);
-      if (item) { item.defaultQty = v; savePartsLibrary(libData); }
+      if (item) { item.defaultQty = v; item.touched = true; savePartsLibrary(libData); }
       renderPartButtons();
     });
     row.querySelector('.cf-del').addEventListener('click', () => {
@@ -326,7 +330,8 @@ function addLibPart() {
   if (!name) return;
   const lib = getLibrary();
   if (!lib.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    lib.push({ name, favorited: false, defaultQty: 1 });
+    // Added by hand, so it is theirs from the start.
+    lib.push({ name, favorited: false, defaultQty: 1, touched: true });
     savePartsLibrary(lib);
   }
   $('new-lib-input').value = '';

@@ -117,6 +117,8 @@
       // syncs its items but not its checklists would keep asking the old
       // questions all day. Small enough to refetch whole every time.
       return pullTypes(sb).then(function () {
+        return pullParts(sb);
+      }).then(function () {
         return root.LiaCache.sync(sb, opts || {});
       });
     });
@@ -130,6 +132,22 @@
       if (r.error || !r.data) return false;
       var list = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
       return root.LiaFpTypes.setCatalog(list);
+    }).catch(function () { return false; });
+  }
+
+  // The lead's own parts list, picked in Lia Office from what BSI will pay
+  // for. Never fatal, for the same reason the checklists are not: a tech with
+  // the shipped catalogue can still work; one with no catalogue at all cannot.
+  //
+  // Merged BEHIND whatever the tech already has — their favourites, the order
+  // they put them in, the quantity they set and anything they added by hand.
+  // Publishing a catalogue must never rearrange the buttons under somebody's
+  // thumb mid-job.
+  function pullParts(sb) {
+    if (typeof mergeCrewParts !== 'function') return Promise.resolve(false);
+    return sb.rpc('account_parts_catalog').then(function (r) {
+      if (r.error || !r.data) return false;
+      return mergeCrewParts(r.data);
     }).catch(function () { return false; });
   }
 

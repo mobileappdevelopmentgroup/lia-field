@@ -41,7 +41,11 @@ contextBridge.exposeInMainWorld('api', {
   saveSampleCsv: ()         => ipcRenderer.invoke('csv:save-sample'),
   getLogsDir:    ()         => ipcRenderer.invoke('app:get-logs-dir'),
 
-  // ── Multi-tech merge ─────────────────────────────────────────────────────
+  // ── The crew's parts catalogue ───────────────────────────────────────────
+  partsList:       ()            => ipcRenderer.invoke('parts:list'),
+  partsSave:       (p)           => ipcRenderer.invoke('parts:save', p),
+
+  // ── Field Work, and the multi-tech merge underneath it ───────────────────
   fieldList:       (archived)    => ipcRenderer.invoke('field:list', archived),
   fieldSetArchived:(p)           => ipcRenderer.invoke('field:set-archived', p),
   fieldAmend:      (p)           => ipcRenderer.invoke('field:amend', p),

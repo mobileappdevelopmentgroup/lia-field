@@ -413,6 +413,40 @@ ipcMain.handle('merge:pull', async (_event, workOrderId) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── IPC: the crew's parts catalogue ──────────────────────────────────────────
+// The lead's own list, built by picking from what BSI will actually pay for.
+// It reaches the techs' phones through account_parts_catalog() and lands
+// BEHIND whatever each tech has already arranged for themselves.
+
+ipcMain.handle('parts:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('account_parts_catalog');
+    if (error) return { ok: false, error: error.message };
+    // Tombstones are for devices catching up, not for a screen.
+    return { ok: true, parts: (data || []).filter(p => !p.is_deleted) };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('parts:save', async (_event, payload) => {
+  try {
+    const list = (payload && payload.parts) || [];
+    if (!Array.isArray(list)) return { ok: false, error: 'Nothing to save.' };
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('save_account_parts', {
+      p: { parts: list.map((x, i) => ({
+        part_number: String(x.partNumber || '').trim(),
+        description: x.description || null,
+        favorited:   !!x.favorited,
+        default_qty: Math.max(1, Number(x.defaultQty) || 1),
+        ord:         Number.isFinite(x.ord) ? x.ord : i + 1,
+      })).filter(x => x.part_number) },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── IPC: fall protection catalog ─────────────────────────────────────────────
 // Models and the checks techs are asked. Templates are versioned and an
 // inspection pins the version it was performed against, so editing a checklist

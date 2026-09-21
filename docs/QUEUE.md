@@ -55,20 +55,7 @@ Deliverables are in `~/Desktop/Lia-Deliverables/`.
 **Apply both, then update `CLAUDE.md`'s migration state.** Until then Field
 Work and the shared catalogue do not work; everything else in 1.12.0 does.
 
-## 2. The two halves of the catalogue work still to build
-
-The **server side of sharing is done and tested** (27). What is left is the
-authoring screen in Lia Office — the lead's parts list, on the renamed
-**Catalog** screen beside the fall-protection types — and the field app pulling
-`account_parts_catalog()` on sync and merging it the way it already merges the
-BSI list.
-
-The merge rule is already built and tested in `catalog.js`: a published
-catalogue arrives BEHIND the tech's own favourites, their order, their
-quantities and anything they added. Publishing must never rearrange the buttons
-under somebody's thumb mid-job.
-
-## 3. Fall protection billing, rebuilt on the real model
+## 2. Fall protection billing, rebuilt on the real model
 
 **One box per work order, always.** Serial is `1111` + the work order number.
 Ladder Type `Other`, Description `Fall Protection`, Information `Other`. Items
@@ -82,10 +69,13 @@ deletes more than it adds.
 The derived serial means the existing diff catches the box on a re-run, so
 double-billing is preventable — the open question in `CLAUDE.md` is answered.
 
-**Blocked on the office:** nine part codes (FP1–FP9) against fourteen
-equipment types. The mapping is a billing decision, not something to infer.
+Eight of the fourteen equipment types map by name; **six are deliberately
+unmapped** and stay that way until the office knows what they bill as — see
+`docs/BSI-FORM.md`. They remain fully inspectable. The push must **name** the
+items it cannot bill rather than dropping them: *"3 items on this work order
+have no billing code — they were inspected and are not on this invoice."*
 
-## 4. Later, and deliberately not now
+## 3. Later, and deliberately not now
 
 * **Drive `#BoxLaderInfoEdit`** so a correction can be pushed to a box already
   in BSI, and `needs_bsi_edit` clears itself.
