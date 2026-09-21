@@ -185,6 +185,33 @@ archived half, read-only, with one button that sends a work order back.
 Migrations **26 and 27 are written and tested but NOT applied** — Field Work and
 the shared catalogue need them. `docs/QUEUE.md` has what is left.
 
+**1.12.1 — 2026-09-21.** Android **versionCode 11**, iOS **build 12**, all three
+desktop builds in `~/Desktop/Lia-Deliverables/`. Migrations **26 and 27 applied
+and verified** against the live database.
+
+**Fall protection pushes to BSI.** It never could: `FP_FORM` guessed at a form
+nobody had seen and a preflight refused every run. Work order 98471 showed the
+guess was unnecessary — fall protection is the ladder form, one box per work
+order, serial `1111` + the work order number, items collapsed onto it as parts
+by type. `src/core/fp-bsi.ts` was wrong at the premise and its tests passed the
+whole time, because they checked the mapping against itself. The box now goes
+through `runAutomation()` and `fp-automation.ts` lost two thirds of its lines.
+The derived serial makes a re-run safe, which closes the double-billing
+question.
+
+**Six equipment types have no billing code** and stay that way until the office
+knows: inspected, named on the push screen as "inspected, not invoiced", never
+billed under a neighbouring code. Adding one is a row in `FP_TYPE_CODES`.
+
+**The lead's parts list** — Catalog → Ladder parts. Picked from BSI's 1,936 by
+number or description; a part BSI does not know is allowed and marked as one
+that will not bill. On the phones it lands behind each tech's own favourites,
+order and quantities.
+
+A ladder-side bug fell out of it: `fillNewSerialFields` hardcoded Description to
+"Ladder Repair", so a fall-protection box would have been filed as a ladder
+repair.
+
 ### Still needed from you
 
 1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
