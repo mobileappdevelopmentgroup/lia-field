@@ -215,6 +215,13 @@ function fpWriteTag() {
     if (typeof playSound === 'function') playSound('ladder');
   }).catch(err => {
     btn.disabled = false;
+    // Closing Apple's sheet is the tech changing his mind; put the sheet back
+    // the way it was rather than dressing it up as a failure.
+    if (err && err.code === 'NFC_CANCELLED') {
+      btn.textContent = 'Hold phone to tag';
+      warn.style.display = 'none';
+      return;
+    }
     btn.textContent = 'Try again';
     warn.style.display = '';
     warn.className = 'tw-warn err';

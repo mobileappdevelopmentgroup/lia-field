@@ -549,10 +549,11 @@
   // 'nfcError' event. Taking the call's own resolution as success is what let
   // LiaTagWrite record tags that were never written.
   function exxiliWrite(plugin, records) {
-    // iOS: the plugin gives JS no way to close its write sheet, and says nothing
-    // when the tech dismisses it. Apple closes it after 60 seconds and that IS
-    // reported, so wait past it — giving up while the sheet is still up could
-    // report a failure for a tag that then gets written.
+    // iOS: the plugin gives JS no way to close its write sheet. Dismissing it
+    // arrives as 'nfcWriteCancelled' (patch-nfc-plugin.mjs), and Apple closes it
+    // after 60 seconds, which is reported too — so the timeout is only a
+    // backstop, and it waits past the sheet: giving up while the sheet is still
+    // up could report a failure for a tag that then gets written.
     const timeoutMs = isAndroid() ? 30000 : 65000;
     return new Promise(function (resolve, reject) {
       let done = false;
@@ -585,6 +586,12 @@
         plugin.addListener('nfcError', function (err) {
           const e = new Error((err && err.error) || 'Could not write to that tag. It may be locked or too small.');
           e.code = 'NFC_WRITE_FAILED';
+          finish(e);
+        }),
+        // The tech closed the sheet. A decision, not a fault.
+        plugin.addListener('nfcWriteCancelled', function () {
+          const e = new Error('Cancelled. Nothing was written.');
+          e.code = 'NFC_CANCELLED';
           finish(e);
         }),
       ]).then(function (hs) {

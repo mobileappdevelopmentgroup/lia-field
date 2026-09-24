@@ -226,6 +226,18 @@ const out = await p.evaluate(async () => {
   await pending;
   ok('and a locked tag is a failure, not a success', settled, 'NFC_WRITE_FAILED');
 
+  // Dismissing Apple's sheet used to be swallowed by the plugin, leaving the
+  // button on "Hold the phone…" for a minute. It now arrives as its own event.
+  settled = false;
+  const dismissed = LiaNfc.write('H-1', 'https://x/?t=AB').then(() => { settled = 'written'; },
+                                                             e => { settled = e.code; });
+  await new Promise(r => setTimeout(r, 40));
+  listeners.nfcWriteCancelled();
+  await dismissed;
+  ok('a dismissed write sheet is a cancellation, reported at once', settled, 'NFC_CANCELLED');
+  ok('and leaves no write listener behind',
+     ['nfcWriteSuccess', 'nfcError', 'nfcWriteCancelled'].some(n => n in listeners), false);
+
   // A tag that never arrives must not hang the UI forever.
   delete listeners.nfcTag;
   window.Capacitor.Plugins.NFC.startScan = async () => {};

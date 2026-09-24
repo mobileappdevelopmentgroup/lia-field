@@ -193,3 +193,102 @@ ${clsAnchor}`);
     console.log('patch-nfc-plugin: made tag reads safe below Android 13');
   }
 }
+
+// ── How an iOS write ended (Lia) ────────────────────────────────────────────
+// The plugin's writer had three outcomes and reported one of them. Success
+// arrived as 'nfcWriteSuccess'. The other two did not arrive at all:
+//
+//   - the tech dismissing Apple's sheet was deliberately swallowed, and
+//   - a tag the writer refused (read-only, not NDEF) closed the sheet with a
+//     message and never called onError — and iOS then reports that close with
+//     the SAME code as a dismissal, so it was swallowed too.
+//
+// Either way the app sat on "Hold the phone against the tag…" until its own
+// timeout, and a locked supplier tag read as "no tag detected". This keeps the
+// refusal's message, reports a dismissal as 'nfcWriteCancelled', and ignores
+// the close that follows a successful write.
+
+const writerPath = path.join(iosDir, 'NFCWriter.swift');
+if (fs.existsSync(writerPath)) {
+  const WC_MARK = 'LIA-WRITE-OUTCOME-PATCH';
+  let writer = fs.readFileSync(writerPath, 'utf8');
+  let plug = fs.readFileSync(pluginPath, 'utf8');
+  if (!writer.includes(WC_MARK) || !plug.includes(WC_MARK)) {
+    const wBail = (what) => {
+      console.error(`patch-nfc-plugin: ${what}`);
+      console.error('  @exxili/capacitor-nfc no longer has the shape the write-outcome patch');
+      console.error('  expects. A dismissed or refused iOS write would hang the write sheet.');
+      process.exit(1);
+    };
+
+    const declAnchor = '    public var onError: ((Error) -> Void)?\n';
+    if (!writer.includes(declAnchor)) wBail('NFCWriter.swift: could not find onError.');
+    writer = writer.replace(declAnchor, `${declAnchor}
+    // ${WC_MARK}
+    public var onFailure: ((String) -> Void)?
+    public var onCancel: (() -> Void)?
+    private var failure: String?
+    private var succeeded = false
+
+    private func failWith(_ message: String, _ session: NFCNDEFReaderSession) {
+        failure = message
+        session.invalidate(errorMessage: message)
+    }
+`);
+
+    const startAnchor = '        self.messageToWrite = message\n';
+    if (!writer.includes(startAnchor)) wBail('NFCWriter.swift: could not find startWriting.');
+    writer = writer.replace(startAnchor, `${startAnchor}        self.failure = nil
+        self.succeeded = false
+`);
+
+    const failRe = /session\.invalidate\(errorMessage: ("[^"]*")\)/g;
+    const fails = (writer.match(failRe) || []).length;
+    if (fails < 7) wBail(`NFCWriter.swift: expected at least 7 refusal sites, found ${fails}.`);
+    writer = writer.replace(failRe, (_m, msg) => `self.failWith(${msg}, session)`);
+
+    const okAnchor = '                            session.alertMessage = "NDEF message written successfully."\n';
+    if (!writer.includes(okAnchor)) wBail('NFCWriter.swift: could not find the success path.');
+    writer = writer.replace(okAnchor, `                            self.succeeded = true\n${okAnchor}`);
+
+    const invAnchor = '        print("NFC writer session error: \\(error.localizedDescription)")\n        onError?(error)\n';
+    if (!writer.includes(invAnchor)) wBail('NFCWriter.swift: could not find didInvalidateWithError.');
+    writer = writer.replace(invAnchor, `        print("NFC writer session error: \\(error.localizedDescription)")
+        // Closing the sheet ourselves — after a write, or to refuse a tag — is
+        // reported with the same code as the tech dismissing it.
+        if succeeded { return }
+        if let message = failure { failure = nil; onFailure?(message); return }
+        if let nfcError = error as? NFCReaderError,
+           nfcError.code == .readerSessionInvalidationErrorUserCanceled {
+            onCancel?()
+            return
+        }
+        onError?(error)
+`);
+
+    const errBlock = `        writer.onError = { error in
+            if let nfcError = error as? NFCReaderError {
+                if nfcError.code != .readerSessionInvalidationErrorUserCanceled {
+                    self.notifyListeners("nfcError", data: ["error": nfcError.localizedDescription])
+                }
+            }
+        }
+`;
+    if (!plug.includes(errBlock)) wBail('NFCPlugin.swift: could not find the writer onError block.');
+    plug = plug.replace(errBlock, `        // ${WC_MARK}
+        writer.onError = { error in
+            self.notifyListeners("nfcError", data: ["error": error.localizedDescription])
+        }
+        writer.onFailure = { message in
+            self.notifyListeners("nfcError", data: ["error": message])
+        }
+        writer.onCancel = {
+            self.notifyListeners("nfcWriteCancelled", data: [:])
+        }
+`);
+
+    fs.writeFileSync(writerPath, writer);
+    fs.writeFileSync(pluginPath, plug);
+    console.log(`patch-nfc-plugin: iOS writes now report refusal and dismissal (${fails} sites)`);
+  }
+}
