@@ -20,7 +20,7 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 // the problem: asking a tech on a ladder which version he is running gets a
 // wrong answer or no answer, and a bug report without a build number is a
 // guessing game.
-const LIA_APP_VERSION = '1.12.1';
+const LIA_APP_VERSION = '1.12.2';
 
 function goScreen(name) {
   // A tap-through run belongs to one job on one screen. Leaving without ending
