@@ -84,11 +84,25 @@ const out = await p.evaluate(async (sheetCsv) => {
   ok('an untrusted host is refused rather than fetched',
      await T.fetch('https://acme.example/tag/9').then(r => r.code), 'HOST_NOT_ALLOWED');
   // http on a site's own wifi is trivially spoofable, and the answer becomes a
-  // safety record.
-  ok('so is plain http', await T.fetch('http://docs.google.com/x').then(r => r.code), 'NOT_HTTPS');
+  // safety record — so http to anybody we do not trust is refused outright...
+  ok('so is plain http', await T.fetch('http://acme.example/x').then(r => r.code), 'NOT_HTTPS');
   ok('and a tag carrying junk', await T.fetch('not a url').then(r => r.code), 'BAD_URL');
   // Every outcome is a decision the tech is shown, so none of them throws.
   ok('none of which rejects', await T.fetch('http://x/').then(() => 'resolved', () => 'threw'), 'resolved');
+
+  // ...but the supplier's real tags are written as http://docs.google.com — this
+  // is the URI record off one, verbatim. Refusing it turned away the very tag
+  // this feature exists for. It is fetched, and over https, never in the clear.
+  const realTag = 'http://docs.google.com/spreadsheets/d/1r-KODwCj3DUhEh7wts1DudIB4CQimjhXUwmNUl325HE/edit?usp=drivesdk';
+  let asked = null;
+  window.Capacitor = { isNativePlatform: () => true, Plugins: { CapacitorHttp: {
+    get: async (o) => { asked = o.url; return { status: 200, data: sheetCsv, headers: { 'Content-Type': 'text/csv' } }; },
+  } } };
+  const viaHttp = await T.fetch(realTag);
+  delete window.Capacitor;
+  ok('an http link to a trusted host is fetched', viaHttp.ok, true);
+  ok('over https', asked, 'https://docs.google.com/spreadsheets/d/1r-KODwCj3DUhEh7wts1DudIB4CQimjhXUwmNUl325HE/gviz/tq?tqx=out:csv&gid=0');
+  ok('and is still stamped with the link the tag actually carries', viaHttp.url, realTag);
   ok('a refusal still names the host so it can be trusted later',
      await T.fetch('https://acme.example/t').then(r => r.host), 'acme.example');
 

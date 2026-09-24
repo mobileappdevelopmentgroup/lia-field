@@ -130,7 +130,9 @@ const out = await p.evaluate(async () => {
         tagInfo: { uid: '04:aa:bb:cc' },
       }), 10); },
     cancelScan: async () => { cancelled = true; },
-    writeNDEF: async (o) => { window.__wrote = o; },
+    // The real plugin resolves at once and reports the outcome as an event.
+    writeNDEF: async (o) => { window.__wrote = o;
+      setTimeout(() => window.__writeOutcome && window.__writeOutcome(listeners), 10); },
     addListener: (name, fn) => { listeners[name] = fn;
       return Promise.resolve({ remove: () => { delete listeners[name]; } }); },
   } } };
@@ -144,6 +146,29 @@ const out = await p.evaluate(async () => {
   // A leaked listener would fire into a screen the tech has already left.
   ok('and torn down afterwards', Object.keys(listeners).length, 0);
   ok('the scan is cancelled too', cancelled, true);
+
+  // On iOS the plugin announces a reader-mode change as an 'nfcTag' event with
+  // no messages. Taken as the tag, read() resolved empty and the real tag was
+  // then read with nobody listening — "Found 1 NDEF message", then nothing.
+  // This is the supplier's real tag: one http:// URI record (prefix 0x03).
+  let scanOpts = null;
+  window.Capacitor.Plugins.NFC.startScan = async (o) => {
+    scanOpts = o;
+    setTimeout(() => listeners.nfcTag && listeners.nfcTag({
+      messages: [], tagInfo: { fallback: true, fallbackMode: 'compat' },
+    }), 5);
+    setTimeout(() => listeners.nfcTag && listeners.nfcTag({
+      messages: [{ records: [{ type: 'U', payload: b64([0x03].concat(utf8(
+        'docs.google.com/spreadsheets/d/1r-KODwCj3DUhEh7wts1DudIB4CQimjhXUwmNUl325HE/edit?usp=drivesdk'))) }] }],
+      tagInfo: { uid: '04663F5AF31E90', type: 'MiFare' },
+    }), 20);
+  };
+  const supplier = await LiaNfc.read();
+  ok('a reader-mode notice is not mistaken for the tag',
+     supplier.url, 'http://docs.google.com/spreadsheets/d/1r-KODwCj3DUhEh7wts1DudIB4CQimjhXUwmNUl325HE/edit?usp=drivesdk');
+  ok('the supplier tag is recognised as somebody else\'s', supplier.foreign, true);
+  ok('and yields no serial', supplier.serial, null);
+  ok('iOS starts in the mode that reads NTAG without a failed session first', scanOpts, { mode: 'compat' });
 
   // A tag carrying no NDEF message at all: the plugin substitutes an 'ID'
   // record holding the hex uid. That identifies the item; it is not a serial.
@@ -174,9 +199,32 @@ const out = await p.evaluate(async () => {
   window.Capacitor.Plugins.NFC.cancelScan = async () => { cancelled = true; };
   window.Capacitor.getPlatform = () => 'ios';
 
+  window.__writeOutcome = l => l.nfcWriteSuccess && l.nfcWriteSuccess({ success: true });
   await LiaNfc.write('H-8888', 'https://x/fp/?t=ABC1234567');
   ok('writing maps to the plugin record shape',
      window.__wrote.records.map(r => r.type), ['U', 'T']);
+  // The native side takes bytes only; a string was dropped (iOS) or refused
+  // (Android). These are the exact bytes, and they must read back.
+  ok('the URI record is raw bytes with the https:// abbreviation',
+     window.__wrote.records[0].payload, [0x04].concat(utf8('x/fp/?t=ABC1234567')));
+  ok('the text record carries its status byte and language',
+     window.__wrote.records[1].payload, [0x02].concat(utf8('en'), utf8('H-8888')));
+  const back = LiaNfc.parseRecords(LiaNfc.fromExxili([{ records: window.__wrote.records.map(r =>
+    ({ type: r.type, payload: b64(r.payload) })) }]));
+  ok('what is written reads back as the same serial', back.serial, 'H-8888');
+  ok('and the same url', back.url, 'https://x/fp/?t=ABC1234567');
+  ok('the write listeners are torn down', 'nfcWriteSuccess' in listeners || 'nfcError' in listeners, false);
+
+  // writeNDEF resolving is not a write. Until the tag answers, nothing is done.
+  window.__writeOutcome = null;
+  let settled = false;
+  const pending = LiaNfc.write('H-1', 'https://x/?t=AB').then(() => { settled = 'written'; },
+                                                           e => { settled = e.code; });
+  await new Promise(r => setTimeout(r, 40));
+  ok('a write is not reported before the tag answers', settled, false);
+  listeners.nfcError({ error: 'NFC tag is not writable' });
+  await pending;
+  ok('and a locked tag is a failure, not a success', settled, 'NFC_WRITE_FAILED');
 
   // A tag that never arrives must not hang the UI forever.
   delete listeners.nfcTag;
@@ -193,7 +241,7 @@ const out = await p.evaluate(async () => {
     onTag: t => streamTags.push(t.serial), onError: e => streamErrs.push(e.code),
   });
   await new Promise(r => setTimeout(r, 20));
-  ok('a stream asks the plugin for continuous reading', streamStarts, [{ continuous: true }]);
+  ok('a stream asks the plugin for continuous reading', streamStarts, [{ continuous: true, mode: 'compat' }]);
   ok('and tells the caller iOS may need re-arming', stream.needsArming, true);
 
   // Three tags, one session: the patched plugin restarts polling rather than

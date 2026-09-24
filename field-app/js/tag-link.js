@@ -246,10 +246,21 @@
     var u = parseUrl(url);
     if (!u) return Promise.resolve(fail('BAD_URL', 'That tag’s link is not a usable web address.'));
 
-    // https only. http is not merely insecure here — it is trivially spoofable
-    // on the site wifi a tech is standing on, and the answer becomes a safety
-    // record.
-    if (u.protocol.toLowerCase() !== 'https:') {
+    // Never fetched over http. http is not merely insecure here — it is
+    // trivially spoofable on the site wifi a tech is standing on, and the
+    // answer becomes a safety record.
+    //
+    // But real tags say http: the supplier's tags are written as
+    // http://docs.google.com/spreadsheets/..., and refusing them turned away
+    // exactly the tag this feature exists for. So an http link to a trusted
+    // host is upgraded and fetched over https; the request never goes out in
+    // the clear. The tag's own URL is still what gets recorded.
+    var scheme = u.protocol.toLowerCase();
+    if (scheme === 'http:' && hostAllowed(u.hostname)) {
+      u = parseUrl('https:' + u.href.slice(u.protocol.length));
+      scheme = 'https:';
+    }
+    if (scheme !== 'https:') {
       return Promise.resolve(fail('NOT_HTTPS',
         'That tag’s link is not https, so it will not be opened automatically.',
         { host: u.hostname }));

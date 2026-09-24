@@ -426,7 +426,12 @@ function fpLookup(value, alsoTry, tag) {
   const candidates = [value].concat(alsoTry || [])
     .map(v => String(v || '').trim())
     .filter((v, i, a) => v && a.indexOf(v) === i);
-  if (!candidates.length && !(tag && tag.url)) return;
+  if (!candidates.length && !(tag && tag.url)) {
+    // A tap that yields nothing must say so. Returning silently left the hint
+    // on "Hold the phone against the tag…" after the tag had been read.
+    if (tag) fpHint('That tag gave nothing to look up. Scan or type the serial instead.', true);
+    return;
+  }
   fpHint('Looking up…');
 
   const step = i => i >= candidates.length

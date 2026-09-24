@@ -130,3 +130,66 @@ ${startAnchor}`);
   fs.writeFileSync(pluginPath, plugin);
   console.log(`patch-nfc-plugin: added continuous reading (${patched + 1} sites)`);
 }
+
+// ── Android before 13 (Lia) ─────────────────────────────────────────────────
+// The plugin reads the tag out of the intent with the typed overloads
+// getParcelableExtra(name, Class) and getParcelableArrayExtra(name, Class),
+// which only exist from Android 13 (API 33). The app's minSdk is 24. On
+// anything older — a Galaxy S8 tops out at Android 9 — every tag tap threw
+// NoSuchMethodError, which is an Error, not an Exception, so nothing caught it
+// and the app died on the tap. The @RequiresApi annotations only silenced the
+// lint warning; handleOnNewIntent is called on every version regardless.
+//
+// This swaps both calls for helpers that use the typed overload on 13+ and the
+// deprecated untyped one below it.
+
+const ktPath = path.join(here, '..', 'node_modules', '@exxili', 'capacitor-nfc',
+                         'android', 'src', 'main', 'kotlin', 'com', 'exxili',
+                         'capacitornfc', 'NFCPlugin.kt');
+
+if (fs.existsSync(ktPath)) {
+  const KT_MARK = 'LIA-OLD-ANDROID-PATCH';
+  let kt = fs.readFileSync(ktPath, 'utf8');
+  if (!kt.includes(KT_MARK)) {
+    const ktBail = (what) => {
+      console.error(`patch-nfc-plugin: NFCPlugin.kt: ${what}`);
+      console.error('  @exxili/capacitor-nfc no longer has the shape the old-Android patch');
+      console.error('  expects. Tapping a tag would crash every phone below Android 13.');
+      process.exit(1);
+    };
+
+    const TAG_CALL = 'intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)';
+    const MSG_CALL = /intent\.getParcelableArrayExtra\(\s*EXTRA_NDEF_MESSAGES,\s*NdefMessage::class\.java\s*\)/;
+    const tagSites = kt.split(TAG_CALL).length - 1;
+    if (tagSites !== 2) ktBail(`expected 2 typed EXTRA_TAG reads, found ${tagSites}.`);
+    if (!MSG_CALL.test(kt)) ktBail('could not find the typed EXTRA_NDEF_MESSAGES read.');
+    kt = kt.split(TAG_CALL).join('tagFrom(intent)').replace(MSG_CALL, 'ndefMessagesFrom(intent)');
+
+    const clsAnchor = '    private fun byteArrayToHexString(inarray: ByteArray): String {';
+    if (!kt.includes(clsAnchor)) ktBail('could not find byteArrayToHexString.');
+    kt = kt.replace(clsAnchor, `    // ${KT_MARK}
+    // The typed overloads are API 33+; minSdk is 24.
+    @Suppress("DEPRECATION")
+    private fun tagFrom(intent: Intent): Tag? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
+        else
+            intent.getParcelableExtra(NfcAdapter.EXTRA_TAG) as? Tag
+
+    @Suppress("DEPRECATION")
+    private fun ndefMessagesFrom(intent: Intent): Array<NdefMessage>? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            intent.getParcelableArrayExtra(EXTRA_NDEF_MESSAGES, NdefMessage::class.java)
+        else
+            intent.getParcelableArrayExtra(EXTRA_NDEF_MESSAGES)
+                ?.mapNotNull { it as? NdefMessage }?.toTypedArray()
+
+${clsAnchor}`);
+
+    // Nothing left needs 13; the annotations would only mislead the next reader.
+    kt = kt.split('    @RequiresApi(Build.VERSION_CODES.TIRAMISU)\n').join('');
+
+    fs.writeFileSync(ktPath, kt);
+    console.log('patch-nfc-plugin: made tag reads safe below Android 13');
+  }
+}

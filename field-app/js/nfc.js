@@ -122,6 +122,23 @@
     return records;
   }
 
+  // The plugin announces a change of iOS reader mode by firing 'nfcTag' with no
+  // messages and {fallback: true} where the tag info goes. That is not a tag.
+  // Taken as one, read() resolved with nothing and removed its listener, and
+  // the tag the tech then held up was read by a session nobody was listening
+  // to: Apple's sheet said "Found 1 NDEF message" and the app did nothing.
+  function isModeNotice(data) {
+    return !!(data && data.tagInfo && data.tagInfo.fallback === true
+              && !(data.messages && data.messages.length));
+  }
+
+  // Where iOS reading starts. The plugin's default polls FeliCa too, which
+  // needs system codes in Info.plist that this app does not declare, so every
+  // session failed with a missing-entitlement error and fell back to this mode
+  // anyway — a failed session and a notice, each read. Our tags are NTAG
+  // (ISO 14443), which this mode covers. Android ignores it.
+  const IOS_READ_MODE = 'compat';
+
   // Listener API to a promise, with the listeners always torn down — a leaked
   // 'nfcTag' listener would fire into a screen the tech has already left.
   function exxiliRead(plugin, timeoutMs) {
@@ -144,7 +161,7 @@
       }, timeoutMs || 20000);
 
       Promise.resolve(plugin.addListener('nfcTag', function (data) {
-        if (done) return;
+        if (done || isModeNotice(data)) return;
         done = true; clearTimeout(timer); cleanup();
         var parsed = parseRecords(fromExxili(data && data.messages));
         resolve({
@@ -169,7 +186,7 @@
       // with "Android NFC scanning does not require 'startScan' method."
       // Treating that as a failure tore down the listeners we had just installed,
       // so no tap on Android ever reached the app.
-      Promise.resolve(plugin.startScan()).catch(function (err) {
+      Promise.resolve(plugin.startScan({ mode: IOS_READ_MODE })).catch(function (err) {
         if (done || isAndroid()) return;
         done = true; clearTimeout(timer); cleanup();
         var e = new Error((err && err.message) || 'Could not start the tag reader.');
@@ -398,7 +415,7 @@
       // invalidating after each tag, so one sheet covers a whole rack. An
       // unpatched build ignores the flag and closes after one — see
       // scripts/patch-nfc-plugin.mjs.
-      Promise.resolve(plugin.startScan({ continuous: true })).catch(function (err) {
+      Promise.resolve(plugin.startScan({ continuous: true, mode: IOS_READ_MODE })).catch(function (err) {
         // Android rejects this by design — there is nothing to start there.
         if (stopped || isAndroid()) return;
         onError(streamError((err && err.message) || 'Could not start the tag reader.',
@@ -407,7 +424,7 @@
     }
 
     Promise.resolve(plugin.addListener('nfcTag', function (data) {
-      if (stopped) return;
+      if (stopped || isModeNotice(data)) return;
       rearms = 0;
       const parsed = parseRecords(fromExxili(data && data.messages));
       onTag({
@@ -427,7 +444,7 @@
         rearms++;
         setTimeout(function () {
           if (stopped) return;
-          Promise.resolve(plugin.startScan({ continuous: true })).catch(function () {});
+          Promise.resolve(plugin.startScan({ continuous: true, mode: IOS_READ_MODE })).catch(function () {});
         }, 400);
         return;
       }
@@ -498,6 +515,91 @@
     return { stop: function () { ctrl.abort(); }, arm: function () {}, needsArming: false };
   }
 
+  // The inverse of fromNdefPayload: the raw payload bytes, as a plain array.
+  //
+  // The plugin's native writeNDEF takes bytes and nothing else. Its own JS
+  // wrapper would do this encoding, but this file talks to Capacitor.Plugins.NFC
+  // directly, and handed a string the native side dropped it — iOS skipped
+  // every record and wrote an empty message, Android failed the record.
+  function utf8Array(str) {
+    return Array.from(new TextEncoder().encode(String(str)));
+  }
+
+  function toNdefPayload(ndefType, value) {
+    if (ndefType === 'U') {
+      // The longest matching abbreviation, so https:// costs one byte, not eight
+      // — room that matters on a 144-byte NTAG213.
+      const lower = String(value).toLowerCase();
+      let code = 0;
+      for (let i = 1; i < URI_PREFIX.length; i++) {
+        if (lower.startsWith(URI_PREFIX[i]) && URI_PREFIX[i].length > URI_PREFIX[code].length) code = i;
+      }
+      return [code].concat(utf8Array(String(value).slice(URI_PREFIX[code].length)));
+    }
+    if (ndefType === 'T') {
+      // Status byte: UTF-8, two-letter language code, then 'en'.
+      return [0x02].concat(utf8Array('en'), utf8Array(value));
+    }
+    return utf8Array(value);
+  }
+
+  // Resolves only when the tag has actually been written. The native
+  // writeNDEF resolves the moment it is called — before any tag is near the
+  // phone — and the real outcome arrives later as an 'nfcWriteSuccess' or
+  // 'nfcError' event. Taking the call's own resolution as success is what let
+  // LiaTagWrite record tags that were never written.
+  function exxiliWrite(plugin, records) {
+    // iOS: the plugin gives JS no way to close its write sheet, and says nothing
+    // when the tech dismisses it. Apple closes it after 60 seconds and that IS
+    // reported, so wait past it — giving up while the sheet is still up could
+    // report a failure for a tag that then gets written.
+    const timeoutMs = isAndroid() ? 30000 : 65000;
+    return new Promise(function (resolve, reject) {
+      let done = false;
+      let handles = [];
+      function removeAll() {
+        handles.forEach(function (h) { try { h && h.remove && h.remove(); } catch (_) {} });
+        handles = [];
+      }
+      function finish(err) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        removeAll();
+        if (!err) { resolve({ written: true }); return; }
+        // Left armed, Android treats the next tag it sees — a READ, on another
+        // screen — as the write it was waiting for.
+        if (isAndroid() && plugin.cancelWriteAndroid) {
+          try { Promise.resolve(plugin.cancelWriteAndroid()).catch(function () {}); } catch (_) {}
+        }
+        reject(err);
+      }
+      const timer = setTimeout(function () {
+        const e = new Error('No tag detected. Hold the phone against the tag.');
+        e.code = 'NFC_TIMEOUT';
+        finish(e);
+      }, timeoutMs);
+
+      Promise.all([
+        plugin.addListener('nfcWriteSuccess', function () { finish(null); }),
+        plugin.addListener('nfcError', function (err) {
+          const e = new Error((err && err.error) || 'Could not write to that tag. It may be locked or too small.');
+          e.code = 'NFC_WRITE_FAILED';
+          finish(e);
+        }),
+      ]).then(function (hs) {
+        handles = hs;
+        if (done) { removeAll(); return; }
+        // Listeners first: a tag already on the phone can answer immediately.
+        return plugin.writeNDEF({ records: records });
+      }).catch(function (err) {
+        const e = new Error((err && err.message) || 'Could not start writing the tag.');
+        e.code = 'NFC_WRITE_FAILED';
+        finish(e);
+      });
+    });
+  }
+
   // Writes the certificate URL plus the serial. NTAG213 holds 144 bytes, so the
   // URL alone fits comfortably and URL + a long serial still does; anything
   // larger belongs on a bigger tag.
@@ -512,11 +614,10 @@
 
     const exx = exxiliPlugin();
     if (exx) {
-      return Promise.resolve(exx.writeNDEF({
-        records: records.map(function (r) {
-          return { type: WEB_TO_NDEF[r.recordType] || r.recordType, payload: r.data };
-        }),
-      })).then(function () { return { written: true }; });
+      return exxiliWrite(exx, records.map(function (r) {
+        const type = WEB_TO_NDEF[r.recordType] || r.recordType;
+        return { type: type, payload: toNdefPayload(type, r.data) };
+      }));
     }
 
     if (!('NDEFReader' in root)) return Promise.reject(unavailable());
