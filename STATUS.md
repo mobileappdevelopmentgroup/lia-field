@@ -212,6 +212,23 @@ A ladder-side bug fell out of it: `fillNewSerialFields` hardcoded Description to
 "Ladder Repair", so a fall-protection box would have been filed as a ladder
 repair.
 
+**1.12.2 — 2026-09-24.** Android **versionCode 12** (Play internal), iOS **build
+13** (TestFlight internal). Phone only; no migrations, no desktop build.
+
+**Tapping a tag works on both phones.** Android crashed on every tap below
+Android 13 (the plugin used API-33-only intent calls; a Galaxy S8 is on 9). iOS
+read the tag and did nothing: the plugin announced a reader-mode fallback as an
+empty `nfcTag` event, and `read()` took that for the tag. Supplier tags carry
+`http://docs.google.com` links, which were refused outright; they are now
+fetched over https. Both native fixes live in `patch-nfc-plugin.mjs`.
+
+**Writing a tag had never worked.** Payloads went to the plugin as strings
+(iOS wrote an empty message) and a write was reported done before any tag was
+near the phone, so `fp_tag_write` rows from testing before this release may
+claim tags that were never written. On iOS a dismissed or refused write now
+says so at once instead of hanging for a minute. That last fix is on iOS only;
+Android 12 carries the same JS without it, which changes nothing on Android.
+
 ### Still needed from you
 
 1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
