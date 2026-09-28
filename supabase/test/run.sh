@@ -153,6 +153,11 @@ echo "Running shared parts catalogue assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/24_shared_parts_test.sql"
 
+echo
+echo "Running tag stock assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/25_tag_stock_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

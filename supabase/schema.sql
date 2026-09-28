@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 27
+-- Migrations included: 29
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -955,6 +955,7 @@ BEGIN
   UPDATE public.work_orders SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
   UPDATE public.usage_log SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
   UPDATE public.fp_models SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+  UPDATE public.fp_tag_stock SET account_id = v_keep WHERE account_id <> v_keep;   -- 29
 
   -- An asset's identity is (account, kind, serial), so consolidating can create
   -- duplicates that were legitimately distinct before. Fold them together.
@@ -977,7 +978,8 @@ BEGIN
   DELETE FROM public.assets a
    WHERE a.account_id = v_keep
      AND NOT EXISTS (SELECT 1 FROM public.inspections i WHERE i.asset_id = a.id)
-     AND NOT EXISTS (SELECT 1 FROM public.fp_inspections f WHERE f.asset_id = a.id);
+     AND NOT EXISTS (SELECT 1 FROM public.fp_inspections f WHERE f.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_stock s WHERE s.asset_id = a.id);   -- 29
 
   -- Two inspections of the same item on the same day can now collide on the
   -- partial unique index. Keep the newest as current and supersede the rest,
@@ -2604,6 +2606,45 @@ $$;
 
 
 --
+-- Name: fp_tag_stock_assign(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_tag_stock_assign() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_label text;
+BEGIN
+  IF NEW.kind <> 'fall_protection' THEN RETURN NEW; END IF;
+
+  UPDATE public.fp_tag_stock s
+     SET asset_id = NEW.id, assigned_at = coalesce(s.assigned_at, now())
+   WHERE s.account_id = NEW.account_id
+     AND s.asset_id IS DISTINCT FROM NEW.id
+     AND ((coalesce(NEW.tag_label_key, '') <> '' AND s.tag_label_key = NEW.tag_label_key)
+       OR (coalesce(NEW.tag_url_key,   '') <> '' AND s.tag_url_key   = NEW.tag_url_key));
+
+  -- Fires this trigger once more; the second pass finds the stock row already
+  -- pointing here and the label set, and does nothing.
+  IF coalesce(NEW.tag_label, '') = '' AND coalesce(NEW.tag_url_key, '') <> '' THEN
+    SELECT s.tag_label INTO v_label
+      FROM public.fp_tag_stock s
+     WHERE s.account_id = NEW.account_id AND s.tag_url_key = NEW.tag_url_key
+     ORDER BY s.received_at LIMIT 1;
+    IF v_label IS NOT NULL AND NOT EXISTS (
+         SELECT 1 FROM public.assets a
+          WHERE a.account_id = NEW.account_id AND a.id <> NEW.id
+            AND a.tag_label_key = public.serial_key(v_label)) THEN
+      UPDATE public.assets SET tag_label = v_label, updated_at = clock_timestamp()
+       WHERE id = NEW.id;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: fp_tag_url(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3366,6 +3407,26 @@ CREATE FUNCTION public.my_support_tickets() RETURNS json
       FROM public.support_tickets s
      WHERE s.created_by = auth.uid()
   ) t;
+$$;
+
+
+--
+-- Name: my_tag_stock(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_tag_stock() RETURNS TABLE(tag_label text, tag_url text, received_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN QUERY
+  SELECT s.tag_label, s.tag_url, s.received_at
+    FROM public.fp_tag_stock s
+   WHERE s.account_id = public.my_account_id()
+     AND s.asset_id IS NULL
+   ORDER BY s.tag_label;
+END;
 $$;
 
 
@@ -5566,6 +5627,27 @@ CREATE TABLE public.fp_tag_links (
 
 
 --
+-- Name: fp_tag_stock; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fp_tag_stock (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    holder_user_id uuid,
+    tag_label text NOT NULL,
+    tag_label_key text GENERATED ALWAYS AS (public.serial_key(tag_label)) STORED,
+    tag_url text,
+    tag_url_key text GENERATED ALWAYS AS (public.fp_tag_url_key(tag_url)) STORED,
+    nfc_tag_uid text,
+    asset_id uuid,
+    assigned_at timestamp with time zone,
+    source text,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: fp_tag_writes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6056,6 +6138,14 @@ ALTER TABLE ONLY public.fp_tag_links
 
 
 --
+-- Name: fp_tag_stock fp_tag_stock_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_tag_stock
+    ADD CONSTRAINT fp_tag_stock_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fp_tag_writes fp_tag_writes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6445,6 +6535,27 @@ CREATE INDEX fp_tag_links_asset_idx ON public.fp_tag_links USING btree (asset_id
 
 
 --
+-- Name: fp_tag_stock_asset_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_tag_stock_asset_idx ON public.fp_tag_stock USING btree (asset_id);
+
+
+--
+-- Name: fp_tag_stock_label_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_tag_stock_label_idx ON public.fp_tag_stock USING btree (account_id, tag_label_key);
+
+
+--
+-- Name: fp_tag_stock_url_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_tag_stock_url_idx ON public.fp_tag_stock USING btree (account_id, tag_url_key) WHERE (tag_url_key <> ''::text);
+
+
+--
 -- Name: fp_tag_writes_asset_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6680,6 +6791,13 @@ CREATE TRIGGER fp_inspections_attribution BEFORE INSERT ON public.fp_inspections
 --
 
 CREATE TRIGGER fp_inspections_touch_asset AFTER INSERT OR UPDATE ON public.fp_inspections FOR EACH ROW EXECUTE FUNCTION public.touch_asset_from_inspection();
+
+
+--
+-- Name: assets fp_tag_stock_assign_t; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fp_tag_stock_assign_t AFTER INSERT OR UPDATE OF tag_label, tag_url ON public.assets FOR EACH ROW EXECUTE FUNCTION public.fp_tag_stock_assign();
 
 
 --
@@ -6989,6 +7107,30 @@ ALTER TABLE ONLY public.fp_tag_links
 
 ALTER TABLE ONLY public.fp_tag_links
     ADD CONSTRAINT fp_tag_links_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+
+--
+-- Name: fp_tag_stock fp_tag_stock_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_tag_stock
+    ADD CONSTRAINT fp_tag_stock_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fp_tag_stock fp_tag_stock_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_tag_stock
+    ADD CONSTRAINT fp_tag_stock_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fp_tag_stock fp_tag_stock_holder_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_tag_stock
+    ADD CONSTRAINT fp_tag_stock_holder_user_id_fkey FOREIGN KEY (holder_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -7454,6 +7596,19 @@ ALTER TABLE public.fp_tag_links ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY fp_tag_links_read ON public.fp_tag_links FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: fp_tag_stock; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fp_tag_stock ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fp_tag_stock fp_tag_stock_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY fp_tag_stock_read ON public.fp_tag_stock FOR SELECT TO authenticated USING (public.can_see(account_id));
 
 
 --
@@ -8108,6 +8263,14 @@ GRANT ALL ON FUNCTION public.my_support_tickets() TO authenticated;
 
 
 --
+-- Name: FUNCTION my_tag_stock(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_tag_stock() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_tag_stock() TO authenticated;
+
+
+--
 -- Name: FUNCTION publish_fp_checks(p_model_id uuid, p_checks jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8437,6 +8600,13 @@ GRANT SELECT ON TABLE public.fp_record_audit TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.fp_tag_links TO authenticated;
+
+
+--
+-- Name: TABLE fp_tag_stock; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fp_tag_stock TO authenticated;
 
 
 --

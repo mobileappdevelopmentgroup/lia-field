@@ -88,6 +88,9 @@
     // server, or a build whose client would not construct, must still not leave
     // one company's job list on the phone for whoever signs in next.
     try { localStorage.removeItem('lia-assigned-jobs'); } catch (_) {}
+    // So is the list of blank tags: one company's tags must not be recognised
+    // as "ours" by whoever signs in next.
+    if (root.LiaTagStock) root.LiaTagStock.clear();
     return client().then(function (sb) {
       if (!sb) return null;
       // The catalogue is account data too, for the same reason.
@@ -118,6 +121,10 @@
       // questions all day. Small enough to refetch whole every time.
       return pullTypes(sb).then(function () {
         return pullParts(sb);
+      }).then(function () {
+        // The account's blank tags, so a tap on one is recognised as ours
+        // rather than as somebody else's link. Never fatal, like the parts.
+        return root.LiaTagStock ? root.LiaTagStock.pull(sb) : false;
       }).then(function () {
         return root.LiaCache.sync(sb, opts || {});
       });

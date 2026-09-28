@@ -448,6 +448,10 @@ function fpLookup(value, alsoTry, tag) {
 
   step(0).then(hit => {
     if (hit) { fpAdopt(hit, true); fpAttachTag(tag); return; }
+    // One of this account's own blank tags. Its chip carries a Google Sheet
+    // link, which would otherwise read as somebody else's tag below.
+    const blank = fpStockFor(candidates, tag);
+    if (blank) return fpStartFromStock(blank, tag);
     // The tag carried somebody else's link and nothing on this device matched
     // it. That is the third-party-tag case and it gets its own path rather than
     // dropping into a blank form with a URL where the serial goes.
@@ -470,6 +474,42 @@ function fpSerialCandidate(candidates, tag) {
   if (tag) return String(tag.serial || '').trim();
   const first = candidates[0] || '';
   return window.LiaTagLink && window.LiaTagLink.isUrl(first) ? '' : first;
+}
+
+// ── One of our own blank tags ────────────────────────────────────────────────
+// The lead's tags come printed and programmed (tag-stock.js). One that is on
+// nothing yet identifies no item, so a tap on it starts a NEW item with the tag
+// already attached: the printed number and the link both go on the record, and
+// the server takes the tag out of stock when the inspection lands.
+//
+// The link is tried first, then whatever was typed or read, each only as what
+// it is — see LiaTagStock.find.
+function fpStockFor(candidates, tag) {
+  const st = window.LiaTagStock;
+  if (!st) return null;
+  const vals = [tag && tag.url].concat(candidates || []);
+  for (const v of vals) {
+    const hit = v ? st.find(v) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function fpStockHint(blank) {
+  return `${blank.tag_label} is one of your blank tags, not on anything yet. ` +
+         `Enter the item you are putting it on. No serial on the item? Use ${blank.tag_label}.`;
+}
+
+// Only a serial read off the tag's own text record goes in the serial box —
+// never the printed number: that belongs to the tag, and the tech decides
+// whether the item has a serial of its own.
+function fpStartFromStock(blank, tag) {
+  fpBlank(tag ? String(tag.serial || '').trim() : '');
+  fpAttachTag(tag);
+  _fpItem.tag_label = blank.tag_label;
+  if (!_fpItem.tag_url) _fpItem.tag_url = blank.tag_url || '';
+  fpHint(fpStockHint(blank));
+  fpRenderAll();
 }
 
 // Is this link somebody else's? A certificate link is ours: it carries a
@@ -867,6 +907,9 @@ function fpMakeItem(rec, type, checks, source) {
     // matched or not. It is the only handle a third-party tag gives us, and the
     // record is where it has to live for the next tap to resolve.
     tag_url: rec.tag_url || '',
+    // The number printed on the tag, when the tag came from stock. Kept on the
+    // device only: the server learns it from the link (29_fp_tag_stock_field).
+    tag_label: rec.tag_label || '',
     // What the tag's link claimed, if anything was fetched. Kept beside the
     // inspection and never merged into it: see the header of tag-link.js.
     external: rec.external || null,
@@ -950,6 +993,12 @@ function fpCommit(item) {
       });
     }
     fpRenderPending();
+  }
+
+  // A blank tag just went on an item. Off the local list now, so a second tap
+  // before the next sync does not offer it as blank again.
+  if (window.LiaTagStock && (item.tag_label || item.tag_url)) {
+    window.LiaTagStock.take({ tag_label: item.tag_label, tag_url: item.tag_url });
   }
 
   playSound('ladder');
@@ -1290,6 +1339,18 @@ function fpBatchTag(res) {
       _fpBatch.lastAt[key] = now;
 
       if (!hit) {
+        // One of our own blank tags: nothing to pass, an item to enter. The run
+        // stops on the new item with the tag already on it.
+        const blank = fpStockFor(candidates, res);
+        if (blank) {
+          fpBatchFlag(res, null, fpStockHint(blank), true);
+          if (_fpItem) {
+            _fpItem.tag_label = blank.tag_label;
+            if (!_fpItem.tag_url) _fpItem.tag_url = blank.tag_url || '';
+            fpRenderAll();
+          }
+          return;
+        }
         // A tag carrying a third-party link is not simply a miss: there is a
         // link to read and a decision for the tech. Stop the run and hand it to
         // the same sheet the single-tap path uses, rather than dropping him into

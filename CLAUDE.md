@@ -32,6 +32,14 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**29 is NOT applied yet** (written 2026-09-28) — `my_tag_stock()` for the
+phone, label copied from stock onto an item matched by link, and
+`consolidate_to_one_account()` moving stock. Lia Field tolerates it missing.
+**28 was applied 2026-09-28** — `fp_tag_stock`, the tags a lead holds before
+they go on anything. The same day Nate's 645 Google-Sheet tags were imported
+(287 certificates, 357 tags still in stock), tagged
+`source = 'import:nate-google-sheets-2026-09-28'`; backup, import SQL and a
+tested rollback are in `~/Desktop/Lia-Backups/2026-09-28-pre-fp-import/`.
 **25 was applied 2026-09-21** — `my_jobs()` says who assigned a job.
 **24 was applied 2026-09-21** — `inspections.parts`, so a field ladder keeps
 what the tech tapped and the office can import its work into BSI.
@@ -409,6 +417,25 @@ resolves for one phone only), and the cache is updated immediately so tapping th
 tag you just wrote does not come back "not registered" off your own phone. The
 physical write happens **before** anything is queued: nobody re-checks a tag the
 system already believes is correct.
+
+### Tags a lead holds (tag stock)
+
+`supabase/migrations/28_fp_tag_stock.sql`, `29`. A lead's tags arrive printed
+(FP161340) and programmed with a link — for Nate, a Google Sheet per tag. Until
+one is on a piece of equipment it identifies nothing, so it is **not an asset**;
+it is a row in `fp_tag_stock` carrying the label and the link. A trigger on
+`assets` takes it out of stock when an item is given either — by whatever write
+path — and 29 copies the label onto an item that was matched only by link.
+
+On the phone, `field-app/js/tag-stock.js` caches `my_tag_stock()` in
+localStorage beside the job list. A tap or a typed number that matches a blank
+tag opens a **new item with the tag on it**, and is checked **before** the
+third-party-link path: a blank tag's Google link looks exactly like a
+supplier's, and must never be fetched or offered as somebody else's.
+
+`consolidate_to_one_account()` moves assets into the kept account before it
+folds same-serial duplicates, so two accounts holding one serial fail on the
+unique constraint and the fold never runs. Known, predates tag stock, not fixed.
 
 ### Keeping the phone bundles in sync
 

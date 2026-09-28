@@ -52,6 +52,8 @@ suite and the only path to rebuilding the database from nothing.
 | `25_assigned_by` | an assigned job tells the tech which lead assigned it |
 | `24_field_parts` | a field ladder keeps the parts the tech tapped, so the office can import its work into BSI |
 | `23_crew_removal` | removing somebody ends access and keeps their work; rehiring restores the same membership |
+| `28_fp_tag_stock` | tags a lead holds before they go on anything — label and link, never an asset; leaves stock when an item takes either |
+| `29_fp_tag_stock_field` | the phone can pull the blank tags (`my_tag_stock`); an item matched by a stocked link takes its printed label; consolidation moves stock |
 
 ## Where things are
 
