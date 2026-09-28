@@ -200,3 +200,47 @@ BEGIN
   PERFORM pg_temp.want_error('the public cannot ask for stock', 'SELECT * FROM my_tag_stock()');
 END $$;
 RESET ROLE;
+
+-- ── 31: the office's list ───────────────────────────────────────────────────
+\ir ../migrations/31_tag_stock_office.sql
+
+SET lia.uid = '1a000000-0000-0000-0000-000000000002';   -- Nate
+SET ROLE authenticated;
+DO $$
+BEGIN
+  PERFORM pg_temp.want('the office lists its blank tags and its used ones',
+    (SELECT count(*)::int FROM tag_stock_list() WHERE tag_label LIKE 'FP9%'),
+    (SELECT count(*)::int FROM fp_tag_stock WHERE tag_label LIKE 'FP9%'
+        AND account_id = (SELECT account_id FROM account_members WHERE user_id = '1a000000-0000-0000-0000-000000000002')));
+  PERFORM pg_temp.want('a used tag says what it is on',
+    (SELECT serial_num FROM tag_stock_list() WHERE tag_label = 'FP900020'), 'STK-20');
+  PERFORM pg_temp.want('and how that item last fared, with its certificate',
+    (SELECT overall_pass AND certificate_url LIKE '%/fp/?t=%' FROM tag_stock_list() WHERE tag_label = 'FP900020'), true);
+  PERFORM pg_temp.want('a blank one is on nothing',
+    (SELECT serial_num FROM tag_stock_list() WHERE tag_label = 'FP900030'), NULL::text);
+END $$;
+RESET ROLE;
+
+SET lia.uid = '1a000000-0000-0000-0000-000000000003';   -- Michael
+SET ROLE authenticated;
+DO $$
+BEGIN
+  PERFORM pg_temp.want('a sibling''s office sees none of Nate''s tags',
+    (SELECT count(*)::int FROM tag_stock_list() WHERE account_name = 'Nate Dobbs'), 0);
+END $$;
+RESET ROLE;
+
+SET lia.uid = '1a000000-0000-0000-0000-000000000001';   -- the umbrella
+SET ROLE authenticated;
+DO $$
+BEGIN
+  PERFORM pg_temp.want('the umbrella''s office sees its subcontractors'' tags, named by company',
+    (SELECT count(DISTINCT account_name)::int FROM tag_stock_list() WHERE tag_label LIKE 'FP9%'), 2);
+END $$;
+RESET ROLE;
+
+SET ROLE anon;
+DO $$ BEGIN
+  PERFORM pg_temp.want_error('the public cannot list tags', 'SELECT * FROM tag_stock_list()');
+END $$;
+RESET ROLE;

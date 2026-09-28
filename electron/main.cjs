@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
@@ -544,6 +544,33 @@ ipcMain.handle('fpr:pending-bsi', async (_event, workOrder) => {
     if (error) return { ok: false, error: error.message };
     return { ok: true, pending: typeof data === 'string' ? JSON.parse(data) : data };
   } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// ── Tags ───────────────────────────────────────────────────────────────────
+// Every tag the company holds, blank or on equipment. See
+// supabase/migrations/31_tag_stock_office.sql.
+ipcMain.handle('tags:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('tag_stock_list');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, tags: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+// Opens a link in the system browser. Only https, and only the two places a
+// tag's links point: our certificate site and the Google Sheets a lead's tags
+// were programmed with. The renderer never navigates or opens windows itself,
+// and a URL that came off a tag is not something to hand to the OS unchecked.
+const OPENABLE_HOSTS = new Set(['lia.mobileappdevelopmentgroup.com', 'docs.google.com']);
+ipcMain.handle('open:link', async (_event, url) => {
+  let u;
+  try { u = new URL(String(url || '')); } catch { return { ok: false, error: 'Not a link' }; }
+  if (u.protocol !== 'https:' || !OPENABLE_HOSTS.has(u.hostname.toLowerCase())) {
+    return { ok: false, error: 'That link is not one Lia opens' };
+  }
+  await shell.openExternal(u.href);
+  return { ok: true };
 });
 
 // ── Certificate views ──────────────────────────────────────────────────────

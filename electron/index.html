@@ -445,6 +445,27 @@
                  padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border); }
     .vw-tbl td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border); }
     .vw-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+    /* ── Tags ─────────────────────────────────────────────────────────────
+       Blank tags are stock; used ones say what they are on. A failed item is
+       the only red, because it is the only row somebody has to act on. */
+    .tg-stats { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+    .tg-stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+    .tg-stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .tg-ranges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .tg-range { font-family: var(--mono); font-size: 11.5px; padding: 3px 7px; border-radius: 4px;
+                background: rgba(255,255,255,.05); border: 1px solid var(--border); }
+    .tg-search { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 7px 10px;
+                 background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                 border-radius: 6px; font: inherit; font-size: 13px; }
+    .tg-state { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+                padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .tg-state.blank { background: rgba(255,255,255,.06); color: var(--muted); }
+    .tg-state.pass  { background: rgba(46,204,113,.15); color: var(--ok); }
+    .tg-state.fail  { background: rgba(231,76,60,.16); color: var(--err); }
+    .tg-state.none  { background: rgba(240,165,0,.14); color: var(--warn); }
+    .tg-link { background: none; border: none; padding: 0; color: var(--acc-h); cursor: pointer;
+               font: inherit; font-size: 12px; text-decoration: underline; }
+    .tg-scroll { max-height: calc(100vh - 330px); overflow-y: auto; }
     .sup-sev.office   { background: rgba(79,110,247,.18); color: #8fa4ff; }
     .sup-sev.field    { background: rgba(37,162,68,.18);  color: #5fd08a; }
     .sup-sev.customer { background: rgba(240,165,0,.16);  color: #f5c842; }
@@ -821,6 +842,11 @@
         <div class="mode-icon">🦺</div>
         <div class="mode-name">Catalog</div>
         <div class="mode-desc">The equipment, the parts and the checks your techs work from.</div>
+      </div>
+      <div class="mode-card" id="home-tags">
+        <div class="mode-icon">🏷️</div>
+        <div class="mode-name">Tags</div>
+        <div class="mode-desc">Every fall-protection tag you hold: which are still blank, and what the rest are on.</div>
       </div>
       <div class="mode-card" id="home-jobs">
         <div class="mode-icon">🗓️</div>
@@ -1277,6 +1303,33 @@
         </div>
         <div class="ob-actions"><button class="btn-ok" id="btn-sub-add">Create company</button></div>
         <div id="subs-msg" class="ob-msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: TAGS ═══════════════ -->
+<!-- The tags a company holds (supabase/migrations/28, 31). Blank ones are stock
+     a tech can put on anything; the rest name the item they are on. Read-only:
+     tags leave stock by being used, on the phone or anywhere else. -->
+<div id="screen-tags" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-tags-home">← Home</button>
+      <div class="cat-title">Tags</div>
+      <div class="sup-filters">
+        <button class="cat-tab on" data-tags-filter="blank">Blank</button>
+        <button class="cat-tab" data-tags-filter="used">On equipment</button>
+        <button class="cat-tab" data-tags-filter="">All</button>
+      </div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-detail">
+        <div id="tags-stats" class="tg-stats"></div>
+        <div id="tags-ranges" class="tg-ranges"></div>
+        <input type="search" id="tags-q" class="tg-search" placeholder="Tag number, serial, location, company…">
+        <div class="tg-scroll"><table class="vw-tbl" id="tags-tbl"></table></div>
+        <div class="cat-msg" id="tags-msg"></div>
       </div>
     </div>
   </div>
@@ -1895,6 +1948,7 @@ function goToDestination(dest) {
   else if (dest === 'merge')   { showScreen('merge');   loadMerge(); }
   else if (dest === 'support') { showScreen('support'); loadSupport(); }
   else if (dest === 'views')   { showScreen('views');   loadViews(); }
+  else if (dest === 'tags')    { showScreen('tags');    loadTags(); }
   else if (dest === 'fpr')     { showScreen('fpr');     loadFpr(); }
   else if (dest === 'jobs')    { showScreen('jobs');    loadJobBoard(); }
   else if (dest === 'team')    { showScreen('team');    loadTeam(); }
@@ -3540,6 +3594,95 @@ if (window.api.onFpPushLog) {
 // screen: an unlabelled network shows as "unknown", and the fix for that is
 // right there rather than buried in settings.
 
+// ════════════════════════════════════════════════════════════════
+// Tags
+// ════════════════════════════════════════════════════════════════
+let _tags = [];
+let _tagsFilter = 'blank';
+
+async function loadTags() {
+  $('tags-msg').textContent = 'Loading…'; $('tags-msg').className = 'cat-msg';
+  const res = await window.api.tagsList();
+  if (!res.ok) { $('tags-msg').textContent = res.error; $('tags-msg').className = 'cat-msg err'; return; }
+  $('tags-msg').textContent = '';
+  _tags = res.tags;
+  renderTags();
+}
+
+// FP161340–FP161399: consecutive numbers with the same prefix read as one run.
+function tagRanges(labels) {
+  const parsed = labels.map(l => { const m = /^(.*?)(\d+)$/.exec(l); return m ? { p: m[1], n: +m[2], w: m[2].length, l } : { l }; });
+  const out = []; let run = null;
+  for (const t of parsed.sort((a, z) => (a.p || a.l).localeCompare(z.p || z.l) || (a.n || 0) - (z.n || 0))) {
+    if (run && t.p === run.p && t.n === run.end + 1) { run.end = t.n; continue; }
+    if (run) out.push(run);
+    run = t.n === undefined ? { single: t.l } : { p: t.p, start: t.n, end: t.n, w: t.w };
+  }
+  if (run) out.push(run);
+  const fmt = (r, n) => r.p + String(n).padStart(r.w, '0');
+  return out.map(r => r.single || (r.start === r.end ? fmt(r, r.start) : `${fmt(r, r.start)}–${fmt(r, r.end)}`));
+}
+
+function tagState(t) {
+  if (!t.serial_num) return ['blank', 'Blank'];
+  if (t.overall_pass === true)  return ['pass', 'Pass'];
+  if (t.overall_pass === false) return ['fail', 'Fail'];
+  return ['none', 'No certificate'];
+}
+
+function renderTags() {
+  const blank = _tags.filter(t => !t.serial_num);
+  const failed = _tags.filter(t => t.overall_pass === false);
+  const companies = new Set(_tags.map(t => t.account_name));
+  $('tags-stats').innerHTML = [
+    [_tags.length, 'tags held'], [blank.length, 'blank'],
+    [_tags.length - blank.length, 'on equipment'], [failed.length, 'on failed items'],
+  ].map(([n, l]) => `<div class="tg-stat"><b>${esc(n)}</b><span>${esc(l)}</span></div>`).join('');
+
+  const ranges = tagRanges(blank.map(t => t.tag_label));
+  $('tags-ranges').innerHTML = _tagsFilter === 'used' || !ranges.length ? '' :
+    ranges.map(r => `<span class="tg-range">${esc(r)}</span>`).join('');
+
+  const q = $('tags-q').value.trim().toLowerCase();
+  const rows = _tags.filter(t => {
+    if (_tagsFilter === 'blank' && t.serial_num) return false;
+    if (_tagsFilter === 'used' && !t.serial_num) return false;
+    if (!q) return true;
+    return [t.tag_label, t.serial_num, t.description, t.item_type, t.account_name, t.holder_name]
+      .join(' ').toLowerCase().includes(q);
+  });
+  const many = companies.size > 1;
+  $('tags-tbl').innerHTML = rows.length ? `
+    <tr><th>Tag</th><th>State</th>${many ? '<th>Company</th>' : ''}<th>Held by</th><th>On</th><th>Last inspected</th><th></th></tr>
+    ${rows.map(t => { const [cls, label] = tagState(t); return `<tr>
+      <td class="vw-mono">${esc(t.tag_label)}</td>
+      <td><span class="tg-state ${cls}">${esc(label)}</span></td>
+      ${many ? `<td>${esc(t.account_name)}</td>` : ''}
+      <td>${esc(t.holder_name || '—')}</td>
+      <td>${t.serial_num ? `${esc(t.item_type || '')} <span class="vw-mono">${esc(t.serial_num)}</span>
+            ${t.description ? `<br><span style="color:var(--muted)">${esc(t.description)}</span>` : ''}` : '—'}</td>
+      <td>${t.last_inspected ? esc(new Date(t.last_inspected + 'T12:00:00').toLocaleDateString()) : '—'}</td>
+      <td style="white-space:nowrap">
+        ${t.certificate_url ? `<button class="tg-link" data-open="${escA(t.certificate_url)}">Certificate</button> ` : ''}
+        ${t.tag_url ? `<button class="tg-link" data-open="${escA(t.tag_url)}">Tag sheet</button>` : ''}
+      </td></tr>`; }).join('')}` :
+    `<tr><td class="cat-empty">${_tags.length ? 'Nothing matches.' : 'No tags on record for this company.'}</td></tr>`;
+}
+
+$('tags-tbl').addEventListener('click', async e => {
+  const b = e.target.closest('[data-open]');
+  if (!b) return;
+  const res = await window.api.openLink(b.dataset.open);
+  if (!res.ok) { $('tags-msg').textContent = res.error; $('tags-msg').className = 'cat-msg err'; }
+});
+$('tags-q').addEventListener('input', renderTags);
+document.querySelectorAll('[data-tags-filter]').forEach(b => b.addEventListener('click', () => {
+  _tagsFilter = b.dataset.tagsFilter;
+  document.querySelectorAll('[data-tags-filter]').forEach(x => x.classList.toggle('on', x === b));
+  renderTags();
+}));
+$('btn-tags-home').addEventListener('click', () => showScreen('home'));
+
 let _viewDays = 30;
 
 const VIEWER_LABEL = {
@@ -4251,6 +4394,7 @@ $('home-history').addEventListener('click', () => requireAuth('history'));
 $('home-catalog').addEventListener('click', () => requireAuth('catalog'));
 $('home-support').addEventListener('click', () => requireAuth('support'));
 $('home-jobs').addEventListener('click', () => requireAuth('jobs'));
+$('home-tags').addEventListener('click', () => requireAuth('tags'));
 // Advanced is a menu, not a feature: the sign-in happens on the way into
 // whichever of its screens is picked, the same as from home.
 $('home-advanced').addEventListener('click', () => showScreen('advanced'));

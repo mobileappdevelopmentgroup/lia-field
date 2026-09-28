@@ -92,6 +92,11 @@ contextBridge.exposeInMainWorld('api', {
   jobsClose:  (payload) => ipcRenderer.invoke('jobs:close', payload),
   jobsDelete: (payload) => ipcRenderer.invoke('jobs:delete', payload),
 
+  // Tags the company holds, blank or on equipment; and opening a certificate
+  // or a tag's sheet in the browser (https, two known hosts — see main.cjs).
+  tagsList: ()    => ipcRenderer.invoke('tags:list'),
+  openLink: (url) => ipcRenderer.invoke('open:link', url),
+
   // Certificate views — who has been reading certificates, and the network
   // labels that decide office versus field.
   viewsSummary:       (days)   => ipcRenderer.invoke('views:summary', days),
