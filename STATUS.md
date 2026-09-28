@@ -229,6 +229,25 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.13.0 — 2026-09-28.** Android **versionCode 13** (Play internal), iOS **build
+14** (TestFlight internal), Lia Office **1.13.0** for macOS (arm64 + Intel DMG,
+signed, not notarized) and Windows (CI run `36478435154`, unsigned; 51/51 unit
+tests on Windows). Installers in `~/Desktop/Lia-Deliverables/1.13.0/`.
+Migrations **28–31** live.
+
+**Nate's Google-Sheet tags imported.** 645 tags: 288 items, 287 certificates
+verified field by field against each tag's sheet, 357 blank tags held as stock
+(28). Report: https://claude.ai/artifact/AQcdzLQEzQ3syYeradoJVx. Not billed; the
+BSI import cannot run for them until the work orders are known.
+
+**Blank tags are recognised.** Their chips carry Google Sheet links, which read
+as a supplier's tag; the phone now checks stock first and opens a new item with
+the tag on it (29). Lia Office has a **Tags** screen (31).
+
+**`consolidate_to_one_account()` rewritten (30).** It failed on any shared
+serial and cascaded eleven tables away with the emptied accounts. It now refuses
+under an umbrella, which is the live shape.
+
 ### Still needed from you
 
 1. ~~Confirm Play has 1.7.0 (4)~~ — done 2026-09-19.
