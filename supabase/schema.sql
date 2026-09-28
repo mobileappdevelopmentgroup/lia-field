@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 29
+-- Migrations included: 31
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -871,17 +871,30 @@ CREATE FUNCTION public.consolidate_to_one_account(p_lead_user uuid, p_account_na
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_keep     uuid;
-  v_credits  integer;
+  v_keep      uuid;
+  v_credits   integer;
   v_unlimited boolean;
-  v_moved    integer;
-  v_adopted  integer;
-  v_fp       integer;
-  v_dropped  integer;
+  v_moved     integer;
+  v_adopted   integer;
+  v_fp        integer;
+  v_folded    integer;
+  v_dropped   integer;
+  v_clash     text;
 BEGIN
   SELECT account_id INTO v_keep FROM public.account_members WHERE user_id = p_lead_user;
   IF v_keep IS NULL THEN
     RAISE EXCEPTION 'That user has no account — run create_lia_user for them first';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.accounts WHERE parent_account_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'Accounts are arranged under an umbrella; consolidating would merge separate companies. Refusing — unlink them first if that is really intended.';
+  END IF;
+
+  SELECT string_agg(s, ', ') INTO v_clash FROM (
+    SELECT lower(slug) AS s FROM public.fp_equipment_types
+     WHERE account_id IS NOT NULL GROUP BY lower(slug) HAVING count(*) > 1) x;
+  IF v_clash IS NOT NULL THEN
+    RAISE EXCEPTION 'More than one account defines its own equipment type "%"; merge those by hand first', v_clash;
   END IF;
 
   -- Credits: unlimited anywhere wins, otherwise sum them. Summing is the
@@ -902,96 +915,183 @@ BEGIN
    WHERE account_id <> v_keep OR user_id = p_lead_user;
   GET DIAGNOSTICS v_moved = ROW_COUNT;
 
-  -- Everything the backfill either attributed elsewhere or could not place.
+  -- ── 1. Items: fold same-serial duplicates BEFORE anything moves ──────────
+  -- The kept account's own item wins, then the oldest.
+  DROP TABLE IF EXISTS _lia_fold;
+  CREATE TEMP TABLE _lia_fold ON COMMIT DROP AS
+    SELECT id, keep_id, dense_rank() OVER (PARTITION BY keep_id ORDER BY id) AS k
+      FROM (SELECT id, first_value(id) OVER (
+                     PARTITION BY kind, serial_key
+                     ORDER BY (account_id = v_keep) DESC NULLS LAST, created_at, id) AS keep_id
+              FROM public.assets) r
+     WHERE id <> keep_id;
+
+  -- Identifiers the survivor lacks come across; a tag on either still resolves.
+  UPDATE public.assets a
+     SET tag_label   = coalesce(a.tag_label, l.tag_label),
+         nfc_tag_uid = coalesce(a.nfc_tag_uid, l.nfc_tag_uid),
+         tag_url     = coalesce(a.tag_url, l.tag_url)
+    FROM (SELECT DISTINCT ON (f.keep_id) f.keep_id, x.tag_label, x.nfc_tag_uid, x.tag_url
+            FROM _lia_fold f JOIN public.assets x ON x.id = f.id
+           ORDER BY f.keep_id, x.created_at) l
+   WHERE a.id = l.keep_id;
+
+  -- One current record per item per day: the newest stays current, the rest
+  -- are superseded — which is what a second capture would have done anyway.
+  WITH g AS (
+    SELECT i.id, row_number() OVER (PARTITION BY coalesce(f.keep_id, i.asset_id), i.inspection_date
+                                    ORDER BY i.created_at DESC, i.id DESC) AS rn
+      FROM public.inspections i LEFT JOIN _lia_fold f ON f.id = i.asset_id
+     WHERE i.is_current AND NOT i.is_deleted
+       AND coalesce(f.keep_id, i.asset_id) IN (SELECT keep_id FROM _lia_fold))
+  UPDATE public.inspections i SET is_current = false, updated_at = now()
+    FROM g WHERE i.id = g.id AND g.rn > 1;
+
+  WITH g AS (
+    SELECT i.id, row_number() OVER (PARTITION BY coalesce(f.keep_id, i.asset_id), i.inspection_date
+                                    ORDER BY i.created_at DESC, i.id DESC) AS rn
+      FROM public.fp_inspections i LEFT JOIN _lia_fold f ON f.id = i.asset_id
+     WHERE i.is_current AND NOT i.is_deleted
+       AND coalesce(f.keep_id, i.asset_id) IN (SELECT keep_id FROM _lia_fold))
+  UPDATE public.fp_inspections i SET is_current = false, updated_at = now()
+    FROM g WHERE i.id = g.id AND g.rn > 1;
+
+  -- Ladder records are unique on (item, day, version) and that constraint is
+  -- checked row by row, so versions are moved clear of each other before the
+  -- re-point and renumbered 1..n per day afterwards.
+  UPDATE public.inspections i SET version = i.version + 10000000 * f.k
+    FROM _lia_fold f WHERE i.asset_id = f.id;
+
+  UPDATE public.inspections       t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_inspections    t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.certificate_views t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_external_records t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_record_audit   t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_tag_links      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_tag_stock      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_tag_writes     t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+
+  WITH r AS (
+    SELECT id, row_number() OVER (PARTITION BY asset_id, inspection_date ORDER BY version, created_at, id) AS rn
+      FROM public.inspections WHERE asset_id IN (SELECT keep_id FROM _lia_fold))
+  UPDATE public.inspections i SET version = r.rn + 2000000000 - 10000000 FROM r WHERE i.id = r.id;
+  UPDATE public.inspections SET version = version - (2000000000 - 10000000)
+   WHERE asset_id IN (SELECT keep_id FROM _lia_fold) AND version > 1000000000;
+
+  DELETE FROM public.assets WHERE id IN (SELECT id FROM _lia_fold);
+  GET DIAGNOSTICS v_folded = ROW_COUNT;
+
+  -- Nothing can clash now.
   UPDATE public.assets SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
   UPDATE public.inspections SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
   GET DIAGNOSTICS v_adopted = ROW_COUNT;
   UPDATE public.fp_inspections SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
   GET DIAGNOSTICS v_fp = ROW_COUNT;
-  -- Work orders are unique on (account, wo_key), and two accounts may each hold
-  -- the same number — that namespacing is the point of the constraint. Merging
-  -- them makes those collide, so fold duplicates instead of failing: keep the
-  -- row that was actually charged (earliest wins on a tie), re-point everything
-  -- at it, and drop the loser. Never charge twice for what is now one order.
-  UPDATE public.work_orders w SET account_id = v_keep
-   WHERE w.account_id IS DISTINCT FROM v_keep
-     AND NOT EXISTS (SELECT 1 FROM public.work_orders k
-                      WHERE k.account_id = v_keep AND k.wo_key = w.wo_key);
 
-  WITH survivors AS (
-    SELECT DISTINCT ON (wo_key) wo_key, id
-      FROM public.work_orders
-     WHERE account_id = v_keep OR account_id IS DISTINCT FROM v_keep
-     ORDER BY wo_key, (charged_at IS NULL), charged_at NULLS LAST, created_at, id
-  ), losers AS (
-    SELECT w.id, s.id AS keep_id
-      FROM public.work_orders w JOIN survivors s ON s.wo_key = w.wo_key
-     WHERE w.id <> s.id
-  )
-  UPDATE public.usage_log u SET work_order_uuid = l.keep_id
-    FROM losers l WHERE u.work_order_uuid = l.id;
+  -- ── 2. Work orders and jobs ───────────────────────────────────────────────
+  -- Two accounts may each hold the same work order number — that namespacing
+  -- is the point of UNIQUE (account, wo_key). Keep the one actually charged
+  -- (earliest wins on a tie), re-point EVERYTHING at it, drop the rest. Never
+  -- charge twice for what is now one order.
+  DROP TABLE IF EXISTS _lia_wo;
+  CREATE TEMP TABLE _lia_wo ON COMMIT DROP AS
+    SELECT id, keep_id FROM (
+      SELECT id, first_value(id) OVER (
+               PARTITION BY wo_key
+               ORDER BY (charged_at IS NULL), charged_at NULLS LAST, created_at, id) AS keep_id
+        FROM public.work_orders) r
+     WHERE id <> keep_id;
 
-  WITH survivors AS (
-    SELECT DISTINCT ON (wo_key) wo_key, id
-      FROM public.work_orders
-     ORDER BY wo_key, (charged_at IS NULL), charged_at NULLS LAST, created_at, id
-  ), losers AS (
-    SELECT w.id, s.id AS keep_id
-      FROM public.work_orders w JOIN survivors s ON s.wo_key = w.wo_key
-     WHERE w.id <> s.id
-  )
-  UPDATE public.inspections i SET work_order_uuid = l.keep_id
-    FROM losers l WHERE i.work_order_uuid = l.id;
+  -- A job per work order per account: fold jobs the same way, keeping every
+  -- assignment.
+  DROP TABLE IF EXISTS _lia_jobs;
+  CREATE TEMP TABLE _lia_jobs ON COMMIT DROP AS
+    SELECT id, keep_id FROM (
+      SELECT id, first_value(id) OVER (
+               PARTITION BY wo_key ORDER BY (account_id = v_keep) DESC, created_at, id) AS keep_id
+        FROM public.jobs) r
+     WHERE id <> keep_id;
+  INSERT INTO public.job_assignees (job_id, user_id, assigned_by, assigned_at)
+  SELECT j.keep_id, a.user_id, a.assigned_by, a.assigned_at
+    FROM public.job_assignees a JOIN _lia_jobs j ON j.id = a.job_id
+  ON CONFLICT (job_id, user_id) DO NOTHING;
+  DELETE FROM public.jobs WHERE id IN (SELECT id FROM _lia_jobs);
 
-  WITH survivors AS (
-    SELECT DISTINCT ON (wo_key) wo_key, id
-      FROM public.work_orders
-     ORDER BY wo_key, (charged_at IS NULL), charged_at NULLS LAST, created_at, id
-  )
-  DELETE FROM public.work_orders w
-   USING survivors s
-   WHERE s.wo_key = w.wo_key AND w.id <> s.id;
+  UPDATE public.usage_log      t SET work_order_uuid = w.keep_id FROM _lia_wo w WHERE t.work_order_uuid = w.id;
+  UPDATE public.inspections    t SET work_order_uuid = w.keep_id FROM _lia_wo w WHERE t.work_order_uuid = w.id;
+  UPDATE public.fp_inspections t SET work_order_uuid = w.keep_id FROM _lia_wo w WHERE t.work_order_uuid = w.id;
+  UPDATE public.jobs           t SET work_order_uuid = w.keep_id FROM _lia_wo w WHERE t.work_order_uuid = w.id;
+  DELETE FROM public.work_orders WHERE id IN (SELECT id FROM _lia_wo);
 
   UPDATE public.work_orders SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
-  UPDATE public.usage_log SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
+  UPDATE public.jobs        SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
+  UPDATE public.usage_log   SET account_id = v_keep WHERE account_id IS DISTINCT FROM v_keep;
+
+  -- ── 3. Catalogues ─────────────────────────────────────────────────────────
+  -- Models: one per manufacturer + model; records and model checklists follow.
+  DROP TABLE IF EXISTS _lia_models;
+  CREATE TEMP TABLE _lia_models ON COMMIT DROP AS
+    SELECT id, keep_id FROM (
+      SELECT id, first_value(id) OVER (
+               PARTITION BY lower(manufacturer), lower(model)
+               ORDER BY (account_id = v_keep) DESC, created_at, id) AS keep_id
+        FROM public.fp_models WHERE account_id IS NOT NULL) r
+     WHERE id <> keep_id;
+  UPDATE public.fp_inspections     t SET model_id = m.keep_id FROM _lia_models m WHERE t.model_id = m.id;
+  UPDATE public.fp_check_templates t SET model_id = m.keep_id FROM _lia_models m WHERE t.model_id = m.id;
+  DELETE FROM public.fp_models WHERE id IN (SELECT id FROM _lia_models);
   UPDATE public.fp_models SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
-  UPDATE public.fp_tag_stock SET account_id = v_keep WHERE account_id <> v_keep;   -- 29
 
-  -- An asset's identity is (account, kind, serial), so consolidating can create
-  -- duplicates that were legitimately distinct before. Fold them together.
-  WITH ranked AS (
-    SELECT id, kind, serial_key,
-           first_value(id) OVER (PARTITION BY kind, serial_key ORDER BY created_at, id) AS keep_id
-      FROM public.assets WHERE account_id = v_keep
-  )
-  UPDATE public.inspections i SET asset_id = r.keep_id
-    FROM ranked r WHERE i.asset_id = r.id AND r.id <> r.keep_id;
+  -- Custom equipment types: clashes were refused above, so this is a move.
+  UPDATE public.fp_equipment_types SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
 
-  WITH ranked AS (
-    SELECT id, kind, serial_key,
-           first_value(id) OVER (PARTITION BY kind, serial_key ORDER BY created_at, id) AS keep_id
-      FROM public.assets WHERE account_id = v_keep
-  )
-  UPDATE public.fp_inspections f SET asset_id = r.keep_id
-    FROM ranked r WHERE f.asset_id = r.id AND r.id <> r.keep_id;
+  -- Parts: the kept account's entry wins.
+  DELETE FROM public.account_parts p USING (
+    SELECT id, row_number() OVER (PARTITION BY part_key
+                                  ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+      FROM public.account_parts) r
+   WHERE p.id = r.id AND r.rn > 1;
+  UPDATE public.account_parts SET account_id = v_keep WHERE account_id <> v_keep;
 
-  DELETE FROM public.assets a
-   WHERE a.account_id = v_keep
-     AND NOT EXISTS (SELECT 1 FROM public.inspections i WHERE i.asset_id = a.id)
-     AND NOT EXISTS (SELECT 1 FROM public.fp_inspections f WHERE f.asset_id = a.id)
-     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_stock s WHERE s.asset_id = a.id);   -- 29
+  -- ── 4. Everything else scoped to an account ──────────────────────────────
+  -- Tag links are one row per link per account: fold the sightings together.
+  WITH r AS (
+    SELECT id, first_value(id) OVER (PARTITION BY tag_url_key
+                                     ORDER BY (account_id = v_keep) DESC, first_seen_at, id) AS keep_id
+      FROM public.fp_tag_links),
+  agg AS (
+    SELECT r.keep_id, sum(l.seen_count) AS seen, min(l.first_seen_at) AS first_seen,
+           max(l.last_seen_at) AS last_seen
+      FROM r JOIN public.fp_tag_links l ON l.id = r.id GROUP BY r.keep_id HAVING count(*) > 1)
+  UPDATE public.fp_tag_links l
+     SET seen_count = agg.seen, first_seen_at = agg.first_seen, last_seen_at = agg.last_seen
+    FROM agg WHERE l.id = agg.keep_id;
+  DELETE FROM public.fp_tag_links l USING (
+    SELECT id, row_number() OVER (PARTITION BY tag_url_key
+                                  ORDER BY (account_id = v_keep) DESC, first_seen_at, id) AS rn
+      FROM public.fp_tag_links) r
+   WHERE l.id = r.id AND r.rn > 1;
+  UPDATE public.fp_tag_links SET account_id = v_keep WHERE account_id <> v_keep;
 
-  -- Two inspections of the same item on the same day can now collide on the
-  -- partial unique index. Keep the newest as current and supersede the rest,
-  -- which is exactly what a second capture would have done anyway.
-  WITH dupes AS (
-    SELECT id, row_number() OVER (PARTITION BY asset_id, inspection_date
-                                  ORDER BY created_at DESC, id DESC) AS rn
-      FROM public.inspections WHERE is_current AND NOT is_deleted
-  )
-  UPDATE public.inspections i SET is_current = false, updated_at = now()
-    FROM dupes d WHERE i.id = d.id AND d.rn > 1;
+  -- Claimed records: one per link per claimed date.
+  DELETE FROM public.fp_external_records e USING (
+    SELECT id, row_number() OVER (
+             PARTITION BY source_url_key, coalesce(claimed_inspection_date, '1970-01-01'::date)
+             ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+      FROM public.fp_external_records) r
+   WHERE e.id = r.id AND r.rn > 1;
+  UPDATE public.fp_external_records SET account_id = v_keep WHERE account_id <> v_keep;
 
+  UPDATE public.fp_tag_stock      SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.fp_tag_writes     SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.fp_record_audit   SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.inspection_audit  SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.inspection_photos SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.certificate_views SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+  UPDATE public.known_networks    SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+  UPDATE public.support_tickets   SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+
+  -- Only accounts nobody belongs to any more, and nothing is left in them.
   DELETE FROM public.accounts
    WHERE id <> v_keep
      AND NOT EXISTS (SELECT 1 FROM public.account_members m WHERE m.account_id = accounts.id);
@@ -1002,6 +1102,7 @@ BEGIN
     'members',           v_moved,
     'inspections_moved', v_adopted,
     'fp_moved',          v_fp,
+    'items_folded',      v_folded,
     'accounts_removed',  v_dropped,
     'credits',           (SELECT credits FROM public.accounts WHERE id = v_keep)
   );
@@ -5082,6 +5183,38 @@ $$;
 
 
 --
+-- Name: tag_stock_list(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tag_stock_list() RETURNS TABLE(tag_label text, tag_url text, account_name text, holder_name text, received_at timestamp with time zone, assigned_at timestamp with time zone, serial_num text, item_type text, description text, last_inspected date, overall_pass boolean, certificate_url text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN QUERY
+  SELECT s.tag_label, s.tag_url, ac.name, coalesce(u.name, u.email),
+         s.received_at, s.assigned_at,
+         a.serial_raw, i.item_type, i.description,
+         i.inspection_date, i.overall_pass,
+         CASE WHEN a.id IS NULL THEN NULL
+              ELSE public.certificate_url(a.public_ref, 'fall_protection') END
+    FROM public.fp_tag_stock s
+    JOIN public.accounts ac ON ac.id = s.account_id
+    LEFT JOIN public.users u ON u.id = s.holder_user_id
+    LEFT JOIN public.assets a ON a.id = s.asset_id
+    LEFT JOIN LATERAL (
+      SELECT f.item_type, f.description, f.inspection_date, f.overall_pass
+        FROM public.fp_inspections f
+       WHERE f.asset_id = a.id AND f.is_current AND NOT f.is_deleted
+       ORDER BY f.inspection_date DESC LIMIT 1) i ON true
+   WHERE public.can_see(s.account_id)
+   ORDER BY s.tag_label;
+END;
+$$;
+
+
+--
 -- Name: team_members(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8453,6 +8586,14 @@ GRANT ALL ON FUNCTION public.stop_impersonation() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.submit_support_ticket(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.submit_support_ticket(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION tag_stock_list(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.tag_stock_list() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.tag_stock_list() TO authenticated;
 
 
 --

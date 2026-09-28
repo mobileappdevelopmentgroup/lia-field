@@ -32,9 +32,10 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**29 is NOT applied yet** (written 2026-09-28) — `my_tag_stock()` for the
-phone, label copied from stock onto an item matched by link, and
-`consolidate_to_one_account()` moving stock. Lia Field tolerates it missing.
+**29–31 were applied 2026-09-28** — `my_tag_stock()` for the phone and the
+label copied from stock onto an item matched by link (29); a rewritten
+`consolidate_to_one_account()` (30); `tag_stock_list()` for Lia Office's Tags
+screen (31).
 **28 was applied 2026-09-28** — `fp_tag_stock`, the tags a lead holds before
 they go on anything. The same day Nate's 645 Google-Sheet tags were imported
 (287 certificates, 357 tags still in stock), tagged
@@ -433,9 +434,20 @@ tag opens a **new item with the tag on it**, and is checked **before** the
 third-party-link path: a blank tag's Google link looks exactly like a
 supplier's, and must never be fetched or offered as somebody else's.
 
-`consolidate_to_one_account()` moves assets into the kept account before it
-folds same-serial duplicates, so two accounts holding one serial fail on the
-unique constraint and the fold never runs. Known, predates tag stock, not fixed.
+Lia Office's **Tags** screen (`tag_stock_list()`, 31) lists every tag the
+company holds — blank ones as number ranges, the rest with what they are on and
+how it last fared. It sees across subcontractors (`can_see`); the phone's
+`my_tag_stock()` deliberately does not. Links open only through main's
+`open:link`, which allows https to our certificate site and `docs.google.com`.
+
+### Consolidating accounts
+
+`consolidate_to_one_account()` (rewritten in 30) **refuses while any account
+sits under an umbrella** — on the live database it would merge Nate's and
+Michael's companies. It folds same-serial items across accounts before moving
+anything (10's version failed on the unique constraint), re-points all eight
+tables that reference an item, and moves every account-scoped table rather than
+letting eleven of them cascade away with the emptied accounts.
 
 ### Keeping the phone bundles in sync
 

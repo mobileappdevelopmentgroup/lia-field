@@ -54,6 +54,8 @@ suite and the only path to rebuilding the database from nothing.
 | `23_crew_removal` | removing somebody ends access and keeps their work; rehiring restores the same membership |
 | `28_fp_tag_stock` | tags a lead holds before they go on anything — label and link, never an asset; leaves stock when an item takes either |
 | `29_fp_tag_stock_field` | the phone can pull the blank tags (`my_tag_stock`); an item matched by a stocked link takes its printed label; consolidation moves stock |
+| `30_consolidate_fold_first` | `consolidate_to_one_account` folds same-serial items before moving, moves every account table, and refuses under an umbrella |
+| `31_tag_stock_office` | `tag_stock_list()` for Lia Office's Tags screen |
 
 ## Where things are
 
