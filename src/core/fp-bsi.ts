@@ -1,0 +1,289 @@
+// Turning fall-protection inspections into the one box BSI actually wants.
+//
+// ── What this used to be, and why it was wrong ──────────────────────────────
+// The first version of this file built ONE BOX PER INSPECTED ITEM, each with
+// its own serial, on the assumption that fall protection worked like ladders.
+// Its unit tests passed and always would have: they checked the mapping was
+// consistent with itself, never that it matched BSI. `FP_FORM` in
+// src/fp-automation.ts guessed at a form that does not exist.
+//
+// A real submitted work order (98471, read 2026-09-21 — see docs/BSI-FORM.md)
+// settled it. Fall protection is the SAME form as a ladder, and it is:
+//
+//   ONE box for the whole work order, always. Confirmed with the office.
+//     Serial Number  1111 + the work order number  →  111198471
+//     Ladder Type    Other
+//     Description    Fall Protection
+//     Information    Other
+//
+//   and the items are PARTS on that box, collapsed by equipment type, with the
+//   quantity carrying the count:
+//     FP1 × 22, FP2 × 33, FP4 × 18, FP7 × 14, FP3 × 12
+//
+// ── Two things fall out of that ─────────────────────────────────────────────
+// **Re-runs are safe.** The serial is derived from the work order number, so
+// it is deterministic: the importer's existing box diff finds the box on a
+// second run and will not add a duplicate. That was the open question about
+// aggregate fall-protection boxes and double billing.
+//
+// **Not every item can be billed.** There are nine part codes against fourteen
+// equipment types, and the office has deliberately left six unmapped rather
+// than guess. An unmapped item is INSPECTED AND NOT BILLED — it is named on
+// screen, never silently dropped and never billed under a neighbouring code.
+// A wrong code bills a customer the wrong amount quietly and consistently,
+// which nobody notices until an audit.
+
+export interface FpInspectionForBsi {
+  inspection_id: string;
+  work_order_id: string | null;
+  serial_num: string;
+  /** The equipment type's name or slug — what decides the billing code. */
+  item_type?: string | null;
+  equipment_type?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  inspection_date?: string | null;
+  overall_pass?: boolean | null;
+  discard_reason?: string | null;
+}
+
+/** The single box a work order's fall protection goes on. */
+export interface FpBoxRecord {
+  workOrderId: string;
+  serialNum: string;
+  desc: string;
+  detail: string;
+  parts: Array<{ searchTerm: string; quantity: number }>;
+  /** Every inspection this box bills for, so the runner can mark them pushed. */
+  inspectionIds: string[];
+}
+
+export interface FpBuildResult {
+  /** At most one, since a work order gets one box. */
+  records: FpBoxRecord[];
+  /** Inspections deliberately not billed, and why. Never silently dropped. */
+  skipped: Array<{ inspection_id: string; serial_num: string; reason: string }>;
+  /** What each code is billing, for the confirmation the operator sees. */
+  lines: Array<{ code: string; description: string; quantity: number }>;
+}
+
+export const FP_BOX_DESC = 'Fall Protection';
+export const FP_BOX_TYPE = 'Other';
+export const FP_BOX_INFO = 'Other';
+/** BSI's own convention, read off work order 98471: 1111 + the work order. */
+export const FP_SERIAL_PREFIX = '1111';
+
+/**
+ * Equipment type → BSI part code.
+ *
+ * Eight confirmed with the office by name. The six missing ones are missing on
+ * purpose: nobody knows yet what a crane lift sling bills as, and this is not
+ * the place to decide. Add a row here when the office says so — that is the
+ * whole change, no migration.
+ */
+export const FP_TYPE_CODES: Record<string, { code: string; description: string }> = {
+  body_harness:      { code: 'FP1', description: 'BODY HARNESS INSPECTION' },
+  lanyard:           { code: 'FP2', description: 'LANYARD INSPECTION' },
+  srl:               { code: 'FP3', description: 'SRL INSPECTION' },
+  climbing_belt:     { code: 'FP4', description: 'CLIMBING BELT INSPECTION' },
+  pole_climbing_device: { code: 'FP6', description: 'POLE CLIMBING DEVICE' },
+  positioning_strap: { code: 'FP7', description: 'POSITIONING STRAP' },
+  self_rescue_device:{ code: 'FP8', description: 'SELF RESCUE DEVICE' },
+  self_rescue_with_bag: { code: 'FP9', description: 'SELF RESCUE DEVICE W BAG' },
+};
+
+/** FP5 — ANCHORAGE INSPECTION — is not yet claimed by any equipment type. */
+export const FP_UNASSIGNED_CODES = ['FP5'];
+
+/** Spellings that reach the same code. Names as the catalogue writes them. */
+const TYPE_ALIASES: Record<string, string> = {
+  'body harness': 'body_harness',
+  'lanyard': 'lanyard',
+  'srl': 'srl',
+  'srl (self-retracting lifeline)': 'srl',
+  'self-retracting lifeline': 'srl',
+  'climbing belt': 'climbing_belt',
+  'pole climbing device': 'pole_climbing_device',
+  'positioning strap': 'positioning_strap',
+  'self rescue device': 'self_rescue_device',
+  'self rescue with bag': 'self_rescue_with_bag',
+  'self rescue device w bag': 'self_rescue_with_bag',
+};
+
+export function codeForType(raw: string | null | undefined): { code: string; description: string } | null {
+  const t = String(raw ?? '').trim().toLowerCase();
+  if (!t) return null;
+  const key = TYPE_ALIASES[t] ?? t.replace(/[^a-z0-9]+/g, '_');
+  return FP_TYPE_CODES[key] ?? null;
+}
+
+/** The box's serial for a work order. Deterministic, so a re-run finds it. */
+export function fpBoxSerial(workOrderId: string): string {
+  return FP_SERIAL_PREFIX + String(workOrderId ?? '').trim().replace(/[^A-Za-z0-9]/g, '');
+}
+
+/** Normalized the way BSI matches serials: case and punctuation are noise. */
+export function bsiSerialKey(serial: string): string {
+  return String(serial ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Builds the one box a work order's fall protection is billed on.
+ *
+ * Everything that cannot be billed comes back in `skipped` with a reason. The
+ * caller must show those — an item inspected and not invoiced is a fact the
+ * office needs, and the tech's work is on the certificate either way.
+ */
+export function buildFpBoxRecords(
+  items: FpInspectionForBsi[],
+  opts: { workOrderId?: string } = {},
+): FpBuildResult {
+  const skipped: FpBuildResult['skipped'] = [];
+  const byCode = new Map<string, { code: string; description: string; quantity: number }>();
+  const inspectionIds: string[] = [];
+  const seen = new Set<string>();
+  let wo = String(opts.workOrderId ?? '').trim();
+
+  for (const it of items ?? []) {
+    const serial = String(it.serial_num ?? '').trim();
+    const itemWo = String(it.work_order_id ?? opts.workOrderId ?? '').trim();
+
+    if (!itemWo) {
+      skipped.push({ inspection_id: it.inspection_id, serial_num: serial,
+                     reason: 'No work order — nothing to bill it against' });
+      continue;
+    }
+    // One box per work order means one work order per call. Mixing two would
+    // put one customer's items on another's invoice.
+    if (!wo) wo = itemWo;
+    if (bsiSerialKey(itemWo) !== bsiSerialKey(wo)) {
+      skipped.push({ inspection_id: it.inspection_id, serial_num: serial,
+                     reason: `On work order ${itemWo}, not ${wo}` });
+      continue;
+    }
+
+    // The same item inspected twice in one run is billed once. BSI adds a
+    // second line for a repeated part, and the customer pays for both.
+    const dedupe = serial ? bsiSerialKey(serial) : 'id:' + it.inspection_id;
+    if (seen.has(dedupe)) {
+      skipped.push({ inspection_id: it.inspection_id, serial_num: serial,
+                     reason: 'Already counted on this work order in this run' });
+      continue;
+    }
+    seen.add(dedupe);
+
+    const type = it.equipment_type ?? it.item_type ?? '';
+    const mapped = codeForType(type);
+    if (!mapped) {
+      skipped.push({
+        inspection_id: it.inspection_id, serial_num: serial,
+        reason: `${type || 'This equipment type'} has no billing code — inspected, not invoiced`,
+      });
+      continue;
+    }
+
+    const line = byCode.get(mapped.code);
+    if (line) line.quantity += 1;
+    else byCode.set(mapped.code, { ...mapped, quantity: 1 });
+    inspectionIds.push(it.inspection_id);
+  }
+
+  const lines = [...byCode.values()].sort((a, z) => a.code.localeCompare(z.code));
+  if (!wo || !lines.length) return { records: [], skipped, lines };
+
+  return {
+    records: [{
+      workOrderId: wo,
+      serialNum: fpBoxSerial(wo),
+      desc: FP_BOX_DESC,
+      detail: FP_BOX_INFO,
+      parts: lines.map(l => ({ searchTerm: l.code, quantity: l.quantity })),
+      inspectionIds,
+    }],
+    skipped,
+    lines,
+  };
+}
+
+export function mergeParts(
+  parts: Array<{ searchTerm: string; quantity: number }>,
+): Array<{ searchTerm: string; quantity: number }> {
+  const byTerm = new Map<string, { searchTerm: string; quantity: number }>();
+  for (const p of parts) {
+    const term = String(p?.searchTerm ?? '').trim();
+    if (!term) continue;
+    const qty = Number.isFinite(p.quantity) && p.quantity > 0 ? Math.floor(p.quantity) : 1;
+    const found = byTerm.get(term.toUpperCase());
+    if (found) found.quantity += qty;
+    else byTerm.set(term.toUpperCase(), { searchTerm: term, quantity: qty });
+  }
+  return [...byTerm.values()];
+}
+
+/** Groups records by work order — one BSI page per work order. */
+export function groupByWorkOrder(records: FpBoxRecord[]): Map<string, FpBoxRecord[]> {
+  const out = new Map<string, FpBoxRecord[]>();
+  for (const r of records) {
+    const g = out.get(r.workOrderId);
+    if (g) g.push(r); else out.set(r.workOrderId, [r]);
+  }
+  return out;
+}
+
+/**
+ * What is already on the work order, so a re-run adds nothing twice.
+ *
+ * This is the whole reason the box serial is derived from the work order
+ * number rather than invented: `1111` + the work order is deterministic, so a
+ * second run recognises its own box and leaves it alone. An invented serial
+ * would look like a new box every time and bill the customer again.
+ */
+export function diffFpAgainstWorkOrder(
+  records: FpBoxRecord[],
+  existingSerials: string[],
+): { toAdd: FpBoxRecord[]; alreadyThere: FpBoxRecord[] } {
+  const have = new Set((existingSerials ?? []).map(bsiSerialKey).filter(Boolean));
+  const toAdd: FpBoxRecord[] = [];
+  const alreadyThere: FpBoxRecord[] = [];
+  for (const r of records) {
+    (have.has(bsiSerialKey(r.serialNum)) ? alreadyThere : toAdd).push(r);
+  }
+  return { toAdd, alreadyThere };
+}
+
+/**
+ * The fall-protection box, as the ladder importer's own record type.
+ *
+ * This is the point of the rebuild. Fall protection is not a second form, so
+ * it does not need a second importer: it is one box on the ladder form with
+ * different values in it. Turning it into a LadderRecord hands it to
+ * runAutomation() — the diff, the retries, the per-part dedupe and the
+ * verification pass that have all been exercised on real work orders — instead
+ * of a parallel path that has been exercised on none.
+ *
+ * The values are read off work order 98471 (docs/BSI-FORM.md):
+ *
+ *   Ladder Type  Other              #WoLadType  — "Other" is in its 13 options
+ *   Description  Fall Protection    #WoLadDesc  — and in its 10
+ *   Information  Other              — the box row's Information column
+ *
+ * Information is the one value that is DERIVED rather than read: the Add form
+ * carries Brand, Type, Length and Description, and of those only Brand's
+ * option list contains "Other" (Length's are lengths). So Brand is what feeds
+ * the Information column. If a fall-protection box ever comes out with a blank
+ * Information, that inference is where to look.
+ */
+export function fpBoxAsLadderRecord(rec: FpBoxRecord): {
+  serialNum: string; truckId: string; brand: string; type: string;
+  length: string; desc: string; parts: Array<{ searchTerm: string; quantity: number }>;
+} {
+  return {
+    serialNum: rec.serialNum,
+    truckId: '',
+    brand: FP_BOX_INFO,
+    type: FP_BOX_TYPE,
+    length: '',
+    desc: FP_BOX_DESC,
+    parts: rec.parts,
+  };
+}

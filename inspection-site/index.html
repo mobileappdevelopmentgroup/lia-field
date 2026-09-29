@@ -387,6 +387,31 @@ async function doSearch() {
   hide('msg');
 }
 
+// ── Telling the office a certificate was looked at ────────────────────────────
+// Fire-and-forget, and never allowed to affect the page: a certificate has to
+// render whether or not this succeeds. Nothing is sent about the visitor — the
+// server derives a coarse office/field label from the network and keeps only a
+// /24 prefix. See supabase/14_certificate_views.sql.
+//
+// `?src=app` suppresses it. A tech opening a certificate from inside one of the
+// Lia apps is not a visit, and counting one would drown the only signal this
+// exists to capture: whether anybody outside is actually using the tags.
+function reportView(info) {
+  try {
+    // Read from location rather than the _p below: this function is defined
+    // above that declaration, and depending on it would be a temporal-dead-zone
+    // error waiting for the first caller that runs early.
+    if (new URLSearchParams(location.search).get('src') === 'app') return;
+    db.rpc('record_certificate_view', { p: Object.assign({
+      kind: 'ladder',
+      source: 'web',
+      user_agent: navigator.userAgent,
+      referrer: document.referrer || null,
+      tz: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || null,
+    }, info) }).then(() => {}, () => {});
+  } catch (_) { /* never block the certificate */ }
+}
+
 // ── Serial search ─────────────────────────────────────────────────────────────
 async function searchBySerial(serial) {
   const { data, error } = await db
@@ -396,8 +421,38 @@ async function searchBySerial(serial) {
     .order('inspection_date', { ascending: false });
 
   if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
-  if (!data?.length) { renderNotRegistered(serial); return; }
+  if (!data?.length) {
+    reportView({ found: false, lookup_by: 'serial', serial_key: serial });
+    renderNotRegistered(serial);
+    return;
+  }
+  reportView({ found: true, lookup_by: 'serial',
+               serial_key: serial, public_ref: data[0].public_ref });
   renderCertificate(serial, data);
+}
+
+// ── Certificate code search ───────────────────────────────────────────────────
+// What an NFC tag actually carries. certificate_url() writes `/?t=<public_ref>`
+// for ladders, and until now this page ignored that parameter entirely — a
+// tapped ladder tag opened the site and sat there on an empty search box.
+async function searchByRef(ref) {
+  const key = String(ref || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const { data, error } = await db
+    .from('ladder_inspections_public')
+    .select('*')
+    .eq('public_ref', key)
+    .order('inspection_date', { ascending: false });
+
+  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
+  if (!data?.length) {
+    reportView({ found: false, lookup_by: 'ref', public_ref: key });
+    renderNotRegistered(key);
+    return;
+  }
+  reportView({ found: true, lookup_by: 'ref',
+               public_ref: key, serial_key: data[0].serial_key });
+  el('search-input').value = data[0].serial_num;
+  renderCertificate(data[0].serial_num, data);
 }
 
 // ── Work order search ─────────────────────────────────────────────────────────
@@ -587,9 +642,13 @@ el('hist-toggle').addEventListener('click', () => {
   el('hist-chevron').classList.toggle('open');
 });
 
-// ── URL params: ?serial=  or  ?wo= ───────────────────────────────────────────
+// ── URL params: ?t=  ?serial=  or  ?wo= ──────────────────────────────────────
+// ?t= is the certificate code an NFC tag carries and is checked first, because
+// a tag that has both should resolve by the more specific identifier.
 const _p = new URLSearchParams(location.search);
-if (_p.get('serial')) {
+if (_p.get('t')) {
+  searchByRef(_p.get('t'));
+} else if (_p.get('serial')) {
   el('search-input').value = _p.get('serial');
   doSearch();
 } else if (_p.get('wo')) {

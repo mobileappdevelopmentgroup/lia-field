@@ -11,6 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <title>Lia Field</title>
   <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -20,14 +21,17 @@
       --border:     #2b2b4b;
       --accent:     #4f6ef7;
       --ok:         #2ecc71;
+      --bad:        #e05260;
       --err:        #e74c3c;
       --text:       #dde0f0;
       --muted:      #5e6080;
       --accent-fg:  #8fa4ff;
       --ok-fg:      #60d998;
+      --bad-fg:     #ff8b95;
       --err-fg:     #e07070;
       --accent-rgb: 79,110,247;
       --ok-rgb:     46,204,113;
+      --bad-rgb:    224,82,96;
       --err-rgb:    231,76,60;
       --font:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --mono:   'SF Mono','Fira Code','Cascadia Code',monospace;
@@ -41,14 +45,17 @@
       --border:     #d1d1d6;
       --accent:     #0071e3;
       --ok:         #25a244;
+      --bad:        #d92d20;
       --err:        #d93025;
       --text:       #1c1c1e;
       --muted:      #8e8e93;
       --accent-fg:  #0071e3;
       --ok-fg:      #25a244;
+      --bad-fg:     #d92d20;
       --err-fg:     #d93025;
       --accent-rgb: 0,113,227;
       --ok-rgb:     37,162,68;
+      --bad-rgb:    217,45,32;
       --err-rgb:    217,48,37;
     }
     html, body { height: 100%; height: -webkit-fill-available; height: 100dvh; }
@@ -102,6 +109,37 @@
     .job-empty { text-align: center; color: var(--muted); padding: 80px 24px;
                  font-size: 14px; line-height: 1.7; }
     .job-empty strong { color: var(--text); }
+    /* Jobs the lead pushed to this phone. Visibly a different thing from a job
+       the tech made himself, because "who decided this" is the question he asks
+       when a work order number does not look right. */
+    .asg-hdr { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+               color: var(--muted); padding: 2px 2px 0; display: flex; align-items: center; gap: 8px; }
+    .asg-hdr .asg-stale { font-weight: 600; letter-spacing: 0; text-transform: none; margin-left: auto; }
+    .job-card.assigned { border-color: rgba(var(--accent-rgb),.45);
+                         background: linear-gradient(0deg, rgba(var(--accent-rgb),.05), rgba(var(--accent-rgb),.05)), var(--surf); }
+    .job-card.assigned.closed { opacity: .62; }
+    .asg-badge { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+                 text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px;
+                 vertical-align: 1px; background: rgba(var(--accent-rgb),.18); color: var(--accent-fg); }
+    .asg-badge.team { background: rgba(var(--muted-rgb,120,120,120),.18); color: var(--muted); }
+    .asg-note { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.45;
+                white-space: normal; }
+    .asg-peers { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+    .asg-peer { display: flex; gap: 8px; font-size: 12.5px; padding: 4px 0; align-items: baseline; }
+    .asg-peer .asg-who { color: var(--muted); margin-left: auto; font-size: 11.5px; }
+    .asg-ro { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    /* Writing a tag */
+    .tw-preview { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; word-break: break-all;
+                  background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 9px 11px; color: var(--muted); }
+    .tw-preview b { color: var(--text); font-weight: 700; }
+    .tw-warn { border-radius: 8px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+               background: rgba(var(--bad-rgb),.12); color: var(--bad-fg);
+               border: 1px solid rgba(var(--bad-rgb),.35); }
+    .tw-warn.err { background: rgba(var(--err-rgb),.12); color: var(--err-fg);
+                   border-color: rgba(var(--err-rgb),.35); }
+    .fp-rec-write { background: none; border: 1px solid var(--border); border-radius: 6px;
+                    font-size: 11.5px; padding: 4px 9px; color: var(--text); margin-left: 6px; }
 
     /* ══════════════════════════════════════════════════════
        JOB DETAIL — fixed panel layout, no page scroll
@@ -126,8 +164,12 @@
                   background: var(--surf); border-bottom: 1px solid var(--border); }
 
     /* Form row header */
-    .form-hdr { display: flex; align-items: center; justify-content: space-between;
+    .form-hdr { display: flex; align-items: center; gap: 8px;
                 flex-shrink: 0; margin-bottom: 2px; }
+    .form-hdr-label { margin-right: auto; }
+    /* Done is the one people reach for with the keyboard up, so it reads as
+       the action and Reset stays quiet beside it. */
+    #btn-entry-done { color: var(--accent, #4f6ef7); font-weight: 700; }
     .form-hdr-label { font-size: 10px; font-weight: 700; color: var(--muted);
                       text-transform: uppercase; letter-spacing: .08em; }
     .clear-form-btn { background: none; border: none; font-size: 11px; color: var(--muted);
@@ -169,12 +211,29 @@
     .meta-row-2 { display: flex; gap: 6px; }
     .meta-row-2 .field-ig { flex: 1; min-width: 0; }
 
+    /* BSI checkboxes: Leveler / Claw / V-Rung / Properly lubricated.
+       Tri-state — unset is not the same as "no". */
+    .flag-row { display: flex; gap: 5px; }
+    .flag-btn { flex: 1; background: var(--surf2); border: 1px solid var(--border);
+                border-radius: 7px; color: var(--muted); padding: 6px 2px; cursor: pointer;
+                display: flex; flex-direction: column; align-items: center; gap: 1px;
+                line-height: 1.2; }
+    .flag-btn .fb-k { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .flag-btn .fb-v { font-size: 9px; font-weight: 600; letter-spacing: .03em; }
+    .flag-btn.yes { background: rgba(var(--ok-rgb),.16);  border-color: var(--ok);  color: var(--ok-fg); }
+    .flag-btn.no  { background: rgba(var(--bad-rgb),.16); border-color: var(--bad); color: var(--bad-fg); }
+
     /* Autocomplete */
     .ac-wrap { position: relative; }
     .ac-list { position: absolute; top: calc(100% + 2px); left: 0; right: 0;
                background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
                z-index: 200; max-height: 180px; overflow-y: auto; display: none;
                box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+    /* Down by default. `drop-up` is set by placeAcList() only when the list
+       genuinely will not fit below — measured against the VISUAL viewport, so
+       the on-screen keyboard counts as taking up room. It used to be a fixed
+       class in the markup, which meant the list opened upwards over the serial
+       field even when there was space below it. */
     .ac-list.drop-up { top: auto; bottom: calc(100% + 2px); }
     .ac-list.open { display: block; }
     .ac-item { padding: 11px 12px; font-size: 14px; cursor: pointer; }
@@ -204,6 +263,10 @@
     .pb-count { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: var(--accent); }
     .pb-dqty  { font-size: 8px; font-weight: 700; color: var(--accent); margin-left: 1px; vertical-align: super; }
     .ac-dqty  { font-size: 11px; font-weight: 700; color: var(--accent-fg); margin-left: 8px; }
+    /* The part's own description from BSI. Its own line, ellipsised: these run
+       to 40-odd characters and wrapping turns a scannable list into a wall. */
+    .ac-desc  { display: block; font-size: 11px; color: var(--muted); margin-top: 2px;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chip-qty-input { width: 36px; background: var(--surf); border: 1px solid var(--accent);
                       border-radius: 5px; color: var(--text); font-family: var(--mono); font-size: 13px;
                       text-align: center; padding: 1px 2px; outline: none;
@@ -314,6 +377,13 @@
     .add-ladder-btn { background: var(--ok); color: #fff; border-radius: 10px; padding: 15px;
                       font-size: 16px; font-weight: 700; flex: 1; border: none; cursor: pointer; }
     .add-ladder-btn:active { background: #27ae60; }
+    .add-ladder-btn.next { background: var(--surf2); color: var(--ok-fg);
+                           border: 1.5px solid var(--ok); }
+    .add-ladder-btn.next:active { background: rgba(var(--ok-rgb),.14); }
+    .ladder-lookup { font-size: 12px; line-height: 1.35; padding: 6px 9px; margin-top: 6px;
+                     border-radius: 8px; border: 1px solid var(--border); background: var(--surf2); }
+    .ladder-lookup.hit { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
+    .ladder-lookup.miss { color: var(--muted); }
     .cancel-edit-btn { background: var(--surf2); color: var(--fg); border: 1px solid var(--border);
                        border-radius: 10px; padding: 15px 18px; font-size: 15px; font-weight: 600;
                        cursor: pointer; flex-shrink: 0; display: none; }
@@ -389,6 +459,388 @@
     .sheet-add-row input:focus { border-color: var(--accent); }
     .sheet-add-row input::placeholder { color: var(--muted); }
     .sheet-done { width: 100%; flex-shrink: 0; }
+
+    /* ── Job scope ── */
+    .scope-opt { width: 100%; text-align: left; background: var(--surf2);
+                 border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+                 cursor: pointer; color: var(--text); margin-bottom: 8px; }
+    .scope-opt:active { border-color: var(--accent); background: rgba(var(--accent-rgb),.10); }
+    .scope-opt-name { font-size: 15px; font-weight: 700; }
+    .scope-opt-desc { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+    .scope-badge { display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+                   text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px;
+                   vertical-align: 1px; }
+    .scope-badge.ladder { background: rgba(var(--accent-rgb),.16); color: var(--accent-fg); }
+    .scope-badge.fp     { background: rgba(var(--ok-rgb),.16);     color: var(--ok-fg); }
+    /* ── Fall protection capture ── */
+    #fp-input-panel { flex-shrink: 0; background: var(--surf); border-bottom: 1px solid var(--border);
+                      padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .fp-ways { display: flex; gap: 5px; }
+    .fp-way { flex: 1; min-height: 46px; border-radius: 8px; background: var(--surf2);
+              border: 1px solid var(--border); color: var(--muted); font-size: 13px;
+              font-weight: 700; font-family: var(--font); cursor: pointer;
+              display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0; }
+    .fp-way svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .fp-way.primary { flex: 1.35; background: rgba(var(--accent-rgb),.12);
+                      border-color: rgba(var(--accent-rgb),.35); color: var(--accent-fg); }
+    .fp-way.new { background: rgba(var(--ok-rgb),.14); border-color: rgba(var(--ok-rgb),.32); color: var(--ok-fg); }
+    .fp-way:active { opacity: .7; }
+    .fp-typed { display: flex; gap: 6px; align-items: center; }
+    .fp-typed .field-input { flex: 1; min-width: 0; padding-right: 9px; }
+    .fp-hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+    .fp-hint.warn { color: var(--bad-fg); font-weight: 600; }
+
+    /* Tap-through */
+    .fp-batch-start { width: 100%; min-height: 38px; border-radius: 8px;
+                      background: var(--surf2); border: 1px dashed var(--border);
+                      color: var(--muted); font-size: 12px; font-weight: 700;
+                      font-family: var(--font); cursor: pointer;
+                      display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .fp-batch-start svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .fp-batch-start:active { opacity: .7; }
+    #fp-batch-panel { flex-shrink: 0; background: var(--surf); padding: 9px 12px;
+                      border-bottom: 1px solid var(--border);
+                      display: flex; flex-direction: column; gap: 7px; }
+    .fp-batch-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fp-batch-live { display: flex; align-items: center; gap: 6px; font-size: 12px;
+                     font-weight: 800; color: var(--accent-fg); text-transform: uppercase;
+                     letter-spacing: .05em; }
+    .fp-batch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+                    animation: fp-batch-pulse 1.4s ease-in-out infinite; }
+    @keyframes fp-batch-pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+    @media (prefers-reduced-motion: reduce) { .fp-batch-dot { animation: none; } }
+    .fp-batch-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .fp-batch-last { min-height: 42px; border-radius: 8px; background: var(--surf2);
+                     border: 1px solid var(--border); padding: 7px 11px; font-size: 12.5px;
+                     display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+    .fp-batch-last.ok { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
+    .fp-batch-last.flag { border-color: var(--bad); background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-last .sn { font-family: var(--mono); font-size: 14px; font-weight: 700; }
+    .fp-batch-last .sub { font-size: 11.5px; color: var(--muted); }
+    .fp-batch-last .lnk { font-size: 10.5px; color: var(--muted); word-break: break-all;
+                          font-family: var(--mono); }
+    /* ── Help ──────────────────────────────────────────────────────────────
+       Read one-handed, in a truck, often in sunlight. So: bigger body text than
+       the capture screens use, generous tap targets, and real contrast rather
+       than the muted greys that look smart indoors and vanish outside. */
+    .help-btn { position: relative; }
+    .help-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px;
+                border-radius: 50%; background: var(--bad); }
+    .help-badge { position: absolute; top: 1px; right: 0; min-width: 15px; height: 15px;
+                  padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff;
+                  font-size: 10px; font-weight: 800; line-height: 15px; text-align: center; }
+    #help-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                   padding: 10px 12px 28px; }
+    .help-search-wrap { margin-bottom: 10px; }
+    .help-hero { border-radius: 10px; padding: 11px 13px; margin-bottom: 12px;
+                 background: rgba(var(--accent-rgb), .10);
+                 border: 1px solid rgba(var(--accent-rgb), .28); }
+    .help-hero-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-hero-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    .help-group-hdr { font-size: 11px; font-weight: 800; letter-spacing: .06em;
+                      text-transform: uppercase; color: var(--muted);
+                      margin: 16px 0 7px; }
+    .help-item { display: flex; flex-direction: column; gap: 2px; width: 100%;
+                 text-align: left; background: var(--surf); border: 1px solid var(--border);
+                 border-radius: 10px; padding: 12px 13px; margin-bottom: 7px;
+                 font-family: var(--font); cursor: pointer; color: inherit; }
+    .help-item-ttl { font-size: 14px; font-weight: 700; }
+    .help-item-sub { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .help-doc { font-size: 14.5px; line-height: 1.62; }
+    .help-p { margin: 0 0 11px; }
+    .help-when { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+    .help-steps { margin: 0 0 13px; padding-left: 22px; }
+    .help-steps li { margin-bottom: 7px; }
+    .help-steps.big li { margin-bottom: 11px; }
+    .help-note { border-left: 3px solid var(--accent); padding: 8px 11px;
+                 margin: 0 0 12px; border-radius: 0 8px 8px 0; font-size: 13.5px;
+                 background: rgba(var(--accent-rgb), .08); }
+    /* Reserved for what costs money or safety. Kept rare so it keeps working. */
+    .help-warn { border-left: 3px solid var(--bad); padding: 8px 11px; margin: 0 0 12px;
+                 border-radius: 0 8px 8px 0; font-size: 13.5px;
+                 background: rgba(var(--bad-rgb), .09); }
+    .help-shot { margin: 0 0 14px; }
+    .help-shot img { width: 100%; border-radius: 10px; border: 1px solid var(--border);
+                     display: block; }
+    .help-shot figcaption { font-size: 12px; color: var(--muted); margin-top: 5px;
+                            text-align: center; }
+    .help-empty { text-align: center; padding: 26px 14px; color: var(--muted);
+                  font-size: 13.5px; }
+    .help-empty-sub { font-size: 12.5px; margin-top: 6px; }
+    .help-ask { margin-top: 20px; border-radius: 10px; padding: 13px;
+                background: var(--surf2); border: 1px solid var(--border); }
+    .help-ask-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-ask-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5;
+                    margin-bottom: 10px; }
+    .help-ask-btn { width: 100%; padding: 12px; font-size: 14px; }
+    .help-textarea { min-height: 96px; resize: vertical; line-height: 1.5;
+                     padding: 10px 12px; font-family: var(--font); }
+    .help-attached { font-size: 11.5px; color: var(--muted); line-height: 1.6;
+                     margin: 2px 0 12px; }
+    .help-attached span { display: inline-block; background: var(--surf2);
+                          border: 1px solid var(--border); border-radius: 5px;
+                          padding: 1px 6px; margin: 3px 4px 0 0;
+                          font-family: var(--mono); font-size: 10.5px; }
+    .help-hint { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+    .help-hint.warn { color: var(--bad-fg); font-weight: 600; }
+    .help-ticket { display: block; width: 100%; text-align: left; background: var(--surf);
+                   border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px;
+                   margin-bottom: 7px; font-family: var(--font); cursor: pointer; color: inherit; }
+    .help-ticket.unread { border-color: var(--accent); }
+    .help-ticket-top { display: flex; align-items: center; gap: 7px; }
+    .help-ticket-ttl { flex: 1; font-size: 13.5px; font-weight: 700; }
+    .help-ticket-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad);
+                       flex-shrink: 0; }
+    .help-ticket-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+    .help-status { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+                   background: var(--surf2); color: var(--muted); }
+    .help-status.open, .help-status.answered { background: rgba(var(--accent-rgb), .16);
+                                               color: var(--accent); }
+    .help-status.resolved { background: rgba(var(--ok-rgb), .16); color: var(--ok-fg); }
+    .help-status.waiting { background: rgba(var(--bad-rgb), .12); color: var(--bad-fg); }
+    .help-ref { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    /* The confirmation. A banner that stays put, not a toast that vanishes
+       before the tech has looked up from the item in his hand. */
+    .help-confirm { border-radius: 10px; padding: 11px 13px; margin-bottom: 14px; }
+    .help-confirm.ok { background: rgba(var(--ok-rgb), .12);
+                       border: 1px solid rgba(var(--ok-rgb), .40); }
+    .help-confirm.wait { background: rgba(var(--bad-rgb), .09);
+                         border: 1px solid rgba(var(--bad-rgb), .30); }
+    .help-confirm-ttl { font-size: 13.5px; font-weight: 800; margin-bottom: 3px; }
+    .help-confirm-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    .help-thread { display: flex; flex-direction: column; gap: 9px; }
+    .help-msg { border-radius: 10px; padding: 10px 12px; max-width: 92%; }
+    .help-msg.me { align-self: flex-end; background: rgba(var(--accent-rgb), .12);
+                   border: 1px solid rgba(var(--accent-rgb), .28); }
+    .help-msg.dev { align-self: flex-start; background: var(--surf2);
+                    border: 1px solid var(--border); }
+    .help-msg-who { font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 3px; }
+    .help-msg-body { font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; }
+    .help-msg-when { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+
+    /* The unmatched-tag sheet. The link is monospace and wraps rather than
+       truncating: a tech reads it off the screen or dictates it down a phone,
+       so an ellipsis in the middle of it would be useless. */
+    .fp-link-url { font-family: var(--mono); font-size: 11.5px; word-break: break-all;
+                   background: var(--surf2); border: 1px solid var(--border);
+                   border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+                   -webkit-user-select: text; user-select: text; }
+    /* Amber, not green and not red: what the link claims is neither confirmed
+       nor rejected, and colouring it like a result would be a lie about it. */
+    .fp-link-claim { border: 1px solid var(--warn, #c98a12); border-radius: 8px;
+                     padding: 9px 11px; margin-bottom: 8px;
+                     background: rgba(201,138,18,.09); }
+    .fp-link-claim-hdr { font-size: 11px; font-weight: 800; letter-spacing: .04em;
+                         text-transform: uppercase; color: var(--warn, #c98a12);
+                         margin-bottom: 6px; }
+    .fp-link-rows .fp-kv { font-size: 12.5px; }
+    .fp-link-v { font-weight: 800; font-size: 12px; }
+    .fp-link-v.pass { color: var(--ok-fg); }
+    .fp-link-v.fail { color: var(--bad-fg); }
+    .fp-link-v.unk  { color: var(--muted); font-weight: 700; }
+    .fp-rec-link { font-family: var(--mono); font-size: 10.5px; word-break: break-all;
+                   -webkit-user-select: text; user-select: text; }
+    .fp-batch-acts { display: flex; gap: 5px; }
+    .fp-batch-act { flex: 1; min-height: 42px; border-radius: 8px; background: var(--surf2);
+                    border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+                    font-weight: 700; font-family: var(--font); cursor: pointer; padding: 0 4px; }
+    .fp-batch-act.fail { color: var(--bad-fg); border-color: rgba(var(--bad-rgb),.32);
+                         background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-act.done { color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.35);
+                         background: rgba(var(--accent-rgb),.12); }
+    .fp-batch-act.big { min-height: 52px; font-size: 15px; }
+    .fp-batch-act.info.need { color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.45);
+                              background: rgba(var(--accent-rgb),.14); }
+    #fp-batch-cur { margin-bottom: 5px; }
+    .fp-batch-act:disabled { opacity: .38; }
+    .fp-batch-act:active { opacity: .7; }
+
+    /* The record card. Matched = green; anything else stays neutral. */
+    #fp-record { flex-shrink: 0; margin: 10px 12px 0; background: var(--surf);
+                 border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    #fp-record.matched { border: 1.5px solid var(--ok); }
+    .fp-rec-hdr { padding: 7px 12px; display: flex; align-items: center; gap: 7px;
+                  background: var(--surf2); }
+    #fp-record.matched .fp-rec-hdr { background: rgba(var(--ok-rgb),.10); }
+    .fp-rec-tag { font-size: 10px; font-weight: 800; text-transform: uppercase;
+                  letter-spacing: .06em; color: var(--muted); }
+    #fp-record.matched .fp-rec-tag { color: var(--ok-fg); }
+    .fp-rec-edit { margin-left: auto; display: flex; align-items: center; gap: 5px;
+                   padding: 5px 10px; border-radius: 6px; background: var(--surf);
+                   border: 1px solid var(--border); color: var(--accent-fg);
+                   font-size: 11.5px; font-weight: 700; font-family: var(--font); cursor: pointer; }
+    .fp-rec-body { padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 1px; }
+    .fp-rec-sn { font-family: var(--mono); font-size: 17px; font-weight: 700; }
+    .fp-rec-sub { font-size: 12px; color: var(--muted); margin-left: 8px; }
+    .fp-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; line-height: 1.5; }
+    .fp-kv .k { color: var(--muted); flex-shrink: 0; }
+    .fp-kv .v { font-weight: 600; text-align: right; }
+
+    #fp-edit-form { flex-shrink: 0; background: var(--surf); border-bottom: 1px solid var(--border);
+                    padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; }
+
+    /* One check per row so the whole list fits without scrolling. */
+    #fp-checks-panel { flex-shrink: 0; padding: 10px 12px 0; display: flex;
+                       flex-direction: column; gap: 5px; }
+    .fp-checks-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fp-checks-note { font-size: 10.5px; color: var(--muted); text-align: right; }
+    /* The equipment type picker. Native select so it uses the OS wheel — far
+       faster with gloves on than a custom list. */
+    #fp-edit-form select.field-input { appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b8b8b' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+    /* Two answers side by side; a yes/no question needs more room than Pass. */
+    .fp-seg button { padding: 0 6px; }
+    #fp-checks-list { display: flex; flex-direction: column; gap: 5px; }
+    .fp-chk { display: flex; align-items: center; gap: 10px; background: var(--surf);
+              border: 1px solid var(--border); border-radius: 8px; padding: 6px 6px 6px 11px; }
+    .fp-chk.failed { border: 1.5px solid var(--bad); }
+    .fp-chk-q { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.3; }
+    .fp-seg { display: flex; gap: 3px; flex-shrink: 0; }
+    .fp-seg button { width: 52px; height: 44px; border-radius: 6px; background: var(--surf2);
+                     border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+                     font-weight: 700; font-family: var(--font); cursor: pointer; padding: 0; }
+    .fp-seg button.on-pass { background: rgba(var(--ok-rgb),.16); border: 1.5px solid var(--ok); color: var(--ok-fg); }
+    .fp-seg button.on-fail { background: rgba(var(--bad-rgb),.16); border: 1.5px solid var(--bad); color: var(--bad-fg); }
+
+    #fp-save-panel { flex-shrink: 0; background: var(--surf); border-top: 1px solid var(--border);
+                     padding: 7px 12px calc(7px + var(--safe-b)); display: flex;
+                     flex-direction: column; gap: 6px; }
+    .fp-overall { display: flex; align-items: center; justify-content: center; gap: 7px;
+                  font-size: 11px; color: var(--muted); }
+    .fp-overall .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .add-ladder-btn.fail { background: var(--bad); }
+
+    #fp-items-panel { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                      padding: 8px 12px calc(8px + var(--safe-b)); display: flex;
+                      flex-direction: column; gap: 6px; }
+    #fp-items-list { display: flex; flex-direction: column; gap: 6px; }
+    .fp-item { background: var(--surf); border: 1px solid var(--border); border-radius: 8px;
+               padding: 9px 12px 8px; display: flex; flex-direction: column; gap: 3px; }
+    .fp-item.failed { background: rgba(var(--bad-rgb),.05); border-color: rgba(var(--bad-rgb),.35); }
+    .fp-item-top { display: flex; gap: 6px; align-items: baseline; }
+    .fp-item-sn { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .fp-item-meta { font-size: 11px; color: var(--muted); }
+    .fp-item-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+    .fp-item-badge.pass { color: var(--ok-fg); }
+    .fp-item-badge.fail { color: var(--bad-fg); }
+    .fp-photo-add { width: 104px; height: 104px; border-radius: 9px; border: 1px dashed var(--border);
+                    background: var(--surf); color: var(--muted); display: flex; flex-direction: column;
+                    align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+                    font-size: 11px; font-weight: 600; font-family: var(--font); flex-shrink: 0; }
+    .fp-photo-thumb { width: 104px; height: 104px; border-radius: 9px; border: 1px solid var(--border);
+                      object-fit: cover; flex-shrink: 0; }
+    .fp-pending { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+    .fp-pending.warn { color: var(--bad-fg); }
+
+    /* ── Auth + first sync ── */
+    /* Scrolls, and starts at the top rather than centring.
+       Centring a fixed-height column inside a viewport that HALVES when the
+       Android keyboard opens pushes the inputs off the top and leaves the card
+       filling the screen — which is what "a white box covering the fields"
+       was. Starting at the top and allowing scroll means the keyboard just
+       makes the page shorter, and the focused field scrolls into view. */
+    .auth-wrap { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+                 display: flex; flex-direction: column; justify-content: flex-start;
+                 gap: 12px; padding: 24px 22px calc(28px + var(--safe-b)); max-width: 460px;
+                 margin: 0 auto; width: 100%; }
+    /* Tall screens with no keyboard still look composed rather than top-heavy. */
+    @media (min-height: 720px) { .auth-wrap { justify-content: center; } }
+    /* Once the keyboard is up there is no room for centring, whatever the
+       screen's full height says. */
+    @media (max-height: 560px) {
+      .auth-wrap { justify-content: flex-start; padding-top: 14px; gap: 9px; }
+      .auth-head { margin-bottom: 0; }
+      .auth-mark { width: 36px; height: 36px; font-size: 18px; border-radius: 10px; }
+      .auth-logo { font-size: 21px; }
+      .auth-tag, .auth-note { display: none; }
+      .auth-card { padding: 13px 14px; }
+      .auth-label { margin: 9px 0 4px; }
+      .auth-input { padding: 10px 12px; }
+      .auth-primary { margin-top: 12px; padding: 12px; }
+    }
+    .auth-logo { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+    .auth-head { display: flex; align-items: center; gap: 13px; margin-bottom: 4px; }
+    .auth-mark { width: 46px; height: 46px; flex: none; border-radius: 13px; display: grid;
+                 place-items: center; font-size: 23px; font-weight: 800; color: #fff;
+                 background: linear-gradient(145deg, var(--accent, #4f6ef7), #7a5cf0); }
+    .auth-tag { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    .auth-card { background: var(--surf); border: 1px solid var(--border); border-radius: 14px;
+                 padding: 18px 16px; }
+    .auth-card-quiet { background: transparent; }
+    .auth-card-title { font-size: 15.5px; font-weight: 700; }
+    .auth-card-sub { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 3px; }
+
+    .auth-label { display: block; font-size: 11px; color: var(--muted); letter-spacing: .06em;
+                  text-transform: uppercase; margin: 14px 0 5px; }
+    /* 16px keeps iOS from zooming the whole page when the field takes focus. */
+    .auth-input { width: 100%; font-size: 16px; padding: 13px 14px; border-radius: 10px;
+                  background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+    .auth-input:focus { outline: none; border-color: var(--accent, #4f6ef7); }
+
+    .auth-primary { width: 100%; margin-top: 18px; padding: 15px; border: 0; border-radius: 11px;
+                    font-size: 16px; font-weight: 700; color: #fff; cursor: pointer;
+                    background: var(--accent, #4f6ef7); }
+    .auth-secondary { width: 100%; margin-top: 14px; padding: 14px; border-radius: 11px;
+                      font-size: 15px; font-weight: 600; cursor: pointer;
+                      background: transparent; color: var(--fg); border: 1px solid var(--border); }
+    .auth-secondary:active, .auth-primary:active { opacity: .85; }
+    .auth-note { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin-top: 12px; }
+
+    /* A divider that says these are alternatives, not a step and a way out. */
+    .auth-or { display: flex; align-items: center; gap: 12px; color: var(--muted);
+               font-size: 12px; margin: 4px 0; }
+    .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    /* Whether one record reached the server. Small, quiet, and absent
+       entirely on a phone that does not sync — a mark on every line about a
+       feature the tech has chosen not to use is noise. */
+    .up { font-size: 11px; font-weight: 700; margin-left: 7px; vertical-align: middle; }
+    .up-ok   { color: var(--ok-fg, #3fb950); }
+    .up-wait { color: var(--muted); }
+    .up-bad  { color: var(--bad-fg, #f85149); }
+
+    /* Whose work this is, shown only on a phone carrying more than one
+       person's. A job somebody else captured is dimmed and says so: it can be
+       opened and exported, but it uploads under them, not under whoever is
+       signed in now. */
+    .job-owner { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .job-owner.other { color: var(--warn-fg, #d29922); }
+    .job-card.not-mine { opacity: .72; }
+
+    .jobs-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 10px; }
+    .jf-btn { background: var(--surf); color: var(--fg); border: 1px solid var(--border);
+              border-radius: 999px; padding: 6px 13px; font-size: 12.5px; font-weight: 600; }
+    .jf-btn.on { border-color: var(--accent, #4f6ef7); color: var(--accent, #4f6ef7); }
+    .jf-note { flex: 1; min-width: 180px; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+
+    .jobs-upload { display: flex; align-items: center; gap: 10px; margin: 0 0 10px;
+                   padding: 11px 13px; border-radius: 11px; background: var(--surf);
+                   border: 1px solid var(--border); }
+    .jobs-upload.warn { border-color: rgba(var(--bad-rgb), .45); }
+    .ju-text { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.45; }
+    .ju-sub  { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+    .ju-btn  { flex: none; background: var(--accent, #4f6ef7); color: #fff; border: 0;
+               border-radius: 9px; padding: 10px 16px; font-size: 14px; font-weight: 700; }
+    .ju-btn:disabled { opacity: .6; }
+
+    /* What is still owed, named rather than counted. */
+    #waiting-list { margin: 8px 0 4px; max-height: 210px; overflow-y: auto;
+                    border: 1px solid var(--border); border-radius: 8px; }
+    .wait-row { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+                border-bottom: 1px solid var(--border); font-size: 13px; }
+    .wait-row:last-child { border-bottom: 0; }
+    .wait-row .wr-sn { font-weight: 600; }
+    .wait-row .wr-meta { color: var(--muted); font-size: 11px; margin-left: auto; text-align: right; }
+    .wait-row.bad .wr-meta { color: var(--bad-fg); }
+
+    .auth-sub { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+    .auth-msg { font-size: 12.5px; line-height: 1.45; color: var(--muted); min-height: 18px; }
+    .auth-msg.err { color: var(--bad-fg); font-weight: 600; }
+    .sync-bar { height: 6px; border-radius: 3px; background: var(--surf2); overflow: hidden; }
+    .sync-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .sync-status { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+    .sync-status.stale { color: var(--bad-fg); }
   </style>
 </head>
 <body>
@@ -396,12 +848,90 @@
 <!-- ══════════════════════════════════════════════════════
      SCREEN: JOBS
 ══════════════════════════════════════════════════════ -->
+<!-- Sign-in. Only shown when the build is configured to sync; a local-only
+     build goes straight to the jobs list, as it always did. -->
+<div id="screen-auth" class="screen">
+  <div class="auth-wrap">
+    <div class="auth-head">
+      <div class="auth-mark">L</div>
+      <div>
+        <div class="auth-logo">Lia Field</div>
+        <div class="auth-tag">Ladder and fall-protection inspections</div>
+      </div>
+    </div>
+
+    <!-- Two ways to use this app, presented as two choices rather than one
+         path and an escape hatch. A tech who logs on his own phone and hands
+         over a CSV is not a lapsed setup step. -->
+    <div class="auth-card">
+      <div class="auth-card-title">Sign in</div>
+      <div class="auth-card-sub">Your work uploads to your company automatically.</div>
+
+      <label class="auth-label" for="auth-email">Email</label>
+      <input type="email" id="auth-email" class="auth-input" autocomplete="username"
+             autocapitalize="none" autocorrect="off" inputmode="email"
+             placeholder="you@company.com">
+
+      <label class="auth-label" for="auth-pass">Password</label>
+      <input type="password" id="auth-pass" class="auth-input" autocomplete="current-password"
+             placeholder="••••••••">
+
+      <button class="auth-primary" id="btn-sign-in">Sign in</button>
+      <div class="auth-msg" id="auth-msg"></div>
+      <div class="auth-note">
+        Invited by your lead? Use the address the invitation came to. Do this
+        first sign-in where you have signal — your equipment list downloads
+        once, then the app works with none.
+      </div>
+    </div>
+
+    <div class="auth-or"><span>or</span></div>
+
+    <div class="auth-card auth-card-quiet">
+      <div class="auth-card-title">Use it on this phone only</div>
+      <div class="auth-card-sub">
+        Log inspections and share them as a CSV. Nothing is uploaded, and no
+        account is needed. You can sign in later from Settings.
+      </div>
+      <button class="auth-secondary" id="btn-work-offline">Start without an account</button>
+    </div>
+  </div>
+</div>
+
+<!-- First sync. A tech who installs in a dead zone and drives to a site would
+     otherwise have an empty catalogue: every item would look new, and he would
+     be typing all day. So a job cannot start until this has run once. -->
+<div id="screen-sync" class="screen">
+  <div class="auth-wrap">
+    <div class="auth-logo">Getting your equipment list</div>
+    <div class="auth-sub" id="sync-sub">This runs once. After it, the app works with no signal.</div>
+    <div class="sync-bar"><div class="sync-bar-fill" id="sync-fill"></div></div>
+    <div class="auth-msg" id="sync-msg"></div>
+    <button class="add-ladder-btn" id="btn-sync-start">Download</button>
+    <button class="btn-g" id="btn-sync-later" style="margin-top:8px;padding:11px;">Skip for now</button>
+  </div>
+</div>
+
 <div id="screen-jobs" class="screen active">
   <div class="topbar">
-    <span class="topbar-title">Lia Field</span>
+    <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;">
+      <span class="topbar-title" style="flex:none;">Lia Field</span>
+      <span class="sync-status" id="sync-status"></span>
+    </div>
+    <button class="btn-icon help-btn" id="btn-help-jobs" title="Help">?<span class="help-dot" id="help-dot-jobs" style="display:none;"></span></button>
     <button class="btn-p" id="btn-new-job" style="font-size:14px;padding:9px 18px;">+ New Job</button>
   </div>
   <div id="jobs-body">
+    <!-- Everything this phone still owes the server, across every job, with
+         one button. It was buried in a job's own settings, which is the last
+         place a tech looks and the wrong scope: he thinks in "send my day",
+         not "send this job". -->
+    <div id="jobs-upload" class="jobs-upload" style="display:none;">
+      <div class="ju-text" id="jobs-upload-text"></div>
+      <button class="ju-btn" id="btn-upload-all">Upload now</button>
+    </div>
+    <div id="jobs-filters" class="jobs-filters" style="display:none;"></div>
+    <div id="assigned-body"></div>
     <div class="job-empty" id="jobs-empty" style="display:none;">
       No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.
     </div>
@@ -421,6 +951,7 @@
       <input type="text" id="job-wo"   class="topbar-input wo" placeholder="Work Order #" autocomplete="off">
     </div>
     <span class="save-status" id="save-status"></span>
+    <button class="btn-icon help-btn" id="btn-help-detail" title="Help">?<span class="help-dot" id="help-dot-detail" style="display:none;"></span></button>
     <button class="btn-icon" id="btn-settings" title="Custom fields">⚙</button>
   </div>
 
@@ -429,6 +960,10 @@
 
     <div class="form-hdr">
       <span class="form-hdr-label">New Ladder</span>
+      <!-- Appears only while something is focused. Reset was doing this job by
+           accident, and clearing the form is a different thing from putting the
+           keyboard away. -->
+      <button class="clear-form-btn" id="btn-entry-done" style="display:none;">Done</button>
       <button class="clear-form-btn" id="btn-clear-form">Reset</button>
     </div>
 
@@ -444,6 +979,9 @@
       </div>
       <button class="scan-btn" id="btn-scan" style="margin-top:15px;">📷</button>
     </div>
+    <!-- What the catalogue knows about the serial just scanned, or that it knows
+         nothing. Either way the ladder is added: not on file is a first visit. -->
+    <div class="ladder-lookup" id="fi-lookup" style="display:none;"></div>
 
     <!-- Brand | Type | Length on one row -->
     <div class="meta-row-3">
@@ -454,7 +992,7 @@
             <input type="text" id="fi-brand" class="field-input" placeholder="Brand" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-brand">×</button>
           </div>
-          <div class="ac-list drop-up" id="ac-brand-list"></div>
+          <div class="ac-list" id="ac-brand-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -464,7 +1002,7 @@
             <input type="text" id="fi-type" class="field-input" placeholder="Type" autocomplete="off">
             <button class="field-clear-x" data-clear="fi-type">×</button>
           </div>
-          <div class="ac-list drop-up" id="ac-type-list"></div>
+          <div class="ac-list" id="ac-type-list"></div>
         </div>
       </div>
       <div class="field-ig">
@@ -495,10 +1033,109 @@
       </div>
     </div>
 
+    <!-- BSI checkboxes, rendered by renderFlags() -->
+    <div class="flag-row" id="flag-row"></div>
+
     <!-- Custom fields injected dynamically -->
     <div id="custom-fields-form"></div>
 
   </div><!-- /form-panel -->
+
+  <!-- ── Fall protection capture ──────────────────────────────────────────── -->
+
+  <!-- Four ways in. A tap is fastest, but a tag can be missing or unreadable, so
+       scanning and typing stay first-class — and New adds an item outright,
+       rather than making the tech scan something and be told it is not on file. -->
+  <div id="fp-input-panel" style="display:none;">
+    <div class="fp-ways" id="fp-ways-row">
+      <button class="fp-way primary" id="fp-btn-tap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>Tap
+      </button>
+      <button class="fp-way" id="fp-btn-scan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>Scan
+      </button>
+      <button class="fp-way" id="fp-btn-type">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Type
+      </button>
+      <button class="fp-way new" id="fp-btn-new">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
+      </button>
+    </div>
+    <!-- Tapping through a rack: the reader stays on, each tap brings up the item
+         being inspected, and the next tap passes it. Offered alongside single
+         tap, never instead of it: some techs work item by item. -->
+    <button class="fp-batch-start" id="fp-btn-batch" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M9 17h6M12 14v6"/></svg>
+      Tap through — the next tap passes the last
+    </button>
+    <div class="fp-typed" id="fp-typed-row" style="display:none;">
+      <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-p" id="fp-btn-lookup" style="font-size:13px;padding:8px 14px;">Find</button>
+    </div>
+    <div class="fp-hint" id="fp-hint"></div>
+  </div>
+
+  <!-- Tap-through. Replaces the four ways while it is running. A tap puts the
+       item on screen as the one being inspected, every check at passing; the
+       NEXT tap records it as passed. Fail is the only thing he presses for a
+       defect, and Add info the only thing for an item we know too little about. -->
+  <div id="fp-batch-panel" style="display:none;">
+    <div class="fp-batch-hdr">
+      <span class="fp-batch-live"><span class="fp-batch-dot" id="fp-batch-dot"></span><span id="fp-batch-live-txt">Listening</span></span>
+      <span class="fp-batch-count" id="fp-batch-count"></span>
+    </div>
+    <div class="fp-batch-last" id="fp-batch-last"></div>
+    <div class="fp-batch-acts" id="fp-batch-cur" style="display:none;">
+      <button class="fp-batch-act fail big" id="fp-btn-batch-fail">Fail</button>
+      <button class="fp-batch-act info big" id="fp-btn-batch-edit">Edit info</button>
+    </div>
+    <!-- An item with no tag, or a tag that will not read: scanned or typed, it
+         goes through the run exactly as a tap would, and passes the one before. -->
+    <div class="fp-batch-acts" id="fp-batch-ways">
+      <button class="fp-batch-act" id="fp-btn-batch-scan">Scan instead</button>
+      <button class="fp-batch-act" id="fp-btn-batch-type">Type instead</button>
+    </div>
+    <div class="fp-typed" id="fp-batch-typed" style="display:none;">
+      <input type="text" id="fp-batch-serial" class="field-input" placeholder="Serial number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-p" id="fp-btn-batch-find" style="font-size:13px;padding:8px 14px;">Next</button>
+    </div>
+    <div class="fp-batch-acts">
+      <button class="fp-batch-act" id="fp-btn-batch-arm" style="display:none;">Keep tapping</button>
+      <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last pass</button>
+      <button class="fp-batch-act done" id="fp-btn-batch-stop">Finish</button>
+    </div>
+    <div class="fp-hint" id="fp-batch-hint"></div>
+  </div>
+
+  <!-- The record, from the device's own copy of last year's inspection.
+       Read-only by DEFAULT, not permanently: a stray touch must not rewrite last
+       year's data on a part the tech is only confirming, but Edit unlocks it. -->
+  <div id="fp-record" style="display:none;"></div>
+  <div id="fp-edit-form" style="display:none;"></div>
+
+  <div id="fp-checks-panel" style="display:none;">
+    <div class="fp-checks-hdr">
+      <span class="recent-hdr-label" id="fp-checks-label">Checks</span>
+      <span class="fp-checks-note">All pass unless you say otherwise</span>
+    </div>
+    <div id="fp-checks-list"></div>
+  </div>
+
+  <div id="fp-save-panel" style="display:none;">
+    <div class="fp-overall" id="fp-overall"></div>
+    <button class="add-ladder-btn" id="fp-btn-save">Pass &amp; Next Item</button>
+    <button class="btn-g" id="fp-btn-fail-cancel" style="display:none;width:100%;margin-top:6px;">It passed — cancel</button>
+  </div>
+
+  <div id="fp-items-panel" style="display:none;">
+    <div class="recent-hdr">
+      <span class="recent-hdr-label" id="fp-items-hdr">Items (0)</span>
+      <span class="fp-pending" id="fp-pending" style="display:none;"></span>
+    </div>
+    <div id="fp-items-list"></div>
+  </div>
 
   <!-- PANEL 2: Parts grid + manual input -->
   <div id="parts-panel">
@@ -508,7 +1145,7 @@
       <div class="ac-wrap">
         <input type="text" id="fi-part-manual" class="field-input"
                placeholder="Other part #…" autocomplete="off">
-        <div class="ac-list drop-up" id="ac-part-list"></div>
+        <div class="ac-list" id="ac-part-list"></div>
       </div>
       <input type="number" id="fi-part-qty" value="1" min="1" max="99" inputmode="numeric">
       <button class="parts-add-btn" id="btn-add-part-manual" title="Add to ladder">+</button>
@@ -519,6 +1156,9 @@
   <!-- PANEL 3: Add button (above ladder list so no scrolling needed) -->
   <div id="add-btn-panel">
     <button class="add-ladder-btn" id="btn-add-ladder">+ Add Ladder</button>
+    <!-- Adds this one and reopens the camera for the next: a rack of ladders is
+         scan, parts, one tap, repeat. -->
+    <button class="add-ladder-btn next" id="btn-add-next">Add &amp; Scan Next</button>
     <button class="cancel-edit-btn" id="btn-cancel-edit">Cancel</button>
   </div>
 
@@ -528,10 +1168,32 @@
       <span class="recent-hdr-label" id="ladders-hdr">Ladders (0)</span>
       <button class="btn-share" id="btn-share-csv">↑ Share CSV</button>
     </div>
+    <!-- What has not reached the server yet. Fall protection has had this
+         since sync existed; ladders never uploaded at all, so there was
+         nothing to count. -->
+    <div class="fp-pending" id="ladder-pending" style="display:none;"></div>
     <div id="ladders-list"></div>
   </div>
 
 </div><!-- /screen-detail -->
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: HELP
+     The manual, the sample workflows, and the ticket thread with the
+     developer. One screen with several views — see help-ui.js — so that
+     reading a topic and then asking about it does not lose your place, and
+     so Back means one obvious thing.
+══════════════════════════════════════════════════════ -->
+<div id="screen-help" class="screen">
+  <div class="topbar">
+    <button class="back-btn" id="help-back">← Back</button>
+    <span class="topbar-title" id="help-title" style="flex:1;min-width:0;">Help</span>
+    <button class="btn-icon help-btn" id="help-btn-tickets" title="My messages">✉<span class="help-badge" id="help-tickets-badge" style="display:none;"></span></button>
+  </div>
+  <div id="help-scroll">
+    <div id="help-body"></div>
+  </div>
+</div>
 
 <!-- Scan overlay -->
 <div class="scan-overlay hidden" id="scan-overlay">
@@ -599,11 +1261,138 @@
     </div>
 
   </div>
+  <!-- Shown when this phone could sync but nobody has signed in. Without it,
+       local-only is a one-way door: the sign-in screen is never reachable
+       again after it has been stepped past once. -->
+  <div id="signin-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
+    <button class="btn-p" id="btn-go-signin" style="padding:11px;">Sign in to upload</button>
+    <div class="auth-sub" id="signin-pending" style="font-size:12.5px;"></div>
+  </div>
+  <div id="sync-actions" style="display:none; flex-direction:column; gap:6px; margin-bottom:12px;">
+    <button class="btn-g" id="btn-refresh-catalog" style="padding:11px;">Refresh equipment list</button>
+    <!-- The one above asks for what changed since last time. This asks for
+         everything, which is what you want when something looks missing and
+         "trust the bookmark" is the thing you are trying to get past. -->
+    <button class="btn-g" id="btn-redownload-catalog" style="padding:11px;">Download the whole list again</button>
+
+    <div class="auth-sub" id="upload-state" style="margin-top:10px;"></div>
+    <button class="btn-g" id="btn-upload-now" style="padding:11px;">Upload waiting work</button>
+    <button class="btn-g" id="btn-resend-job" style="padding:11px;">Re-send this job</button>
+    <button class="btn-g" id="btn-show-waiting" style="padding:11px;">Show what is waiting</button>
+    <div id="waiting-list" style="display:none;"></div>
+
+    <button class="btn-g" id="btn-sign-out" style="padding:11px; margin-top:10px; color:var(--bad-fg); border-color:rgba(var(--bad-rgb),.3);">Sign out</button>
+    <div class="auth-msg" id="settings-sync-msg"></div>
+  </div>
   <button class="btn-ok sheet-done" id="btn-close-settings">Done</button>
 </div>
 
 <!-- Parts Library Sheet -->
 <div class="sheet-backdrop hidden" id="lib-backdrop"></div>
+<!-- New-job scope chooser -->
+<!-- Removal from service. A photo is required; the reason comes from the checks
+     that failed, so the tech does not retype it; a note is offered, never demanded. -->
+<div class="settings-sheet hidden" id="fp-condemn-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">Removal from service</div>
+  <div class="sheet-desc" id="fp-condemn-why"></div>
+  <div class="sheet-fields">
+    <div class="field-ig">
+      <div class="field-label">Photo evidence — required</div>
+      <div id="fp-photo-row" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="fp-photo-add" id="fp-btn-photo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>Add photo</span>
+        </button>
+      </div>
+      <input type="file" id="fp-photo-input" accept="image/*" capture="environment" style="display:none;">
+    </div>
+    <div class="field-ig">
+      <div class="field-label">Note — optional</div>
+      <div class="field-ig-wrap">
+        <input type="text" id="fp-condemn-note" class="field-input"
+               placeholder="Anything worth adding…" autocomplete="off">
+      </div>
+    </div>
+    <div class="fp-hint">Kept on this phone until it uploads with the rest of your work. Kept for 2 years.</div>
+  </div>
+  <button class="btn-p sheet-done" id="fp-btn-confirm-condemn" style="background:var(--bad);">Confirm Removal</button>
+  <button class="btn-g sheet-done" id="fp-btn-cancel-condemn" style="margin-top:6px;">Back to checks</button>
+</div>
+
+<!-- A failed item with no photo is not recorded. The one alert the app raises:
+     leaving it is how an item that failed stays in service on paper. -->
+<div class="settings-sheet hidden" id="fp-alert" role="alertdialog" aria-labelledby="fp-alert-ttl">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="fp-alert-ttl" style="color:var(--bad-fg);">Failed item — no photo</div>
+  <div class="sheet-desc" id="fp-alert-msg"></div>
+  <button class="btn-p sheet-done" id="fp-alert-go" style="background:var(--bad);">Take the photo</button>
+  <button class="btn-g sheet-done" id="fp-alert-leave" style="margin-top:6px;">Leave — don't record it</button>
+</div>
+
+<!-- A tag whose hyperlink matched nothing. The link is shown first because it is
+     the one thing the tech can act on unaided; whatever we managed to fetch from
+     it is shown as a CLAIM, never as an inspection. The three buttons are the
+     whole decision: inspect it, keep the link for later, or set it aside. -->
+<div class="settings-sheet hidden" id="fp-link-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="fp-link-ttl">Tag not on file</div>
+  <div class="sheet-fields" id="fp-link-body"></div>
+  <button class="btn-p sheet-done" id="fp-btn-link-inspect">Inspect this item</button>
+  <button class="btn-g sheet-done" id="fp-btn-link-save" style="margin-top:6px;">Save the link only</button>
+  <button class="btn-g sheet-done" id="fp-btn-link-ignore" style="margin-top:6px;">Skip this one</button>
+</div>
+
+<!-- Writing our own tag onto a piece of equipment.
+     Everything about to be written is shown BEFORE the phone touches the tag:
+     the write is a physical, one-shot act on a customer's harness, and a tech
+     who finds out afterwards that the label was wrong has to peel a tag off. -->
+<div class="settings-sheet hidden" id="tw-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="tw-ttl">Write tag</div>
+  <div class="sheet-desc" id="tw-desc"></div>
+  <div class="sheet-fields">
+    <div class="field-ig">
+      <div class="field-label">Label printed on the tag</div>
+      <div class="field-ig-wrap">
+        <input type="text" id="tw-label" class="field-input" placeholder="e.g. FP158354"
+               autocomplete="off" autocapitalize="characters" autocorrect="off">
+        <button class="field-clear-x" data-clear="tw-label">×</button>
+      </div>
+    </div>
+    <div class="tw-warn" id="tw-warn" style="display:none;"></div>
+    <div class="tw-preview" id="tw-preview"></div>
+  </div>
+  <button class="btn-p sheet-done" id="tw-btn-write">Hold phone to tag</button>
+  <button class="btn-g sheet-done" id="tw-btn-cancel" style="margin-top:6px;">Cancel</button>
+</div>
+
+<div class="settings-sheet hidden" id="scope-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl">New job</div>
+  <div class="sheet-desc">Ladders and fall protection are always separate work orders, so a job covers one or the other.</div>
+  <button class="scope-opt" data-scope="ladder">
+    <div class="scope-opt-name">Ladder Repair</div>
+    <div class="scope-opt-desc">Serial, brand, type, length and parts — the existing flow.</div>
+  </button>
+  <button class="scope-opt" data-scope="fall_protection">
+    <div class="scope-opt-name">Fall Protection</div>
+    <div class="scope-opt-desc">Harnesses, lanyards and similar — per-item inspection checks.</div>
+  </button>
+  <button class="btn-g sheet-done" id="btn-cancel-scope">Cancel</button>
+</div>
+
+<!-- What the rest of the team has already done on this job. Read-only, and
+     only reaches this phone when the lead turned sharing on — the filtering is
+     in job_detail() on the server, not here. -->
+<div class="settings-sheet hidden" id="team-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="team-ttl">On this job</div>
+  <div class="sheet-desc" id="team-desc"></div>
+  <div class="sheet-fields" id="team-list"></div>
+  <button class="btn-g sheet-done" id="btn-close-team">Done</button>
+</div>
+
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
@@ -616,1225 +1405,31 @@
   <button class="btn-ok sheet-done" id="btn-close-library">Done</button>
 </div>
 
-<script>
-// ════════════════════════════════════════════════════════════════
-// Utilities
-// ════════════════════════════════════════════════════════════════
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-function goScreen(name) {
-  ['jobs','detail'].forEach(s => $(`screen-${s}`).classList.toggle('active', s === name));
-}
-
-// ── localStorage helpers ──────────────────────────────────────────────────────
-function loadJobs() {
-  try { return JSON.parse(localStorage.getItem('lia-field-jobs') || '{}'); }
-  catch { return {}; }
-}
-function saveJobs(all) { localStorage.setItem('lia-field-jobs', JSON.stringify(all)); }
-
-function loadCustomFields() {
-  try { return JSON.parse(localStorage.getItem('lia-custom-fields') || '[]'); }
-  catch { return []; }
-}
-function saveCustomFields(f) { localStorage.setItem('lia-custom-fields', JSON.stringify(f)); }
-
-// ── Theme ─────────────────────────────────────────────────────────────────────
-function loadTheme() { return localStorage.getItem('lia-theme') || 'light'; }
-function saveTheme(t) { localStorage.setItem('lia-theme', t); }
-function applyTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  const mc = document.querySelector('meta[name="theme-color"]');
-  if (mc) mc.content = t === 'light' ? '#ffffff' : '#4f6ef7';
-}
-applyTheme(loadTheme());
-
-// ── Sound system ──────────────────────────────────────────────────────────────
-function loadSounds() {
-  try { return JSON.parse(localStorage.getItem('lia-sounds') || '{}'); } catch { return {}; }
-}
-function saveSounds(s) { localStorage.setItem('lia-sounds', JSON.stringify(s)); }
-let _audioCtx = null;
-function getAudioCtx() {
-  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return _audioCtx;
-}
-const _soundDefs = {
-  ding: ctx => {
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sine'; o.frequency.value = 880;
-    g.gain.setValueAtTime(0.3, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-    o.start(); o.stop(ctx.currentTime + 0.45);
-  },
-  beep: ctx => {
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'square'; o.frequency.value = 1200;
-    g.gain.setValueAtTime(0.12, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-    o.start(); o.stop(ctx.currentTime + 0.1);
-  },
-  double: ctx => {
-    [0, 0.14].forEach(d => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.type = 'square'; o.frequency.value = 1200;
-      g.gain.setValueAtTime(0, ctx.currentTime + d);
-      g.gain.linearRampToValueAtTime(0.12, ctx.currentTime + d + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.1);
-      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.12);
-    });
-  },
-  chime: ctx => {
-    [[880,0],[1100,0.12],[1320,0.24]].forEach(([f,d]) => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.18, ctx.currentTime + d);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.35);
-      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.36);
-    });
-  },
-  buzz: ctx => {
-    // Low descending buzz — deliberately the opposite character of the
-    // bright success tones, so a failed scan is unmistakable by ear alone.
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(320, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.3);
-    g.gain.setValueAtTime(0.16, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.34);
-    o.start(); o.stop(ctx.currentTime + 0.34);
-  }
-};
-function playSound(event) {
-  const prefs = loadSounds();
-  const defaults = { ladder: 'chime', scanFail: 'buzz' };
-  const choice = prefs[event] ?? defaults[event] ?? 'beep';
-  if (choice === 'none') return;
-  try {
-    const ctx = getAudioCtx();
-    if (ctx.state === 'suspended') ctx.resume().then(() => _soundDefs[choice]?.(ctx));
-    else _soundDefs[choice]?.(ctx);
-  } catch(_) {}
-}
-
-// ── Parts library ─────────────────────────────────────────────────────────────
-function loadPartsLibrary() {
-  try { const s = localStorage.getItem('lia-parts-library'); return s ? JSON.parse(s) : null; }
-  catch { return null; }
-}
-function savePartsLibrary(lib) { localStorage.setItem('lia-parts-library', JSON.stringify(lib)); }
-
-function getLibrary() {
-  let lib = loadPartsLibrary();
-  if (lib) {
-    let dirty = false;
-    // Migration: backfill L33 for existing installs
-    if (!lib.some(p => p.name.toLowerCase() === 'l33')) {
-      lib.push({ name: 'L33', favorited: false, defaultQty: 2 });
-      dirty = true;
-    }
-    // Migration: assign slot order to favorited parts that don't have one
-    const favs = lib.filter(p => p.favorited);
-    if (favs.some(p => p.order == null)) {
-      [...favs].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-               .forEach((p, i) => { p.order = i + 1; });
-      dirty = true;
-    }
-    if (dirty) savePartsLibrary(lib);
-    return lib;
-  }
-  lib = PARTS_SEED.map(p => ({ ...p }));
-  // Migrate old lia-quick-parts if present
-  try {
-    const old = JSON.parse(localStorage.getItem('lia-quick-parts') || 'null');
-    if (Array.isArray(old)) {
-      const existing = new Set(lib.map(p => p.name.toLowerCase()));
-      for (const n of old) if (!existing.has(n.toLowerCase())) lib.push({ name: n, favorited: true, defaultQty: 1 });
-    }
-  } catch {}
-  savePartsLibrary(lib);
-  return lib;
-}
-
-function getFavoritedParts() {
-  return getLibrary().filter(p => p.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-}
-
-function normalizeOrders(lib) {
-  lib.filter(p => p.favorited)
-     .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-     .forEach((p, i) => { p.order = i + 1; });
-}
-
-function ensureInLibrary(name) {
-  const lib = getLibrary();
-  if (!lib.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    lib.push({ name, favorited: false, defaultQty: 1 });
-    savePartsLibrary(lib);
-  }
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-const BRAND_OPTIONS = [
-  'Little Giant','Werner','Louisville','Featherlite','Bauer','DeWalt',
-  'Gorilla','Cosco','Tricam','Metaltech','Xtend+Climb','Telesteps',
-  'Bathey','Davidson','Alco-Lite','Duo-Safety','Youngman','Zarges','ProMaster'
-];
-const TYPE_OPTIONS = [
-  'Extension','Step','Combination','Multi-Position','Straight',
-  'Platform','Attic','Podium','Trestle','Articulated','Rolling','Folding','Hook'
-];
-// ── Parts library seed (from Batavia work-order data) ─────────────────────────
-// favorited = shown as a quick-tap button; defaultQty = first-tap quantity
-const PARTS_SEED = [
-  { name: 'M23',      favorited: true,  defaultQty: 1 },
-  { name: 'M16',      favorited: true,  defaultQty: 1 },
-  { name: 'RC',       favorited: true,  defaultQty: 1 },
-  { name: 'R28L',     favorited: true,  defaultQty: 1 },
-  { name: 'Hlm100',   favorited: true,  defaultQty: 1 },
-  { name: 'Lgh123WP', favorited: true,  defaultQty: 1 },
-  { name: 'LGE26p',   favorited: true,  defaultQty: 1 },
-  { name: 'Lgh92',    favorited: true,  defaultQty: 1 },
-  { name: 'B74',      favorited: true,  defaultQty: 1 },
-  { name: 'SLS',      favorited: true,  defaultQty: 2 },
-  { name: 'S375',     favorited: true,  defaultQty: 1 },
-  { name: 'M13',      favorited: false, defaultQty: 1 },
-  { name: 'M200',     favorited: false, defaultQty: 1 },
-  { name: 'R28',      favorited: false, defaultQty: 1 },
-  { name: 'Lgh123c',  favorited: false, defaultQty: 1 },
-  { name: 'Lgh26p',   favorited: false, defaultQty: 1 },
-  { name: 'Lge26p',   favorited: false, defaultQty: 1 },
-  { name: 'Lgh36b',   favorited: false, defaultQty: 1 },
-  { name: 'PTS',      favorited: false, defaultQty: 1 },
-  // Blue Ridge
-  { name: 'PM36',    favorited: false, defaultQty: 1 },
-  { name: 'PMCD4',   favorited: false, defaultQty: 1 },
-  { name: 'W44',     favorited: false, defaultQty: 1 },
-  { name: 'G13',     favorited: false, defaultQty: 1 },
-  { name: 'W36-B',   favorited: false, defaultQty: 1 },
-  { name: 'L18i',    favorited: false, defaultQty: 1 },
-  // Northern Tier
-  { name: 'Hom200',  favorited: false, defaultQty: 1 },
-  { name: 'Levelers',favorited: false, defaultQty: 1 },
-  { name: 'Lge123',  favorited: false, defaultQty: 1 },
-  { name: 'Lge36b',  favorited: false, defaultQty: 1 },
-  { name: 'LGE43',   favorited: false, defaultQty: 1 },
-  { name: 'LGE55',   favorited: false, defaultQty: 1 },
-  { name: 'B92',     favorited: false, defaultQty: 1 },
-  { name: 'B72',     favorited: false, defaultQty: 1 },
-  { name: 'Lge70r',  favorited: false, defaultQty: 1 },
-  { name: 'L33',     favorited: false, defaultQty: 2 },
-];
-
-// ════════════════════════════════════════════════════════════════
-// Jobs Screen
-// ════════════════════════════════════════════════════════════════
-function renderJobList() {
-  const all    = loadJobs();
-  const sorted = Object.values(all).sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  const body   = $('jobs-body');
-  [...body.querySelectorAll('.job-card')].forEach(el => el.remove());
-  $('jobs-empty').style.display = sorted.length === 0 ? '' : 'none';
-  sorted.forEach(job => {
-    const count = (job.ladders || []).length;
-    const date  = job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : '';
-    const card  = document.createElement('div');
-    card.className = 'job-card';
-    card.innerHTML = `
-      <div class="job-card-info">
-        <div class="job-card-name">${esc(job.name || 'Untitled Job')}</div>
-        <div class="job-card-meta">${job.workOrderNum ? `WO# ${esc(job.workOrderNum)} · ` : ''}${count} ladder${count !== 1 ? 's' : ''} · ${date}</div>
-      </div>
-      <div class="job-actions">
-        <button class="btn-p" style="font-size:13px;padding:7px 12px;" data-open="${esc(job.id)}">Open</button>
-        <button class="btn-g" style="font-size:13px;padding:7px 10px;color:var(--err);border-color:rgba(var(--err-rgb),.3);" data-del="${esc(job.id)}">✕</button>
-      </div>
-    `;
-    card.querySelector('[data-open]').addEventListener('click', () => openJob(job.id));
-    card.querySelector('[data-del]').addEventListener('click', e => {
-      e.stopPropagation();
-      if (!confirm(`Delete "${job.name || 'Untitled Job'}"?`)) return;
-      const all = loadJobs(); delete all[job.id]; saveJobs(all);
-      renderJobList();
-    });
-    body.appendChild(card);
-  });
-}
-
-$('btn-new-job').addEventListener('click', () => {
-  const id  = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const job = { id, name: '', workOrderNum: '', ladders: [], createdAt: now, updatedAt: now };
-  const all = loadJobs(); all[id] = job; saveJobs(all);
-  openJob(id);
-});
-
-// ════════════════════════════════════════════════════════════════
-// Job Detail
-// ════════════════════════════════════════════════════════════════
-let _job          = null;
-let _saveTimer    = null;
-let _currentParts = new Map();
-let _editingIdx   = -1;
-
-function openJob(id) {
-  const all = loadJobs();
-  _job = all[id];
-  if (!_job) { goScreen('jobs'); return; }
-  $('job-name').value = _job.name || '';
-  $('job-wo').value   = _job.workOrderNum || '';
-  setSaveStatus('');
-  clearFormAll();
-  goScreen('detail');
-  renderLadderList();
-  renderPartButtons();
-  renderCustomFieldsForm();
-  $('fi-serial').focus();
-}
-
-$('btn-back').addEventListener('click', () => {
-  saveNow();
-  goScreen('jobs');
-  renderJobList();
-});
-
-// ── Save ──────────────────────────────────────────────────────────────────────
-function scheduleSave() {
-  setSaveStatus('saving…');
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(saveNow, 800);
-}
-
-function saveNow() {
-  if (!_job) return;
-  clearTimeout(_saveTimer);
-  _job.name         = $('job-name').value.trim();
-  _job.workOrderNum = $('job-wo').value.trim();
-  _job.updatedAt    = new Date().toISOString();
-  const all = loadJobs(); all[_job.id] = _job; saveJobs(all);
-  setSaveStatus('saved');
-}
-
-function setSaveStatus(text) {
-  const el = $('save-status');
-  el.textContent = text === 'saved' ? 'Saved' : text;
-  el.className   = 'save-status' + (text === 'saved' ? ' saved' : '');
-}
-
-$('job-name').addEventListener('input', scheduleSave);
-$('job-wo').addEventListener('input',   scheduleSave);
-
-// ── Form clear ────────────────────────────────────────────────────────────────
-function clearEntryForm() {
-  ['fi-serial','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
-  const qty = $('fi-part-qty'); if (qty) qty.value = '1';
-  _qtyExplicit = false;
-  document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
-  updateSerialWarnState();
-  _currentParts = new Map();
-  renderPartButtons();
-  renderSelectedParts();
-}
-
-function clearFormAll() {
-  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
-  const qty = $('fi-part-qty'); if (qty) qty.value = '1';
-  _qtyExplicit = false;
-  document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
-  updateSerialWarnState();
-  _currentParts = new Map();
-  renderPartButtons();
-  renderSelectedParts();
-}
-
-$('btn-clear-form').addEventListener('click', clearFormAll);
-
-// × clear buttons
-document.addEventListener('click', e => {
-  const x = e.target.closest('.field-clear-x[data-clear]');
-  if (!x) return;
-  const target = $(x.dataset.clear);
-  if (target) { target.value = ''; target.focus(); }
-  if (x.dataset.clear === 'fi-serial') updateSerialWarnState();
-});
-
-// Serial numbers are digits-only; flag anything else so the user knows to
-// double-check or re-scan. Returns true when the current value is suspect.
-function updateSerialWarnState() {
-  const el = $('fi-serial');
-  const bad = /\D/.test(el.value);
-  el.classList.toggle('serial-warn', bad);
-  return bad;
-}
-$('fi-serial').addEventListener('input', updateSerialWarnState);
-
-// ── Autocomplete ──────────────────────────────────────────────────────────────
-function setupAutocomplete(inputId, listId, options) {
-  const input = $(inputId);
-  const list  = $(listId);
-  let focusedIdx = -1;
-
-  function showList(q) {
-    const f = q.toLowerCase();
-    const matches = f ? options.filter(o => o.toLowerCase().includes(f)) : options;
-    if (!matches.length) { list.classList.remove('open'); return; }
-    list.innerHTML = ''; focusedIdx = -1;
-    matches.forEach(o => {
-      const item = document.createElement('div');
-      item.className = 'ac-item';
-      item.textContent = o;
-      item.addEventListener('mousedown', e => { e.preventDefault(); input.value = o; list.classList.remove('open'); });
-      item.addEventListener('touchstart', e => { e.preventDefault(); input.value = o; list.classList.remove('open'); }, { passive: false });
-      list.appendChild(item);
-    });
-    list.classList.add('open');
-  }
-
-  input.addEventListener('input',  () => showList(input.value));
-  input.addEventListener('focus',  () => { input.select(); showList(input.value); });
-  input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
-  input.addEventListener('keydown', e => {
-    const items = list.querySelectorAll('.ac-item');
-    if (!items.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
-      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
-      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      focusedIdx = Math.max(focusedIdx - 1, 0);
-      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
-      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
-      e.preventDefault();
-      input.value = items[focusedIdx].textContent;
-      list.classList.remove('open');
-    } else if (e.key === 'Escape') { list.classList.remove('open'); }
-  });
-}
-
-setupAutocomplete('fi-brand', 'ac-brand-list', BRAND_OPTIONS);
-setupAutocomplete('fi-type',  'ac-type-list',  TYPE_OPTIONS);
-
-// ── Part buttons ──────────────────────────────────────────────────────────────
-function renderPartButtons() {
-  const grid = $('parts-grid');
-  grid.innerHTML = '';
-  const favs = getFavoritedParts();
-  if (!favs.length) {
-    grid.innerHTML = '<div class="parts-empty-msg">No favorites — tap ★ in the library (☰) to pin parts here.</div>';
-    return;
-  }
-  favs.forEach(({ name, defaultQty = 1 }) => {
-    const qty = _currentParts.get(name) || 0;
-    const btn = document.createElement('button');
-    btn.className = 'part-btn' + (qty > 0 ? ' active' : '');
-    const dLabel = defaultQty > 1 ? `<span class="pb-dqty">(${defaultQty})</span>` : '';
-    btn.innerHTML = (qty > 0 ? `<span class="pb-count">${qty}</span>` : '') + esc(name.toUpperCase()) + dLabel;
-    btn.addEventListener('click', () => {
-      const cur = _currentParts.get(name) || 0;
-      // Each tap adds the catalog qty: a ×2 part counts 2, 4, 6…
-      _currentParts.set(name, cur + defaultQty);
-      renderPartButtons(); renderSelectedParts();
-    });
-    grid.appendChild(btn);
-  });
-}
-
-function renderSelectedParts() {
-  const container = $('parts-selected');
-  container.innerHTML = '';
-  _currentParts.forEach((qty, name) => {
-    if (qty <= 0) return;
-    const chip = document.createElement('span');
-    chip.className = 'part-chip';
-    chip.innerHTML = `${esc(name.toUpperCase())}${qty > 1 ? ` ×${qty}` : ''} <button class="part-chip-x" title="Remove">×</button>`;
-    chip.querySelector('.part-chip-x').addEventListener('click', e => {
-      e.stopPropagation();
-      _currentParts.delete(name); renderPartButtons(); renderSelectedParts();
-    });
-    // Tap the chip to type the exact installed count instead of tapping repeatedly
-    chip.addEventListener('click', () => {
-      const cur = _currentParts.get(name) || 1;
-      chip.innerHTML = `${esc(name.toUpperCase())} ×<input type="number" class="chip-qty-input" min="0" max="99" inputmode="numeric" value="${cur}">`;
-      const inp = chip.querySelector('input');
-      inp.focus(); inp.select();
-      let done = false;
-      const commit = () => {
-        if (done) return; done = true;
-        const v = parseInt(inp.value, 10);
-        if (!isNaN(v)) {
-          if (v > 0) _currentParts.set(name, Math.min(v, 99));
-          else _currentParts.delete(name);
-        }
-        renderPartButtons(); renderSelectedParts();
-      };
-      inp.addEventListener('blur', commit);
-      inp.addEventListener('keydown', e2 => {
-        if (e2.key === 'Enter') { e2.preventDefault(); inp.blur(); }
-        else if (e2.key === 'Escape') { done = true; renderSelectedParts(); }
-      });
-    }, { once: true });
-    container.appendChild(chip);
-  });
-}
-
-// ── Custom fields form ────────────────────────────────────────────────────────
-function renderCustomFieldsForm() {
-  const container = $('custom-fields-form');
-  container.innerHTML = '';
-  const fields = loadCustomFields();
-  if (!fields.length) return;
-  // Lay out custom fields two per row
-  for (let i = 0; i < fields.length; i += 2) {
-    const row = document.createElement('div');
-    row.className = 'meta-row-2';
-    [fields[i], fields[i+1]].forEach(name => {
-      if (!name) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'field-ig';
-      wrap.innerHTML = `
-        <div class="field-label">${esc(name)}</div>
-        <div class="field-ig-wrap">
-          <input type="text" class="field-input cf-input" data-cf="${esc(name)}"
-                 placeholder="${esc(name)}…" autocomplete="off">
-          <button class="field-clear-x" style="border:none;background:none;"
-                  onclick="this.previousElementSibling.value='';this.previousElementSibling.focus();">×</button>
-        </div>
-      `;
-      row.appendChild(wrap);
-    });
-    container.appendChild(row);
-  }
-}
-
-// ── Add Ladder / Save Edits ───────────────────────────────────────────────────
-$('btn-add-ladder').addEventListener('click', () => { if (_editingIdx >= 0) saveEdits(); else addLadder(); });
-$('btn-cancel-edit').addEventListener('click', cancelEdit);
-
-function setEditMode(editing) {
-  $('btn-add-ladder').textContent = editing ? 'Save Edits' : '+ Add Ladder';
-  $('btn-cancel-edit').style.display = editing ? 'block' : 'none';
-}
-
-function buildLadderFromForm(existingId) {
-  const parts = [];
-  _currentParts.forEach((qty, name) => { if (qty > 0) parts.push({ name, qty }); });
-  const customFields = {};
-  document.querySelectorAll('.cf-input').forEach(input => {
-    const v = input.value.trim();
-    if (input.dataset.cf && v) customFields[input.dataset.cf] = v;
-  });
-  return {
-    id:         existingId || crypto.randomUUID(),
-    serialNum:  $('fi-serial').value.trim(),
-    brand:      $('fi-brand').value.trim(),
-    type:       $('fi-type').value.trim(),
-    length:     $('fi-length').value.trim(),
-    locationId: $('fi-loc').value.trim(),
-    desc:       $('fi-desc').value.trim(),
-    customFields,
-    parts,
-  };
-}
-
-function addLadder() {
-  const serial = $('fi-serial').value.trim();
-  if (!serial) {
-    const el = $('fi-serial');
-    el.focus(); el.style.borderColor = 'var(--err)';
-    setTimeout(() => { el.style.borderColor = ''; }, 1200);
-    return;
-  }
-  if (!_job.ladders) _job.ladders = [];
-  _job.ladders.unshift(buildLadderFromForm());
-  clearEntryForm();
-  renderLadderList();
-  scheduleSave();
-  playSound('ladder');
-  $('fi-serial').focus();
-}
-
-function saveEdits() {
-  const serial = $('fi-serial').value.trim();
-  if (!serial) {
-    const el = $('fi-serial');
-    el.focus(); el.style.borderColor = 'var(--err)';
-    setTimeout(() => { el.style.borderColor = ''; }, 1200);
-    return;
-  }
-  const existingId = _job.ladders[_editingIdx]?.id;
-  _job.ladders[_editingIdx] = buildLadderFromForm(existingId);
-  _editingIdx = -1;
-  setEditMode(false);
-  clearEntryForm();
-  renderLadderList();
-  scheduleSave();
-  $('fi-serial').focus();
-}
-
-function cancelEdit() {
-  _editingIdx = -1;
-  setEditMode(false);
-  clearEntryForm();
-  renderLadderList();
-  $('fi-serial').focus();
-}
-
-// ── Ladder list (shows all, newest first) ─────────────────────────────────────
-function renderLadderList() {
-  const container = $('ladders-list');
-  container.innerHTML = '';
-  const ladders = _job.ladders || [];
-  $('ladders-hdr').textContent = `Ladders (${ladders.length})`;
-  if (!ladders.length) {
-    container.innerHTML = '<div class="no-ladders">No ladders added yet</div>';
-    return;
-  }
-  ladders.forEach((l, idx) => {
-    const meta = [l.brand, l.type, l.length ? l.length + ' ft' : '', l.locationId].filter(Boolean).join(' · ');
-    const partsHtml = (l.parts || []).length
-      ? l.parts.map(p => `<span class="badge-part">${esc(p.name.toUpperCase())}${p.qty > 1 ? ` ×${p.qty}` : ''}</span>`).join('')
-      : '<span style="color:var(--muted);font-size:10px;font-style:italic;">no parts</span>';
-    const cfPairs = Object.entries(l.customFields || {});
-    const cfHtml  = cfPairs.length ? cfPairs.map(([k,v]) => `${esc(k)}: ${esc(v)}`).join(' · ') : '';
-    const card = document.createElement('div');
-    const isEditing = idx === _editingIdx;
-    card.className = 'ladder-card' + (isEditing ? ' lc-editing expanded' : '');
-    card.innerHTML = `
-      <div class="lc-body">
-        <div class="lc-top">
-          <span class="lc-sn">${esc(l.serialNum)}</span>
-          ${meta ? `<span class="lc-meta">${esc(meta)}</span>` : ''}
-        </div>
-        <div class="lc-parts">${partsHtml}</div>
-        ${cfHtml ? `<div class="lc-custom">${cfHtml}</div>` : ''}
-      </div>
-      <div class="lc-actions">
-        <button class="lc-edit">Edit</button>
-        <button class="lc-dup">Duplicate</button>
-        <button class="lc-del">Delete</button>
-      </div>
-    `;
-    // Tap card body to expand/collapse; action buttons don't propagate
-    card.addEventListener('click', e => {
-      if (e.target.closest('.lc-actions')) return;
-      const opening = !card.classList.contains('expanded');
-      container.querySelectorAll('.ladder-card.expanded').forEach(c => c.classList.remove('expanded'));
-      if (opening) card.classList.add('expanded');
-    });
-    card.querySelector('.lc-edit').addEventListener('click', e => { e.stopPropagation(); editLadder(idx); });
-    card.querySelector('.lc-dup').addEventListener('click',  e => { e.stopPropagation(); duplicateLadder(idx); });
-    card.querySelector('.lc-del').addEventListener('click',  e => {
-      e.stopPropagation();
-      _job.ladders.splice(idx, 1);
-      renderLadderList();
-      scheduleSave();
-    });
-    container.appendChild(card);
-  });
-}
-
-// ── CSV export ────────────────────────────────────────────────────────────────
-function buildCsv(job) {
-  const ladders = job.ladders || [];
-  const cfSet = new Set(loadCustomFields());
-  ladders.forEach(l => Object.keys(l.customFields || {}).forEach(k => cfSet.add(k)));
-  const cfNames = [...cfSet];
-  const maxParts = ladders.reduce((m, l) => Math.max(m, (l.parts || []).length), 0);
-  const partCols = Array.from({ length: maxParts }, (_, i) => String.fromCharCode(65 + i));
-  const headers  = [
-    'Row#', 'Serial #', 'Location ID', 'Brand', 'Type', 'Length', 'Description',
-    ...cfNames.map(n => `[Custom] ${n}`), ...partCols,
-  ];
-  const escape = v => {
-    const s = String(v ?? '');
-    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const dataRows = ladders.map((l, idx) => {
-    const row = {
-      'Row#': idx + 1, 'Serial #': l.serialNum || '',
-      'Location ID': l.locationId || '', 'Brand': l.brand || '',
-      'Type': l.type || '', 'Length': l.length || '', 'Description': 'Ladder Repair',
-    };
-    cfNames.forEach(n => { row[`[Custom] ${n}`] = (l.customFields || {})[n] || ''; });
-    (l.parts || []).forEach((p, i) => {
-      row[String.fromCharCode(65 + i)] = p.qty > 1 ? `(${p.qty}) ${p.name}` : (p.name || '');
-    });
-    return headers.map(h => escape(row[h] ?? '')).join(',');
-  });
-  return [headers.map(escape).join(','), ...dataRows].join('\r\n');
-}
-
-$('btn-share-csv').addEventListener('click', async () => {
-  if (!_job) return;
-  saveNow();
-  const csv      = buildCsv(_job);
-  const safeName = (_job.name || 'job').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'job';
-  const fileName = `${safeName}.csv`;
-  const blob     = new Blob([csv], { type: 'text/csv' });
-  const file     = new File([blob], fileName, { type: 'text/csv' });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: fileName }); return; }
-    catch (err) { if (err.name === 'AbortError') return; }
-  }
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.href = url; a.download = fileName; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-});
-
-// ── Barcode scanner ───────────────────────────────────────────────────────────
-// In-app live viewfinder — getUserMedia, auto-decode every 400 ms, tap for
-// immediate attempt. BarcodeDetector (Android Chrome) → ZXing (iOS + others).
-// Falls back to OS camera photo if getUserMedia is denied.
-
-let _scanStream = null, _scanInterval = null, _scanDecoding = false, _scanFailCount = 0;
-
-// DecodeHintType.TRY_HARDER (enum value 3) isn't exported by the @zxing/browser UMD
-// bundle, but the numeric value is stable. It makes the 1D readers also try a
-// 90°-rotated pass, so vertically-oriented barcodes decode as reliably as horizontal ones.
-const ZXING_HINTS = new Map([[3, true]]);
-
-$('btn-scan').addEventListener('click', startScan);
-$('btn-scan-cancel').addEventListener('click', stopScan);
-$('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
-
-async function startScan() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-    });
-    const track = stream.getVideoTracks()[0];
-    const caps = track.getCapabilities?.();
-    if (caps?.zoom) {
-      await track.applyConstraints({ advanced: [{ zoom: Math.min(3, caps.zoom.max) }] });
-    }
-    $('scan-video').srcObject = stream;
-    await $('scan-video').play();
-    _scanStream = stream;
-  } catch (_) {
-    $('scan-photo-input-fallback').click();
-    return;
-  }
-  _scanFailCount = 0;
-  _scanDecoding = false;
-  $('scan-hint').textContent = "Aim at barcode — tap if it doesn't auto-read";
-  $('scan-hint').classList.remove('warn');
-  $('scan-overlay').classList.remove('hidden');
-  _scanInterval = setInterval(_autoDecodeTick, 400);
-  $('scan-overlay').addEventListener('click', _manualDecodeTick);
-}
-
-function stopScan() {
-  clearInterval(_scanInterval);
-  _scanInterval = null;
-  $('scan-overlay').removeEventListener('click', _manualDecodeTick);
-  if (_scanStream) {
-    _scanStream.getTracks().forEach(t => t.stop());
-    _scanStream = null;
-  }
-  $('scan-video').srcObject = null;
-  $('scan-overlay').classList.add('hidden');
-}
-
-async function _decodeScanCanvas() {
-  const video = $('scan-video');
-  const canvas = $('scan-canvas');
-  if (!video.videoWidth) return null;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  if ('BarcodeDetector' in window) {
-    try {
-      const bitmap = await createImageBitmap(canvas);
-      const hits = await new BarcodeDetector({
-        formats: ['code_39', 'code_128', 'qr_code', 'ean_13', 'ean_8', 'upc_a'],
-      }).detect(bitmap);
-      bitmap.close?.();
-      if (hits.length) return hits[0].rawValue.trim();
-    } catch (_) {}
-  }
-  // ZXing via JPEG blob URL (iOS + others without BarcodeDetector)
-  try {
-    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.88));
-    const url = URL.createObjectURL(blob);
-    try {
-      const result = await new ZXingBrowser.BrowserMultiFormatReader(ZXING_HINTS).decodeFromImageUrl(url);
-      if (result?.getText()) return result.getText().trim();
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  } catch (_) {}
-  return null;
-}
-
-async function _autoDecodeTick() {
-  if (_scanDecoding) return;
-  _scanDecoding = true;
-  const result = await _decodeScanCanvas().catch(() => null);
-  _scanDecoding = false;
-  if (result) {
-    _onScanSuccess(result);
-  } else {
-    _scanFailCount++;
-    if (_scanFailCount === 10) {
-      $('scan-hint').textContent = 'Move closer or tap to scan now';
-      $('scan-hint').classList.remove('warn');
-    }
-  }
-}
-
-async function _manualDecodeTick(e) {
-  e.stopPropagation();
-  clearInterval(_scanInterval);
-  _scanDecoding = false;
-  const result = await _decodeScanCanvas().catch(() => null);
-  if (result) {
-    _onScanSuccess(result);
-    return;
-  }
-  $('fi-serial').value = '';
-  updateSerialWarnState();
-  playSound('scanFail');
-  $('scan-hint').textContent = "Couldn't read — try again";
-  $('scan-hint').classList.add('warn');
-  await new Promise(r => setTimeout(r, 700));
-  $('scan-hint').classList.remove('warn');
-  $('scan-hint').textContent = "Aim at barcode — tap if it doesn't auto-read";
-  _scanDecoding = false;
-  _scanInterval = setInterval(_autoDecodeTick, 400);
-}
-
-function _onScanSuccess(value) {
-  $('fi-serial').value = value;
-  playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
-  stopScan();
-}
-
-// Fallback: decode a photo from the OS camera (used only when getUserMedia is denied)
-async function _onFallbackPhotoCaptured(e) {
-  const file = e.target.files?.[0];
-  e.target.value = '';
-  if (!file) return;
-  $('scan-hint').textContent = 'Reading photo…';
-  $('scan-hint').classList.remove('warn');
-  $('scan-overlay').classList.remove('hidden');
-  const code = await _decodeImageFile(file);
-  if (code) {
-    $('fi-serial').value = code;
-    playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
-    $('scan-overlay').classList.add('hidden');
-  } else {
-    $('fi-serial').value = '';
-    updateSerialWarnState();
-    playSound('scanFail');
-    $('scan-hint').textContent = "Couldn't read the barcode — try again";
-    $('scan-hint').classList.add('warn');
-    await new Promise(r => setTimeout(r, 1100));
-    $('scan-hint').classList.remove('warn');
-    $('scan-overlay').classList.add('hidden');
-    $('scan-photo-input-fallback').click();
-  }
-}
-
-async function _decodeImageFile(file) {
-  if ('BarcodeDetector' in window) {
-    try {
-      const bitmap = await createImageBitmap(file);
-      const hits = await new BarcodeDetector({
-        formats: ['code_39', 'code_128', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
-      }).detect(bitmap);
-      bitmap.close?.();
-      if (hits.length) return hits[0].rawValue.trim();
-    } catch (_) {}
-  }
-  try {
-    const url = URL.createObjectURL(file);
-    try {
-      const result = await new ZXingBrowser.BrowserMultiFormatReader(ZXING_HINTS).decodeFromImageUrl(url);
-      if (result?.getText()) return result.getText().trim();
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  } catch (_) {}
-  return null;
-}
-
-// ════════════════════════════════════════════════════════════════
-// Settings sheet
-// ════════════════════════════════════════════════════════════════
-$('btn-settings').addEventListener('click',       openSettings);
-$('btn-close-settings').addEventListener('click', closeSettings);
-$('sheet-backdrop').addEventListener('click',     closeSettings);
-
-// Theme toggle
-document.querySelectorAll('.theme-opt').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const t = btn.dataset.t;
-    applyTheme(t); saveTheme(t);
-    document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.t === t));
-  });
-});
-
-// Sound selects — save on change
-['sound-scan-select','sound-ladder-select'].forEach(id => {
-  $(id)?.addEventListener('change', () => {
-    const prefs = loadSounds();
-    prefs.scan   = $('sound-scan-select').value;
-    prefs.ladder = $('sound-ladder-select').value;
-    saveSounds(prefs);
-  });
-});
-
-function openSettings() {
-  // Apply current theme selection
-  const curTheme = loadTheme();
-  document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.t === curTheme));
-  // Apply current sound selections
-  const prefs = loadSounds();
-  $('sound-scan-select').value   = prefs.scan   ?? 'beep';
-  $('sound-ladder-select').value = prefs.ladder  ?? 'chime';
-  renderCfList();
-  $('settings-sheet').classList.remove('hidden');
-  $('sheet-backdrop').classList.remove('hidden');
-  $('settings-scroll').scrollTop = 0;
-}
-
-function closeSettings() {
-  $('settings-sheet').classList.add('hidden');
-  $('sheet-backdrop').classList.add('hidden');
-  renderCustomFieldsForm();
-}
-
-function renderCfList() {
-  const fields = loadCustomFields();
-  const list   = $('cf-list');
-  list.innerHTML = '';
-  if (fields.length === 0) {
-    list.innerHTML = '<div class="cf-empty">No custom fields yet — add one below.</div>';
-    return;
-  }
-  fields.forEach((name, idx) => {
-    const row = document.createElement('div');
-    row.className = 'cf-row';
-    row.innerHTML = `
-      <span class="cf-name">${esc(name)}</span>
-      <button class="cf-del" title="Delete field" data-idx="${idx}">×</button>
-    `;
-    row.querySelector('.cf-del').addEventListener('click', () => {
-      const f = loadCustomFields(); f.splice(idx, 1); saveCustomFields(f); renderCfList();
-    });
-    list.appendChild(row);
-  });
-}
-
-$('btn-add-cf').addEventListener('click', addCustomField);
-$('new-cf-input').addEventListener('keydown', e => { if (e.key === 'Enter') addCustomField(); });
-
-function addCustomField() {
-  const name = $('new-cf-input').value.trim();
-  if (!name) return;
-  const fields = loadCustomFields();
-  if (!fields.includes(name)) { fields.push(name); saveCustomFields(fields); }
-  $('new-cf-input').value = '';
-  renderCfList();
-}
-
-// ── Edit / Duplicate ladder ───────────────────────────────────────────────────
-function fillForm(l, includeSerial) {
-  $('fi-serial').value = includeSerial ? (l.serialNum || '') : '';
-  updateSerialWarnState();
-  $('fi-brand').value  = l.brand      || '';
-  $('fi-type').value   = l.type       || '';
-  $('fi-length').value = l.length     || '';
-  $('fi-loc').value    = l.locationId || '';
-  $('fi-desc').value   = l.desc       || '';
-  const pm = $('fi-part-manual'); if (pm) pm.value = '';
-  _currentParts = new Map();
-  (l.parts || []).forEach(p => _currentParts.set(p.name, p.qty));
-  document.querySelectorAll('.cf-input').forEach(input => {
-    input.value = (input.dataset.cf && l.customFields && l.customFields[input.dataset.cf]) || '';
-  });
-  renderPartButtons(); renderSelectedParts();
-  $('fi-serial').focus();
-}
-
-function editLadder(idx) {
-  const l = _job.ladders[idx];
-  if (!l) return;
-  _editingIdx = idx;
-  setEditMode(true);
-  fillForm(l, true);
-  renderLadderList(); // re-render to show editing highlight
-}
-
-function duplicateLadder(idx) {
-  const l = _job.ladders[idx];
-  if (!l) return;
-  fillForm(l, false); // serial left blank
-}
-
-// ── Manual part input + autocomplete ─────────────────────────────────────────
-// True only when the user actually typed in the qty box — then the number is
-// the exact installed count, not an increment.
-let _qtyExplicit = false;
-
-function addManualPart() {
-  const input = $('fi-part-manual');
-  const raw = input.value.trim();
-  if (!raw) return;
-  const qtyInput = $('fi-part-qty');
-  const lib = getLibrary();
-  const found = lib.find(p => p.name.toLowerCase() === raw.toLowerCase());
-  const partName = found ? found.name : raw;
-  const step = (found && found.defaultQty) || 1;
-  const cur = _currentParts.get(partName) || 0;
-  if (_qtyExplicit) {
-    // User dictated the count — set it outright (type 7 → exactly 7).
-    _currentParts.set(partName, Math.max(1, parseInt(qtyInput?.value, 10) || 1));
-  } else {
-    // Catalog behavior: first add pulls the start qty, repeats add it again (2 → 4 → 6…).
-    _currentParts.set(partName, cur + step);
-  }
-  if (!found) ensureInLibrary(raw);
-  input.value = '';
-  if (qtyInput) qtyInput.value = '1';
-  _qtyExplicit = false;
-  $('ac-part-list').classList.remove('open');
-  renderPartButtons(); renderSelectedParts();
-  input.focus();
-}
-
-$('btn-add-part-manual').addEventListener('click', addManualPart);
-$('fi-part-manual').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
-
-// Qty input: clear on focus, restore 1 if left empty
-$('fi-part-qty').addEventListener('focus', function() { this.value = ''; _qtyExplicit = false; });
-$('fi-part-qty').addEventListener('input', function() { _qtyExplicit = this.value.trim() !== ''; });
-$('fi-part-qty').addEventListener('blur',  function() { if (!this.value || parseInt(this.value) < 1) { this.value = '1'; _qtyExplicit = false; } });
-$('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addManualPart(); } });
-
-(function setupPartAutocomplete() {
-  const input = $('fi-part-manual');
-  const list  = $('ac-part-list');
-  let focusedIdx = -1;
-
-  function showList(q) {
-    const lib = getLibrary();
-    const matches = q
-      ? lib.filter(p => p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 10)
-      : lib.slice(0, 10);
-    if (!matches.length) { list.classList.remove('open'); return; }
-    list.innerHTML = ''; focusedIdx = -1;
-    matches.forEach(p => {
-      const item = document.createElement('div');
-      item.className = 'ac-item';
-      item.dataset.name = p.name;
-      const dq = p.defaultQty || 1;
-      item.innerHTML = esc(p.name) + (dq > 1 ? `<span class="ac-dqty">adds ${dq}</span>` : '');
-      function pickPart(name) {
-        input.value = name;
-        list.classList.remove('open');
-        addManualPart();
-      }
-      item.addEventListener('mousedown', e => { e.preventDefault(); pickPart(p.name); });
-      item.addEventListener('touchstart', e => { e.preventDefault(); pickPart(p.name); }, { passive: false });
-      list.appendChild(item);
-    });
-    list.classList.add('open');
-  }
-
-  input.addEventListener('input',  () => showList(input.value.trim()));
-  input.addEventListener('focus',  () => { input.select(); showList(input.value.trim()); });
-  input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
-  input.addEventListener('keydown', e => {
-    const items = list.querySelectorAll('.ac-item');
-    if (e.key === 'Enter' && !items.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      focusedIdx = Math.min(focusedIdx + 1, items.length - 1);
-      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
-      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      focusedIdx = Math.max(focusedIdx - 1, 0);
-      items.forEach((el,i) => el.classList.toggle('focused', i === focusedIdx));
-      items[focusedIdx]?.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && focusedIdx >= 0 && items[focusedIdx]) {
-      e.preventDefault();
-      input.value = items[focusedIdx].dataset.name;
-      list.classList.remove('open');
-      addManualPart();
-    } else if (e.key === 'Escape') { list.classList.remove('open'); }
-  });
-})();
-
-// ── Parts library sheet ───────────────────────────────────────────────────────
-$('btn-open-library').addEventListener('click',  openLibrary);
-$('btn-close-library').addEventListener('click', closeLibrary);
-$('lib-backdrop').addEventListener('click',      closeLibrary);
-
-function openLibrary()  { renderLibList(); $('lib-sheet').classList.remove('hidden'); $('lib-backdrop').classList.remove('hidden'); }
-function closeLibrary() { $('lib-sheet').classList.add('hidden'); $('lib-backdrop').classList.add('hidden'); }
-
-function renderLibList() {
-  const lib = getLibrary();
-  const list = $('lib-list');
-  list.innerHTML = '';
-  if (!lib.length) { list.innerHTML = '<div class="cf-empty">No parts yet — add one below.</div>'; return; }
-  const favCount = lib.filter(p => p.favorited).length;
-  const sorted = [...lib].sort((a, b) => {
-    if (a.favorited !== b.favorited) return a.favorited ? -1 : 1;
-    if (a.favorited && b.favorited) return (a.order ?? 999) - (b.order ?? 999);
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-  });
-  sorted.forEach(p => {
-    const dqty = p.defaultQty || 1;
-    const row = document.createElement('div');
-    row.className = 'part-lib-row';
-    row.innerHTML = `
-      <button class="star-btn${p.favorited ? ' starred' : ''}" title="${p.favorited ? 'Unfavorite' : 'Favorite'}">${p.favorited ? '★' : '☆'}</button>
-      <span class="part-lib-name">${esc(p.name)}</span>
-      ${p.favorited ? `<div class="lib-pos-wrap">
-        <span class="lib-pos-label">Slot</span>
-        <input class="lib-pos" type="number" min="1" max="${favCount}" value="${p.order ?? 1}" title="Button grid position (1 = first slot)">
-      </div>` : ''}
-      <div class="lib-qty-wrap">
-        <span class="lib-qty-label">×</span>
-        <input class="lib-qty" type="number" min="1" max="99" value="${dqty}" title="Default qty per first tap">
-      </div>
-      <button class="cf-del" title="Remove from library">×</button>
-    `;
-    row.querySelector('.star-btn').addEventListener('click', () => {
-      const libData = getLibrary();
-      const item = libData.find(x => x.name === p.name);
-      if (!item) return;
-      item.favorited = !item.favorited;
-      if (item.favorited) {
-        const maxOrder = libData.filter(x => x.favorited).reduce((m, x) => Math.max(m, x.order ?? 0), 0);
-        item.order = maxOrder + 1;
-      } else {
-        delete item.order;
-        normalizeOrders(libData);
-      }
-      savePartsLibrary(libData);
-      renderLibList(); renderPartButtons();
-    });
-    if (p.favorited) {
-      const posEl = row.querySelector('.lib-pos');
-      posEl.addEventListener('change', () => {
-        const libData = getLibrary();
-        const item = libData.find(x => x.name === p.name);
-        if (!item) return;
-        const favs = libData.filter(x => x.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-        const newPos = Math.max(1, Math.min(favs.length, parseInt(posEl.value, 10) || 1));
-        const idx = favs.indexOf(item);
-        favs.splice(idx, 1);
-        favs.splice(newPos - 1, 0, item);
-        favs.forEach((p, i) => { p.order = i + 1; });
-        savePartsLibrary(libData);
-        renderLibList(); renderPartButtons();
-      });
-    }
-    const qtyEl = row.querySelector('.lib-qty');
-    qtyEl.addEventListener('change', () => {
-      const v = Math.max(1, parseInt(qtyEl.value, 10) || 1);
-      qtyEl.value = v;
-      const libData = getLibrary();
-      const item = libData.find(x => x.name === p.name);
-      if (item) { item.defaultQty = v; savePartsLibrary(libData); }
-      renderPartButtons();
-    });
-    row.querySelector('.cf-del').addEventListener('click', () => {
-      const libData = getLibrary().filter(x => x.name !== p.name);
-      normalizeOrders(libData);
-      savePartsLibrary(libData);
-      renderLibList(); renderPartButtons();
-    });
-    list.appendChild(row);
-  });
-}
-
-$('btn-add-lib-part').addEventListener('click', addLibPart);
-$('new-lib-input').addEventListener('keydown', e => { if (e.key === 'Enter') addLibPart(); });
-
-function addLibPart() {
-  const name = $('new-lib-input').value.trim();
-  if (!name) return;
-  const lib = getLibrary();
-  if (!lib.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    lib.push({ name, favorited: false, defaultQty: 1 });
-    savePartsLibrary(lib);
-  }
-  $('new-lib-input').value = '';
-  renderLibList();
-}
-
-// ── Service worker ────────────────────────────────────────────────────────────
-// Skipped inside Capacitor — the WKWebView/WebView already serves the bundled
-// app offline, so a service worker would just add a redundant caching layer.
-if ('serviceWorker' in navigator && !window.Capacitor?.isNativePlatform()) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
-}
-
-// ── Demo job seed (first launch only) ────────────────────────────────────────
-(function seedDemoJob() {
-  if (localStorage.getItem('lia-demo-seeded')) return;
-  localStorage.setItem('lia-demo-seeded', '1');
-  const now = new Date().toISOString();
-  const id  = 'demo-' + Date.now();
-  const job = {
-    id, name: 'Demo Job — Comcast Northern Tier', workOrderNum: 'WO-12345',
-    createdAt: now, updatedAt: now,
-    ladders: [
-      {
-        id: crypto.randomUUID(), serialNum: '1509167', brand: 'LG', type: 'Ext',
-        length: '28', locationId: '10', desc: 'Needs leveler swap too',
-        customFields: {},
-        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'Hom200', qty: 1 },
-                { name: 'Lgh92', qty: 1 }, { name: 'Levelers', qty: 1 }],
-      },
-      {
-        id: crypto.randomUUID(), serialNum: '1460300', brand: 'LG', type: 'Ext',
-        length: '28', locationId: '27', desc: '',
-        customFields: {},
-        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'LGE55', qty: 1 },
-                { name: 'PTS', qty: 1 }],
-      },
-      {
-        id: crypto.randomUUID(), serialNum: '1358340', brand: 'LG', type: 'Ext',
-        length: '28', locationId: '34', desc: 'Levels swap — confirm with supervisor',
-        customFields: {},
-        parts: [{ name: 'M23', qty: 1 }, { name: 'RC', qty: 1 }, { name: 'Lge36b', qty: 1 },
-                { name: 'Lge123', qty: 1 }, { name: 'Lge43', qty: 1 }, { name: 'SLS', qty: 2 }],
-      },
-      {
-        id: crypto.randomUUID(), serialNum: '1553138', brand: 'Blue Bird', type: 'Comp',
-        length: '8', locationId: '14', desc: '',
-        customFields: {},
-        parts: [{ name: 'M16', qty: 1 }, { name: 'SLS', qty: 1 }],
-      },
-      {
-        id: crypto.randomUUID(), serialNum: '1626146', brand: 'Blue Bird', type: 'Ext',
-        length: '28', locationId: '9', desc: '',
-        customFields: {},
-        parts: [{ name: 'M23', qty: 1 }, { name: 'R28L', qty: 1 }, { name: 'B92', qty: 1 }],
-      },
-    ],
-  };
-  const all = loadJobs(); all[id] = job; saveJobs(all);
-})();
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-renderJobList();
-</script>
+<script src="./js/tag-link.js"></script>
+<script src="./js/device-cache.js"></script>
+<script src="./js/tag-stock.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/sound.js"></script>
+<script src="./js/parts-catalog.js"></script>
+<script src="./js/catalog.js"></script>
+<script src="./js/jobs.js"></script>
+<script src="./js/entry.js"></script>
+<script src="./js/list.js"></script>
+<script src="./js/nfc.js"></script>
+<script src="./js/photos.js"></script>
+<script src="./js/sync.js"></script>
+<script src="./js/sync-state.js"></script>
+<script src="./js/fp-types.js"></script>
+<script src="./js/fp.js"></script>
+<script src="./js/help.js"></script>
+<script src="./js/support.js"></script>
+<script src="./js/assignments.js"></script>
+<script src="./js/tag-write.js"></script>
+<script src="./js/help-ui.js"></script>
+<script src="./js/export.js"></script>
+<script src="./js/scan.js"></script>
+<script src="./js/sheets.js"></script>
+<script src="./js/app.js"></script>
+<script src="./js/boot.js"></script>
 </body>
 </html>

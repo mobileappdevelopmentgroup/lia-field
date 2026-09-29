@@ -36,4 +36,11 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- NFC. The plugin declares no permissions of its own, so they belong here.
+         required="false" is deliberate: plenty of phones have no NFC hardware,
+         and the app must still install and run on them — reading a tag is one of
+         four ways to identify an item, never the only one. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 </manifest>

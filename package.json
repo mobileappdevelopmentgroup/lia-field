@@ -1,6 +1,6 @@
 {
   "name": "lia-ladder-import-assistant",
-  "version": "1.6.2",
+  "version": "1.14.0",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -8,12 +8,24 @@
     "start": "tsx src/main.ts",
     "codegen": "playwright codegen https://bsiwebapp.com",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test src/*.test.ts src/core/*.test.ts",
+    "test:field": "node field-app/test/device-cache.test.mjs && node field-app/test/modules.test.mjs && node field-app/test/fp-types.test.mjs && node field-app/test/fp-capture.test.mjs && node field-app/test/sync.test.mjs && node field-app/test/boot.test.mjs && node field-app/test/upload.test.mjs && node field-app/test/export.test.mjs && node field-app/test/dropdown.test.mjs && node field-app/test/catalog.test.mjs && node field-app/test/nfc.test.mjs && node field-app/test/tag-link.test.mjs && node field-app/test/tag-write.test.mjs && node field-app/test/help.test.mjs && node field-app/test/assignments.test.mjs && node field-app/test/fp-batch.test.mjs && node field-app/test/ladder-next.test.mjs && node field-app/test/photos.test.mjs && node field-app/test/tag-stock.test.mjs && node field-app/test/farewell.test.mjs",
+    "schema": "./supabase/tools/schema-snapshot.sh",
+    "schema:check": "./supabase/tools/schema-snapshot.sh --check",
+    "test:sql": "./supabase/test/run.sh",
+    "play:upload": "node tools/play-upload.mjs",
+    "capture:help": "node field-app/tools/capture-help-shots.mjs",
+    "sync:www": "node field-app/capacitor/scripts/sync-www.mjs",
+    "check:www": "node field-app/capacitor/scripts/sync-www.mjs --check",
+    "test:desktop": "node electron/test/columns.test.mjs && node electron/test/catalog.test.mjs && node electron/test/merge-screen.test.mjs && node electron/test/field-work.test.mjs && node electron/test/parts-catalog.test.mjs && node electron/test/support-inbox.test.mjs && node electron/test/cert-views.test.mjs && node electron/test/tags.test.mjs && node electron/test/fp-records.test.mjs && node electron/test/fp-push.test.mjs && node electron/test/job-board.test.mjs && node electron/test/act-as.test.mjs && node electron/test/onboarding.test.mjs && node electron/test/layout.test.mjs && node electron/test/help.test.mjs",
     "build:runner": "esbuild src/electron-runner.ts --bundle --platform=node --format=cjs --outfile=dist/electron-runner.cjs --external:playwright --external:playwright-core",
-    "electron:dev": "npm run build:runner && electron .",
-    "electron:build": "npm run build:runner && electron-builder --mac dmg",
-    "electron:build:win": "npm run build:runner && electron-builder --win nsis",
-    "electron:build:dir": "npm run build:runner && electron-builder --mac dir"
+    "build:core": "esbuild src/core/index.ts --bundle --platform=node --format=cjs --outfile=dist/lia-core.cjs",
+    "build:all": "npm run build:runner && npm run build:core",
+    "electron:dev": "npm run build:all && electron .",
+    "electron:dev:staging": "npm run build:all && LIA_ENV=staging electron .",
+    "electron:build": "npm run build:all && electron-builder --mac dmg",
+    "electron:build:win": "npm run build:all && electron-builder --win nsis",
+    "electron:build:dir": "npm run build:all && electron-builder --mac dir"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
@@ -34,7 +46,7 @@
   "build": {
     "appId": "com.batavia.lia",
     "productName": "Lia",
-    "copyright": "Copyright © 2026 Batavia",
+    "copyright": "Copyright \u00a9 2026 Batavia",
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
@@ -77,6 +89,7 @@
     "files": [
       "electron/**",
       "dist/electron-runner.cjs",
+      "dist/lia-core.cjs",
       "node_modules/**",
       "!node_modules/.cache/**"
     ],

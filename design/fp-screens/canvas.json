@@ -1,0 +1,70 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Inspect \u2014 the 95% case"
+    },
+    {
+      "file": "FailState.dc.html",
+      "x": 510,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "One check failed"
+    },
+    {
+      "file": "Condemn.dc.html",
+      "x": 1020,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Removal from service"
+    },
+    {
+      "file": "NewItem.dc.html",
+      "x": 1530,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "New item \u2014 entered once"
+    },
+    {
+      "file": "ItemList.dc.html",
+      "x": 2040,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Item list"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "the-flow",
+      "x": 0,
+      "y": -210,
+      "w": 900,
+      "text": "THE HAPPY PATH IS TWO TAPS.\n\nTap the tag \u2014 or scan, or type \u2014 and the record comes up from the device's own copy of last year's inspection. Every check already reads Pass. The tech looks at the harness, sees the record agrees, taps Pass & Next.\n\nThe record is read-only by DEFAULT, not permanently: a stray touch cannot rewrite last year's data on a part he is only confirming, but Edit unlocks every field when something has genuinely changed.\n\nThe device holds the whole account's catalogue \u2014 every tech's items, not just the lead's \u2014 so this works with no signal. The app refuses to start a job until it has synced once; without the catalogue every item would look new."
+    },
+    {
+      "id": "fail-path",
+      "x": 1020,
+      "y": -210,
+      "w": 900,
+      "text": "A DEFECTIVE ITEM IS THE ONLY THING THAT COSTS MORE TAPS.\n\nOne Fail flips the whole item \u2014 the tech never sets the overall result \u2014 and the button becomes Add Photo & Remove.\n\nHe does not type why. The check he failed IS the reason, and it is carried through automatically; the database composes it from the failed checks and a client cannot override it, so a certificate always matches what actually failed. A photo is required. A note is there if he wants it, and never demanded."
+    },
+    {
+      "id": "changes",
+      "x": 2040,
+      "y": -210,
+      "w": 440,
+      "text": "Changed this pass: a New button sits beside Tap / Scan / Type, and on the item list, so a brand-new item never has to be scanned and rejected first.\n\nAlso: Edit is a real button on the record; the fail screen asks for a photo, with the reason carried through from the failed check and a note that is optional.\n\nSample data. Check wording is placeholder \u2014 the real set comes from the model's checklist."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

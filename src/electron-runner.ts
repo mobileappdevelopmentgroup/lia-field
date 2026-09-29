@@ -2,9 +2,12 @@
 // All console output is intercepted and sent as JSON events on stdout.
 // Signals are received as JSON lines on stdin.
 
+import fs from 'fs';
 import { run } from './runner.js';
+import { runFpPush } from './fp-runner.js';
 import { setPaused } from './automation.js';
 import type { DiffResult, DiffChoice } from './types.js';
+import type { FpInspectionForBsi } from './core/fp-bsi.js';
 
 // ── stdio interception ────────────────────────────────────────────────────────
 
@@ -79,19 +82,55 @@ async function waitForDiffChoice(diff: DiffResult): Promise<DiffChoice> {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-const csvPath = process.argv[2];
 const logsDir = process.env['BATAVIA_LOGS_DIR'];
 
-if (!csvPath) {
-  send({ type: 'error', message: 'No CSV path provided.' });
-  process.exit(1);
-}
-
-run(csvPath, { waitForAnalyzeReady, waitForDiffChoice }, logsDir)
-  .then((result) => {
-    send({ type: 'complete', ...result });
-  })
-  .catch((err: unknown) => {
-    send({ type: 'error', message: String(err) });
+// Two jobs share this process: the ladder CSV import, and pushing fall
+// protection records onto a work order. The fall protection payload arrives as
+// a FILE rather than on argv — a few hundred records is far past what a command
+// line will carry, and truncation there would silently push a partial run.
+if (process.argv[2] === '--fp') {
+  const payloadPath = process.argv[3];
+  if (!payloadPath) {
+    send({ type: 'error', message: 'No fall protection payload provided.' });
     process.exit(1);
-  });
+  }
+
+  let items: FpInspectionForBsi[];
+  try {
+    items = JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
+  } catch (err: unknown) {
+    send({ type: 'error', message: 'Could not read the records to push: ' + String(err) });
+    process.exit(1);
+  }
+
+  runFpPush(items, {
+    waitForReady: async () => {
+      send({ type: 'waiting-for-ready' });
+      await waitForSignal(); // expects {type:'ready'}
+    },
+    // Sent the instant a box lands so the parent can persist it. If this
+    // process dies on the next item, what already went in is not lost.
+    onPushed: (rec) => send({ type: 'fp-pushed', ...rec }),
+  })
+    .then((result) => { send({ type: 'complete', ...result }); })
+    .catch((err: unknown) => {
+      send({ type: 'error', message: String(err) });
+      process.exit(1);
+    });
+} else {
+  const csvPath = process.argv[2];
+
+  if (!csvPath) {
+    send({ type: 'error', message: 'No CSV path provided.' });
+    process.exit(1);
+  }
+
+  run(csvPath, { waitForAnalyzeReady, waitForDiffChoice }, logsDir)
+    .then((result) => {
+      send({ type: 'complete', ...result });
+    })
+    .catch((err: unknown) => {
+      send({ type: 'error', message: String(err) });
+      process.exit(1);
+    });
+}
