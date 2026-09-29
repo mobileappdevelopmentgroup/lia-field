@@ -227,36 +227,53 @@
         p('You do not type a reason. The check you failed <em>is</em> the reason, and ' +
           'the certificate is written from it — so what the paperwork says always ' +
           'matches what you actually found.'),
-        note('Photos stay on the phone until you are back on wifi, then upload with ' +
-             'everything else. They are kept for two years.'),
+        note('Photos stay on the phone until you have signal, then upload behind ' +
+             'the inspection they belong to. They are shrunk first so they go up ' +
+             'quickly, and kept for two years.'),
       ],
     },
     {
       id: 'fp-batch',
       group: 'Fall protection',
       title: 'Tap-through: working a whole rack',
-      blurb: 'For when you have already inspected everything by hand.',
+      blurb: 'Tap an item, look it over, tap the next. Only a defect costs a press.',
       body: [
-        p('The other way techs work: go down the rack inspecting everything by eye ' +
-          'first, then walk it again tapping each item. Every tap records a pass.'),
-        shot('fp-batch', 'A tap-through run. The count goes up with every tap.'),
-        warn('Only use this when you have <strong>actually inspected</strong> the ' +
-             'items. Every tap puts a passing inspection on record with your name ' +
-             'on it. The phone is the recorder here, not the inspector.'),
-        p('A run stops itself the moment it cannot honestly record a pass:'),
-        steps([
-          'The tag matches nothing we know about.',
-          'The item has no equipment type, so there is no checklist to pass.',
-          'You tap <strong>Fail last</strong>.',
-        ]),
-        p('When it stops, it hands you that one item on the ordinary screen. Deal ' +
-          'with it, and the run picks straight back up where it left off.'),
-        p('<strong>Undo last</strong> takes the last tap back off the record ' +
-          'completely — including out of the upload queue, so nothing can reach ' +
-          'the office claiming it passed.'),
-        note('On iPhone, the reader closes itself every so often — that is Apple, ' +
-             'not the app. Press <strong>Keep tapping</strong> to open it again. ' +
-             'Neither phone reads tags with the screen off.'),
+        p('Start a run and the reader stays on. Tap an item and it comes up on ' +
+          'screen with every check already at pass — you are inspecting it now. ' +
+          'Look it over in your hands.'),
+        shot('fp-batch', 'A tap-through run. The item you tapped is on screen; Fail is the only button you need.'),
+        p('<strong>Good item?</strong> Do nothing. Tap the next one: that tap ' +
+          'records the one before as passed.'),
+        p('<strong>Something wrong?</strong> Press <strong>Fail</strong>. The reader ' +
+          'stops, so the next tap cannot pass it by mistake. Tap every check that ' +
+          'failed, then take the photo. The run carries on after.'),
+        warn('Every tap on to the next item puts a passing inspection on record ' +
+             'with your name on it. If you have not looked at it, press Fail or ' +
+             'Undo — do not tap on.'),
+        p('<strong>Item we do not know?</strong> It still comes up, with ' +
+          '<strong>Add info</strong> beside Fail. Pick the equipment type and type ' +
+          'the serial, and it is recorded like any other when you tap on. Skip it ' +
+          'and tap on anyway, and that one is <em>not</em> recorded — it is counted ' +
+          'as skipped, and its tag link is kept so it comes up next time.'),
+        p('<strong>Edit info</strong> is there on known items too, for when what ' +
+          'we have is wrong.'),
+        p('<strong>Undo last pass</strong> takes the last pass back off the record ' +
+          '— out of the upload queue too — and puts that item back on screen to ' +
+          'fail or correct.'),
+        p('The last item has no next tap. <strong>Pass &amp; finish</strong> ' +
+          'records it and ends the run — and so does leaving the screen: the item ' +
+          'you were looking at is recorded as passed, not lost. Every tap is saved ' +
+          'as it happens, so even if the phone dies, reopening the job picks up ' +
+          'where you were.'),
+        warn('A failed item with no photo is <strong>not recorded</strong> — on ' +
+             'paper it stays in service. So the app will not let you leave one ' +
+             'behind without saying so: it stops you and asks for the photo.'),
+        p('<strong>No tag, or it will not read?</strong> <strong>Scan instead</strong> ' +
+          'or <strong>Type instead</strong>. It works exactly like a tap, including ' +
+          'passing the item before it.'),
+        note('On iPhone, Apple\'s reader sheet sits over the app. Close it to ' +
+             'reach Fail or Add info, and press <strong>Keep tapping</strong> to open ' +
+             'it again. Neither phone reads tags with the screen off.'),
       ],
     },
 
@@ -302,8 +319,13 @@
       title: 'Recording a ladder',
       blurb: 'Serial, details, parts.',
       body: [
-        p('Scan or type the serial. If the ladder is already known, the brand, type ' +
-          'and length come up filled in — check them and move on.'),
+        p('Scan the serial. If the ladder has been inspected before, the brand, type ' +
+          'and length come up filled in, and the office already has them — the ' +
+          'serial is enough. If it never has, the app says so: BSI will need them.'),
+        p('<strong>Add &amp; Scan Next</strong> adds the ladder and opens the camera ' +
+          'again straight away. For a row of ladders: scan, add parts, one tap, ' +
+          'repeat. <strong>+ Add Ladder</strong> adds just the one.'),
+        shot('ladder-next', 'A ladder inspected before: its details are filled in.'),
         shot('ladder-entry', 'Ladder entry. Scan the plate, or type it.'),
         steps([
           'Serial number — scan the plate or type it.',
@@ -379,7 +401,7 @@
           'actually have data, then open and close the app. If it still will not, ' +
           'report it — and do not delete the job.'),
         p('<strong>I recorded the wrong thing.</strong> On a tap-through run, ' +
-          '<strong>Undo last</strong> removes it completely. If it has already ' +
+          '<strong>Undo last pass</strong> takes it back off the record. If it has already ' +
           'uploaded, report it with the serial and the date and it can be ' +
           'corrected at the office.'),
         note('None of these working? Send a ticket. It takes a few seconds and it ' +
@@ -413,15 +435,15 @@
     },
     {
       id: 'wf-fp-batch',
-      title: 'A rack you have already inspected by hand',
-      when: 'Faster, but only honest if you really did inspect them first.',
+      title: 'A rack by tap-through',
+      when: 'The fastest way. One tap per item; a press only for a defect.',
       list: [
-        'Inspect the whole rack by eye first. Set aside anything that fails.',
-        'Start the job, then tap <strong>Tap through a rack</strong>.',
-        'Walk the rack tapping each item. Every tap buzzes and counts.',
-        'When it stops on one, deal with that item on screen and carry on.',
-        'The ones you set aside: do those individually, with photos.',
-        'Tap <strong>Done</strong> when the rack is finished.',
+        'Start the job, then tap <strong>Tap through</strong>.',
+        'Tap the first item. Look it over while it is on screen.',
+        'Good? Tap the next item — that records the first as passed.',
+        'Defect? Press <strong>Fail</strong>, tap what failed, take the photo.',
+        'Not on file? <strong>Add info</strong>, or tap on and it is skipped.',
+        'After the last item, press <strong>Pass &amp; finish</strong>.',
       ],
     },
     {

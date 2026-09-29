@@ -40,6 +40,10 @@ let _fpEditing = false;
 // A tap-through run, or null. See the batch section at the bottom of this file.
 let _fpBatch = null;
 
+// Which job the item on screen belongs to. Opening another job must never write
+// this one's item into it.
+let _fpItemJob = null;
+
 function fpReset() {
   _fpItem = null;
   _fpChecks = [];
@@ -52,12 +56,17 @@ function fpReset() {
 // Everything below the input bar only exists once an item is in hand.
 function fpRenderAll() {
   const has = !!_fpItem;
-  // A run stopped to deal with one item shows that item, not the batch panel:
-  // there is only ever one thing in front of the tech.
-  const batch = !!_fpBatch && !has;
-  ['fp-record', 'fp-checks-panel', 'fp-save-panel'].forEach(id => {
+  // In a run the item on screen is passed by the next tap, so there is no save
+  // button — until the tech presses Fail, when it becomes the removal.
+  const batch = !!_fpBatch;
+  const failing = batch && _fpBatch.failing;
+  ['fp-record', 'fp-checks-panel'].forEach(id => {
     const el = $(id); if (el) el.style.display = has ? '' : 'none';
   });
+  const sp = $('fp-save-panel');
+  if (sp) sp.style.display = has && (!batch || failing) ? '' : 'none';
+  const fc = $('fp-btn-fail-cancel');
+  if (fc) fc.style.display = failing ? '' : 'none';
   const ef = $('fp-edit-form');
   if (ef) ef.style.display = has && _fpEditing ? '' : 'none';
   const rec = $('fp-record');
@@ -73,6 +82,7 @@ function fpRenderAll() {
   if (batch) fpRenderBatch();
   if (has) { fpRenderRecord(); fpRenderEditForm(); fpRenderChecks(); fpRenderSave(); }
   else { fpRenderItems(); fpRenderPending(); }
+  fpPersist();
 }
 
 const fpMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -119,7 +129,10 @@ function fpRenderRecord() {
         <span class="v">${esc(it.suggested_type)} — pick the equipment type to confirm</span></div>` : ''}
     </div>`;
   const btn = $('fp-btn-edit');
-  if (btn) btn.addEventListener('click', () => { _fpEditing = true; fpRenderAll(); });
+  if (btn) btn.addEventListener('click', () => {
+    if (_fpBatch && !_fpBatch.failing) return fpBatchEdit();
+    _fpEditing = true; fpRenderAll();
+  });
   const wt = $('fp-btn-write-tag');
   if (wt) wt.addEventListener('click', () => fpOpenWriteSheet());
 }
@@ -272,20 +285,35 @@ function fpRenderEditForm() {
 
   const done = $('fp-btn-done-edit');
   if (done) done.addEventListener('click', () => {
-    const sn = $('fpf-serial');
-    if (sn) _fpItem.serial_raw = sn.value.trim();
-    FP_FIELDS.forEach(f => {
-      const i = $('fpf-' + f.key);
-      if (i) _fpItem[f.key] = i.value.trim();
-    });
-    const t = fpTypes().bySlug(_fpItem.equipment_type || '');
-    if (t) _fpItem.item_type = t.name;
-    _fpEditing = false;
-    // Changing the type — or the model, which may carry its own list — changes
-    // which checks apply.
-    fpBuildChecks();
+    fpApplyEditForm();
+    // Back to listening, if the form is what stopped it (iOS).
+    if (_fpBatch && !_fpBatch.failing) {
+      const why = fpBatchMissing(_fpItem);
+      fpBatchHint(why ? `Still ${why} — this one will be skipped unless you add it.`
+                      : 'Inspecting. Tap the next item to pass it, or press Fail.', !!why);
+      return fpBatchResume();
+    }
     fpRenderAll();
   });
+}
+
+// Takes what is in the fields onto the item and closes them. Also called when a
+// tap arrives mid-edit in a run: that tap is the tech moving on, and what he had
+// typed is what he meant.
+function fpApplyEditForm() {
+  if (!_fpItem || !_fpEditing) return;
+  const sn = $('fpf-serial');
+  if (sn) _fpItem.serial_raw = sn.value.trim();
+  FP_FIELDS.forEach(f => {
+    const i = $('fpf-' + f.key);
+    if (i) _fpItem[f.key] = i.value.trim();
+  });
+  const t = fpTypes().bySlug(_fpItem.equipment_type || '');
+  if (t) _fpItem.item_type = t.name;
+  _fpEditing = false;
+  // Changing the type — or the model, which may carry its own list — changes
+  // which checks apply.
+  fpBuildChecks();
 }
 
 // One option per type the account has. Sorted as the catalogue orders them, so
@@ -327,6 +355,13 @@ function fpRenderChecks() {
     return;
   }
 
+  // In a run the checks are what the next tap records, and they only open when
+  // the tech says the item failed.
+  const locked = !!_fpBatch && !_fpBatch.failing;
+  const note = document.querySelector('#fp-checks-panel .fp-checks-note');
+  if (note) note.textContent = !_fpBatch ? 'All pass unless you say otherwise'
+    : locked ? 'Passes on the next tap' : 'Tap what failed';
+
   _fpChecks.forEach((c, i) => {
     const failed = c.answer != null && !fpTypes().isPass(c);
     // The two buttons are the two ANSWERS, in their own words. A yes/no
@@ -340,14 +375,15 @@ function fpRenderChecks() {
     row.innerHTML = `
       <div class="fp-chk-q">${esc(c.prompt)}</div>
       <div class="fp-seg">
-        <button class="${cls(true)}"  data-a="1">${esc(yes)}</button>
-        <button class="${cls(false)}" data-a="0">${esc(no)}</button>
+        <button class="${cls(true)}"  data-a="1"${locked ? ' disabled' : ''}>${esc(yes)}</button>
+        <button class="${cls(false)}" data-a="0"${locked ? ' disabled' : ''}>${esc(no)}</button>
       </div>`;
     row.querySelectorAll('[data-a]').forEach(b => {
       b.addEventListener('click', () => {
         _fpChecks[i].answer = b.dataset.a === '1';
         fpRenderChecks();
         fpRenderSave();
+        fpPersist();
       });
     });
     el.appendChild(row);
@@ -378,8 +414,11 @@ function fpRenderSave() {
   }
   const b = $('fp-btn-save');
   if (b) {
-    b.className = 'add-ladder-btn' + (pass ? '' : ' fail');
-    b.textContent = pass ? 'Pass & Next Item' : 'Add Photo & Remove →';
+    // Failing a run's item: nothing to save until a check is marked failed.
+    const waiting = pass && !!_fpBatch && _fpBatch.failing;
+    b.className = 'add-ladder-btn' + (pass && !waiting ? '' : ' fail');
+    b.textContent = waiting ? 'Tap what failed ↑' : pass ? 'Pass & Next Item' : 'Add Photo & Remove →';
+    b.disabled = waiting;
   }
 }
 
@@ -401,6 +440,7 @@ function fpHint(msg, warn) {
 
 function fpAdopt(rec, matched) {
   _fpItem = Object.assign({}, rec, { matched: !!matched });
+  _fpItemJob = _job ? _job.id : null;
   _fpEditing = false;
   fpBuildChecks();
   fpHint('');
@@ -446,7 +486,13 @@ function fpLookup(value, alsoTry, tag) {
     : window.LiaCache.find(candidates[i], 'fall_protection')
         .then(hit => hit || step(i + 1));
 
-  step(0).then(hit => {
+  // Nothing on this device: ask the server, exactly as a tap-through run does.
+  const online = () => fpLookupOnline({
+    serial: tag ? tag.serial : fpSerialCandidate(candidates, tag),
+    ref: tag && tag.ref, url: tag && tag.url, uid: tag && tag.uid,
+  });
+
+  step(0).then(hit => hit || online()).then(hit => {
     if (hit) { fpAdopt(hit, true); fpAttachTag(tag); return; }
     // One of this account's own blank tags. Its chip carries a Google Sheet
     // link, which would otherwise read as somebody else's tag below.
@@ -813,7 +859,18 @@ function fpStageExternal(rec, tag) {
 // the "record the hyperlink and move on" outcome.
 function fpLinkSaveOnly() {
   if (!_fpLink || !_job) return;
-  const tag = _fpLink.tag;
+  fpQueueTagLink(_fpLink.tag, _fpLink.external || null);
+  fpCloseLinkSheet();
+  fpHint('Link saved. Nothing was recorded as an inspection.');
+  _fpLink = null;
+  fpLinkDone();
+}
+
+// Keeps the pairing of a tag to its link without recording an inspection, so
+// the next tap on it resolves. Also what a tap-through run does with an item
+// it had to skip.
+function fpQueueTagLink(tag, claimed) {
+  if (!_job || !tag || !tag.url) return;
   const entry = {
     id: crypto.randomUUID(),
     kind: 'fp_tag_link',
@@ -822,8 +879,8 @@ function fpLinkSaveOnly() {
     public_ref: tag.ref || '',
     serial_num: String(tag.serial || '').trim(),
     work_order_id: (_job && _job.workOrderNum) || null,
-    claimed: (_fpLink.external || null),
-    fetched_at: _fpLink.external ? new Date().toISOString() : null,
+    claimed: claimed || null,
+    fetched_at: claimed ? new Date().toISOString() : null,
     capturedAt: new Date().toISOString(),
   };
   _job.tagLinks = _job.tagLinks || [];
@@ -837,11 +894,6 @@ function fpLinkSaveOnly() {
       payload: fpTagLinkPayload(entry),
     });
   }
-
-  fpCloseLinkSheet();
-  fpHint('Link saved. Nothing was recorded as an inspection.');
-  _fpLink = null;
-  fpLinkDone();
 }
 
 function fpTagLinkPayload(entry) {
@@ -948,6 +1000,10 @@ function fpSave() {
   }
 
   const item = fpMakeItem(_fpItem, type, _fpChecks, 'field');
+  if (_fpBatch && _fpBatch.failing && item.overall_pass) {
+    fpBatchHint('Tap the check that failed — or "It passed" if it did.', true);
+    return;
+  }
   if (!item.overall_pass) {
     // A defective item needs a photo before it can be recorded. Reason comes
     // from the failed checks; a note is offered and never demanded.
@@ -992,6 +1048,11 @@ function fpCommit(item) {
         },
       });
     }
+    // Behind the inspection it belongs to, so the server has the record to file
+    // it against by the time it arrives.
+    if (item.photo && item.photo.id) {
+      root_LiaSync().enqueue({ clientId: item.id + ':photo', kind: 'fp_photo', payload: fpPhotoPayload(item) });
+    }
     fpRenderPending();
   }
 
@@ -1003,13 +1064,60 @@ function fpCommit(item) {
 
   playSound('ladder');
   if (_fpBatch) {
+    fpBatchRecorded(item);
     _fpItem = null; _fpChecks = []; _fpEditing = false;
-    const t = $('fp-typed-row'); if (t) t.style.display = 'none';
-    const i = $('fp-serial-input'); if (i) i.value = '';
-    // The run was paused to deal with this one item, not ended.
+    // A failed item stopped the reader; a passed one never did.
     fpBatchResume();
   } else fpReset();
 }
+
+function fpPhotoPayload(item) {
+  return {
+    photo_id: item.photo.id,
+    serial_num: item.serial_num,
+    // The inspection's own capture time — how record_fp_photo finds it.
+    captured_at: item.capturedAt,
+    photo_captured_at: item.photo.capturedAt || null,
+    bytes: item.photo.bytes || null,
+    width: item.photo.width || null,
+    height: item.photo.height || null,
+  };
+}
+
+// Builds before this one kept the photo itself inside the job, as a data URL in
+// localStorage — where it filled the phone's storage and was never sent. Move
+// each one into the photo store and queue it. Runs once per photo: afterwards
+// the item holds only an id.
+function fpMovePhotosOutOfJobs() {
+  if (!window.LiaPhotos || !window.indexedDB) return Promise.resolve(0);
+  const all = loadJobs();
+  const todo = [];
+  Object.values(all).forEach(job => (job.items || []).forEach(it => {
+    if (it.photo && it.photo.dataUrl && !it.photo.id) todo.push({ job: job, item: it });
+  }));
+  if (!todo.length) return Promise.resolve(0);
+  return todo.reduce((p, t) => p.then(n => {
+    const blob = window.LiaPhotos.blobFromDataUrl(t.item.photo.dataUrl);
+    if (!blob) return n;
+    const id = crypto.randomUUID();
+    return window.LiaPhotos.put({ id: id, blob: blob, bytes: blob.size, capturedAt: t.item.photo.capturedAt || null })
+      .then(() => {
+        t.item.photo = { id: id, bytes: blob.size, capturedAt: t.item.photo.capturedAt || null };
+        const sync = root_LiaSync();
+        if (sync) sync.enqueue({ clientId: t.item.id + ':photo', kind: 'fp_photo', payload: fpPhotoPayload(t.item) });
+        return n + 1;
+      })
+      .catch(() => n);   // left as it was; tried again next start
+  }), Promise.resolve(0)).then(n => {
+    if (!n) return n;
+    // The open job holds its own copy of the items; keep it in step so the
+    // next save does not write the data URLs back.
+    if (_job && all[_job.id]) _job.items = all[_job.id].items;
+    saveJobs(all);
+    return n;
+  });
+}
+setTimeout(() => { fpMovePhotosOutOfJobs().catch(() => {}); }, 0);
 
 function root_LiaSync() { return typeof window !== 'undefined' ? window.LiaSync : null; }
 
@@ -1090,6 +1198,145 @@ function fpRenderItems() {
   });
 }
 
+// ── The item in hand survives the app ───────────────────────────────────────
+// Saved into its job on every change — every tap, every answer, every field
+// typed — so a phone that dies, or an app the OS kills in the background, does
+// not lose the item the tech was holding. Reopening the job picks it up again:
+// see fpRecover.
+function fpSnapshot() {
+  const item = Object.assign({}, _fpItem);
+  if (_fpEditing) fpReadEditForm(item);
+  return {
+    item: item,
+    checks: _fpChecks.map(c => Object.assign({}, c)),
+    batch: !!_fpBatch,
+    failing: !!(_fpBatch && _fpBatch.failing),
+    at: new Date().toISOString(),
+  };
+}
+
+function fpPersist() {
+  if (!_job || !_job.id) return;
+  if (_fpItem) {
+    if (_fpItemJob !== _job.id) return;
+    _job.fpInProgress = fpSnapshot();
+  } else {
+    if (!_job.fpInProgress) return;
+    delete _job.fpInProgress;
+  }
+  // Written straight through, not debounced: a debounce is the window in which
+  // the app dies and the item is lost.
+  try { const all = loadJobs(); all[_job.id] = _job; saveJobs(all); } catch (_) {}
+}
+
+// What is in the fields right now, without closing them.
+function fpReadEditForm(into) {
+  const sn = $('fpf-serial');
+  if (sn) into.serial_raw = sn.value.trim();
+  FP_FIELDS.forEach(f => { const i = $('fpf-' + f.key); if (i) into[f.key] = i.value.trim(); });
+  return into;
+}
+
+// Typing is saved too, a moment after he stops.
+(function fpPersistTyping() {
+  const ef = $('fp-edit-form');
+  let t = null;
+  if (ef) ef.addEventListener('input', () => { clearTimeout(t); t = setTimeout(fpPersist, 300); });
+})();
+
+// Called when a fall protection job opens, with what it had in hand when it
+// was last left — by the tech, or by the app dying.
+function fpRecover(p) {
+  if (!p || !p.item || !_job) return;
+  const failed = (p.checks || []).some(c => c.answer != null && c.answer !== c.pass_answer);
+  _fpItem = Object.assign({}, p.item);
+  _fpItemJob = _job.id;
+  _fpChecks = (p.checks || []).map(c => Object.assign({}, c));
+  _fpEditing = false;
+  const name = _fpItem.serial_raw || _fpItem.tag_label || 'The item you were on';
+
+  // Tapped in a run and never failed: the run's own rule — it was looked at,
+  // and it passed. Exactly what the next tap or leaving the screen would do.
+  if (p.batch && !p.failing && !failed) {
+    const why = fpBatchMissing(_fpItem);
+    if (!why) {
+      const type = fpCurrentType();
+      fpCommit(fpMakeItem(_fpItem, type, fpTypes().startingAnswers(type), 'field_batch'));
+      fpHint(`${name} was on screen when the app closed. Recorded as passed.`);
+      return;
+    }
+    if (_fpItem.tag_url) fpQueueTagLink({ url: _fpItem.tag_url, uid: _fpItem.nfc_tag_uid,
+                                          ref: _fpItem.public_ref, serial: _fpItem.serial_raw }, null);
+    _fpItem = null; _fpChecks = [];
+    fpRenderAll();
+    fpHint(`${name} was on screen when the app closed. Not recorded — ${why}.`, true);
+    return;
+  }
+
+  fpRenderAll();
+  if (p.failing || failed) {
+    fpAlertNoPhoto(`${name} was marked failed, and no photo has been taken. It is not recorded. ` +
+                   `Mark what failed and take the photo now.`, null);
+  } else {
+    fpHint(`Picked up where you left off: ${name}.`);
+  }
+}
+
+// ── Failed, with no photo ───────────────────────────────────────────────────
+// The one thing the app interrupts for. A failed item with no photo is not
+// recorded at all — a removal from service needs its evidence — so an item the
+// tech failed and walked away from is an item that silently vanishes from the
+// record while still being in service. That is worth an alert.
+function fpFailedUnrecorded() {
+  if (!_fpItem || _fpItemJob !== (_job && _job.id)) return false;
+  if (_fpBatch) return !!_fpBatch.failing;
+  return _fpChecks.some(c => c.answer != null && c.answer !== c.pass_answer);
+}
+
+let _fpLeaveOk = false;
+
+// Asked by goScreen before leaving the job. True means "stay": the alert is up.
+function fpBlockLeave(name) {
+  if (_fpLeaveOk) { _fpLeaveOk = false; return false; }
+  if (!fpFailedUnrecorded()) return false;
+  const who = _fpItem.serial_raw || _fpItem.tag_label || 'This item';
+  fpAlertNoPhoto(`${who} is marked failed, but it has no photo, so it is not recorded. ` +
+                 `If you leave now it stays in service on paper.`, () => {
+    _fpItem = null; _fpChecks = []; _fpEditing = false;
+    if (_fpBatch) _fpBatch.failing = false;
+    fpPersist();
+    _fpLeaveOk = true;
+    goScreen(name);
+    if (name === 'jobs' && typeof renderJobList === 'function') renderJobList();
+  });
+  return true;
+}
+
+// `leave` — a way out that abandons the item, offered only when the alert is
+// standing in front of navigation. Without it there is one button: deal with it.
+function fpAlertNoPhoto(msg, leave) {
+  playSound('scanFail');
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (_) {}
+  $('fp-alert-msg').textContent = msg;
+  const lv = $('fp-alert-leave');
+  lv.style.display = leave ? '' : 'none';
+  lv.onclick = () => { fpCloseAlert(); if (leave) leave(); };
+  $('fp-alert-go').onclick = () => {
+    fpCloseAlert();
+    // Straight to the photo if he has already marked what failed; otherwise
+    // the checks are open in front of him.
+    if (_fpItem && _fpChecks.some(c => c.answer != null && c.answer !== c.pass_answer)) fpSave();
+    else fpHint('Tap every check that failed, then take the photo.', true);
+  };
+  $('fp-alert').classList.remove('hidden');
+  $('sheet-backdrop').classList.remove('hidden');
+}
+
+function fpCloseAlert() {
+  $('fp-alert').classList.add('hidden');
+  $('sheet-backdrop').classList.add('hidden');
+}
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
 (function fpWire() {
@@ -1146,32 +1393,18 @@ function fpRenderItems() {
 // back to him. A photo is required; a note is offered and never demanded.
 
 let _fpPending = null;   // the item awaiting a photo
-let _fpPhoto = null;     // { dataUrl, bytes, capturedAt }
+let _fpPhoto = null;     // { blob, bytes, width, height, capturedAt, previewUrl }
 
-// Phones produce 3–12 MP images. Downscale before storing — a truck's worth of
-// full-size photos would blow past the storage budget and take minutes to
-// upload over LTE.
-function fpDownscale(file, maxPx, quality) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * scale);
-      c.height = Math.round(img.height * scale);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that photo.')); };
-    img.src = url;
-  });
+// Phones produce 3–12 MP images. LiaPhotos.compress brings one down to a
+// ~1280 px JPEG of ~200 KB or less before it is kept or sent — see photos.js.
+function fpDropPhoto() {
+  if (_fpPhoto && _fpPhoto.previewUrl) { try { URL.revokeObjectURL(_fpPhoto.previewUrl); } catch (_) {} }
+  _fpPhoto = null;
 }
 
 function fpOpenCondemn(item) {
   _fpPending = item;
-  _fpPhoto = null;
+  fpDropPhoto();
   const failed = fpFailedPrompts(item.checks);
   const why = $('fp-condemn-why');
   if (why) {
@@ -1198,7 +1431,7 @@ function fpRenderPhoto() {
   if (_fpPhoto) {
     const img = document.createElement('img');
     img.className = 'fp-photo-thumb';
-    img.src = _fpPhoto.dataUrl;
+    img.src = _fpPhoto.previewUrl;
     row.insertBefore(img, add);
     if (add) add.querySelector('span').textContent = 'Retake';
   } else if (add) {
@@ -1219,41 +1452,70 @@ function fpRenderPhoto() {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    fpDownscale(file, 1600, 0.7).then(dataUrl => {
-      _fpPhoto = { dataUrl: dataUrl, bytes: Math.round(dataUrl.length * 0.75), capturedAt: new Date().toISOString() };
+    window.LiaPhotos.compress(file).then(r => {
+      fpDropPhoto();
+      _fpPhoto = Object.assign(r, { capturedAt: new Date().toISOString(),
+                                    previewUrl: URL.createObjectURL(r.blob) });
       fpRenderPhoto();
     }).catch(() => fpHint('Could not read that photo.', true));
   });
 
   const cancel = $('fp-btn-cancel-condemn');
-  if (cancel) cancel.addEventListener('click', () => { _fpPending = null; _fpPhoto = null; fpCloseCondemn(); });
+  if (cancel) cancel.addEventListener('click', () => { _fpPending = null; fpDropPhoto(); fpCloseCondemn(); });
 
   const confirm = $('fp-btn-confirm-condemn');
   if (confirm) confirm.addEventListener('click', () => {
     if (!_fpPending || !_fpPhoto) return;   // the photo is the gate
     const note = $('fp-condemn-note');
-    _fpPending.discard_note = note ? note.value.trim() : '';
-    _fpPending.photo = _fpPhoto;
-    fpCloseCondemn();
-    fpCommit(_fpPending);
-    _fpPending = null;
-    _fpPhoto = null;
+    const item = _fpPending;
+    const ph = _fpPhoto;
+    item.discard_note = note ? note.value.trim() : '';
+    // The file goes into the phone's photo store FIRST. The record carries only
+    // its id, and is committed only once the file is safely kept — a removal
+    // recorded against a photo that was never stored would be evidence lost.
+    const id = crypto.randomUUID();
+    confirm.disabled = true;
+    window.LiaPhotos.put({ id: id, blob: ph.blob, bytes: ph.bytes, width: ph.width,
+                           height: ph.height, capturedAt: ph.capturedAt })
+      .then(() => {
+        item.photo = { id: id, bytes: ph.bytes, width: ph.width, height: ph.height, capturedAt: ph.capturedAt };
+        fpCloseCondemn();
+        fpCommit(item);
+        _fpPending = null;
+        fpDropPhoto();
+      })
+      .catch(() => {
+        confirm.disabled = false;
+        fpHint('This phone could not store the photo. Try again — the item is not recorded yet.', true);
+      });
   });
 })();
 
 // ── Tap-through ─────────────────────────────────────────────────────────────
-// The other way techs work: inspect a rack by hand, then walk it tapping each
-// item. Every tap records a PASS, because the inspection has already happened —
-// the phone is the recorder, not the inspector. That is a real claim about what
-// the record means, so it is stored as source 'field_batch' rather than being
-// made to look like someone answered each question on screen.
+// Walking a rack with the reader always listening. A tap means "I am
+// inspecting this one NOW": the item comes up with its checks, every one at its
+// passing answer, and the tech looks it over in his hands. He does nothing on
+// screen for a good item — the NEXT tap is what says it passed, and records it.
 //
-// A run stops itself the moment it cannot honestly record a pass:
-//   · the tag resolves to nothing on this device, or anywhere,
-//   · it resolves but carries no equipment type, so there is no checklist,
-//   · the tech says the item failed.
-// Every one of those hands the item to the ordinary single-item screen, which
-// is unchanged and stays available on its own for techs who prefer it.
+// Only a defect costs him anything. Fail stops the reader, opens the checks for
+// him to mark which ones failed, and demands a photo — the same removal path the
+// single-item screen uses. Nothing is recorded as passing until he taps on.
+//
+// A pass recorded this way is stored as source 'field_batch' — the checks were
+// left at passing rather than each being answered on screen — so a certificate
+// can say which happened.
+//
+// An item the app knows too little about to pass — no equipment type means no
+// checklist, and no serial means no record — stays on screen with "Add info".
+// He does not have to. If he taps on without it, that item is NOT recorded: it
+// is counted as skipped and its tag link, if it had one, is kept so the next tap
+// on it resolves.
+//
+// Same on both platforms. The one difference is iOS's reader sheet, which sits
+// over the app: the tech dismisses it to reach Fail, and "Keep tapping" brings
+// it back. That is why editing stops the reader on iOS — the sheet would cover
+// the form — while Android keeps listening, and a tap there takes whatever has
+// been typed so far.
 
 const FP_BATCH_REPEAT_MS = 4000;   // the same tag held against the phone
 
@@ -1263,39 +1525,72 @@ function fpBatchStart() {
     fpHint('This device cannot read NFC tags.', true);
     return;
   }
-  _fpBatch = { count: 0, recorded: [], last: null, lastAt: {}, stream: null, hint: '' };
+  _fpItem = null; _fpChecks = []; _fpEditing = false;
+  _fpBatch = { recorded: [], skipped: 0, last: null, lastAt: {}, stream: null,
+               hint: '', warn: false, failing: false, currentKey: null };
+  fpBatchListen();
+  fpBatchHint(_fpBatch.stream.needsArming
+    ? 'Tap the first item. If the reader closes, press Keep tapping.'
+    : 'Tap the first item. Keep the screen on — a locked phone reads nothing.');
+  fpRenderAll();
+}
+
+function fpBatchListen() {
+  if (!_fpBatch || _fpBatch.stream) return;
   _fpBatch.stream = window.LiaNfc.readStream({
     onTag: fpBatchTag,
     onError: err => fpBatchHint(err && err.message || 'That tag could not be read.', true),
   });
-  fpBatchHint(_fpBatch.stream.needsArming
-    ? 'Hold the phone to each item. If the reader closes, press Keep tapping.'
-    : 'Hold the phone to each item. Keep the screen on — a locked phone reads nothing.');
-  fpRenderAll();
 }
 
-// `keep` leaves the run in place because something else is about to take the
-// screen — failing an item, or filling one in — and it resumes afterwards.
-function fpBatchStop(keep) {
-  if (!_fpBatch) return;
-  try { _fpBatch.stream && _fpBatch.stream.stop(); } catch (_) {}
+function fpBatchQuiet() {
+  if (!_fpBatch || !_fpBatch.stream) return;
+  try { _fpBatch.stream.stop(); } catch (_) {}
   _fpBatch.stream = null;
-  if (!keep) _fpBatch = null;
+}
+
+// Ends the run and drops whatever is on screen. Only for a run that belongs to
+// a job already left; leaving the screen goes through fpBatchLeave.
+function fpBatchStop() {
+  if (!_fpBatch) return;
+  fpBatchQuiet();
+  _fpBatch = null;
+  _fpItem = null; _fpChecks = []; _fpEditing = false;
   fpRenderAll();
 }
 
-// Picks a paused run back up after an item was failed or filled in. Not the
-// same as starting one: the count and the recorded list carry over.
+// Done: the item in hand has been looked at like every other, and there is no
+// next tap to say so. Passed if it can be, then the run ends.
+function fpBatchFinish() {
+  if (!_fpBatch || _fpBatch.failing) return;
+  if (_fpEditing) fpApplyEditForm();
+  fpBatchSettle();
+  const n = fpBatchTally();
+  fpBatchStop();
+  fpHint(`Tap-through finished — ${n}.`);
+}
+
+// Leaving the tap-through screen — back to the jobs list, or anywhere else. The
+// item on screen was tapped and looked over like every other, and the tech
+// walking away is not him saying it failed: it is recorded as passed, exactly
+// as Pass & finish would. The one exception is an item he pressed Fail on and
+// never photographed — that cannot be a pass, and without the photo it cannot
+// be a removal either.
+function fpBatchLeave() {
+  if (!_fpBatch) return;
+  if (!_fpBatch.failing) {
+    if (_fpEditing) fpApplyEditForm();
+    fpBatchSettle();
+  }
+  fpBatchStop();
+}
+
+// Back to listening after the tech stepped off it — failing an item, or filling
+// one in on iOS.
 function fpBatchResume() {
   if (!_fpBatch) return;
-  if (!_fpBatch.stream) {
-    _fpBatch.stream = window.LiaNfc.readStream({
-      onTag: fpBatchTag,
-      onError: err => fpBatchHint(err && err.message || 'That tag could not be read.', true),
-    });
-  }
-  _fpBatch.last = null;
-  fpBatchHint('Back to tapping.');
+  _fpBatch.failing = false;
+  fpBatchListen();
   fpRenderAll();
 }
 
@@ -1305,21 +1600,31 @@ function fpBatchHint(msg, warn) {
   if (h) { h.textContent = msg || ''; h.className = 'fp-hint' + (warn ? ' warn' : ''); }
 }
 
-// Identity for "have I already done this one?" — the asset if we resolved it,
+// Identity for "is this the same item?" — the asset if we resolved it,
 // otherwise whatever the tag itself gave us.
 function fpBatchKey(res, hit) {
   if (hit && hit.asset_id) return 'a:' + hit.asset_id;
-  return 't:' + [res.uid, res.ref, res.serial].filter(Boolean).join('|');
+  if (hit && hit.public_ref) return 'r:' + hit.public_ref;
+  return 't:' + [res.uid, res.ref, res.serial, res.url].filter(Boolean).join('|');
+}
+
+// What stops the item on screen being recorded as a pass, or null if nothing.
+function fpBatchMissing(it) {
+  if (!it) return 'nothing on screen';
+  if (!fpTypes().byKey(it.equipment_type || it.item_type || '')) return 'no equipment type';
+  if (!String(it.serial_raw || '').trim()) return 'no serial number';
+  return null;
 }
 
 function fpBatchTag(res) {
-  if (!_fpBatch) return;
+  if (!_fpBatch || _fpBatch.failing) return;
   const candidates = [res.serial, res.uid, res.ref, res.url]
     .map(v => String(v || '').trim())
     .filter((v, i, a) => v && a.indexOf(v) === i);
 
   if (!candidates.length) {
-    fpBatchFlag(res, null, 'That tag carries nothing we can identify an item by.');
+    playSound('scanFail');
+    fpBatchHint('That tag carries nothing we can identify an item by. Nothing was recorded.', true);
     return;
   }
 
@@ -1328,71 +1633,114 @@ function fpBatchTag(res) {
     : window.LiaCache.find(candidates[i], 'fall_protection').then(h => h || step(i + 1));
 
   step(0)
-    .then(hit => hit ? hit : fpBatchLookupOnline(res))
+    .then(hit => hit ? hit : fpLookupOnline(res))
     .then(hit => {
-      if (!_fpBatch) return;
+      if (!_fpBatch || _fpBatch.failing) return;
       const key = fpBatchKey(res, hit);
       const now = Date.now();
       // A tag left against the phone fires repeatedly; that is one presentation,
-      // not one item.
+      // not one item — and certainly not the next item confirming this one.
       if (_fpBatch.lastAt[key] && now - _fpBatch.lastAt[key] < FP_BATCH_REPEAT_MS) return;
       _fpBatch.lastAt[key] = now;
 
-      if (!hit) {
-        // One of our own blank tags: nothing to pass, an item to enter. The run
-        // stops on the new item with the tag already on it.
-        const blank = fpStockFor(candidates, res);
-        if (blank) {
-          fpBatchFlag(res, null, fpStockHint(blank), true);
-          if (_fpItem) {
-            _fpItem.tag_label = blank.tag_label;
-            if (!_fpItem.tag_url) _fpItem.tag_url = blank.tag_url || '';
-            fpRenderAll();
-          }
-          return;
-        }
-        // A tag carrying a third-party link is not simply a miss: there is a
-        // link to read and a decision for the tech. Stop the run and hand it to
-        // the same sheet the single-tap path uses, rather than dropping him into
-        // a blank form with nothing explaining what he just tapped.
-        //
-        // Only a FOREIGN link. One of our certificate links that matched nothing
-        // is an item this device has not synced, not a foreign system to go
-        // reading — it keeps the ordinary flag path below.
-        if (fpTagIsForeign(res)) {
-          playSound('scanFail');
-          fpBatchStop(true);
-          _fpBatch.last = {
-            serial: res.serial || res.uid || 'Unknown tag',
-            sub: 'Not on file — reading the tag’s link.',
-            url: res.url, flagged: true,
-          };
-          fpUnmatchedLink(res);
-          return;
-        }
-        fpBatchFlag(res, null, 'Not on file — nothing on this device or on the server matches this tag.');
+      if (key === _fpBatch.currentKey) {
+        fpBatchHint(`Still on ${(_fpItem && _fpItem.serial_raw) || 'this item'} — tap the next one to pass it.`);
         return;
       }
       if (_fpBatch.recorded.some(r => r.key === key)) {
         playSound('scanFail');
-        fpBatchHint(`${hit.serial_raw || candidates[0]} is already in this run.`, true);
+        fpBatchHint(`${(hit && hit.serial_raw) || candidates[0]} is already in this run. ` +
+                    `Nothing changed.`, true);
         return;
       }
-      const type = fpTypes().byKey(hit.equipment_type || hit.item_type || '');
-      if (!type) {
-        fpBatchFlag(res, hit, 'No equipment type on file, so there is no checklist to pass. Set it and inspect this one.', true);
-        return;
-      }
-      fpBatchRecord(res, hit, type, key);
+
+      // A new item: the one before it passed.
+      if (_fpEditing) fpApplyEditForm();
+      fpBatchOpen(res, hit, candidates, key, fpBatchSettle());
     })
-    .catch(() => fpBatchFlag(res, null, 'Could not read the on-device catalogue.'));
+    .catch(() => {
+      playSound('scanFail');
+      fpBatchHint('Could not read the on-device catalogue. Nothing was recorded.', true);
+    });
 }
 
-// The tag's certificate code identifies the item even when this device has
-// never synced it — a tech handed a rack from another crew, or an item added
-// since his last sync. Only reachable online, and a miss here is still a miss.
-function fpBatchLookupOnline(res) {
-  if (!res.ref && !res.url) return Promise.resolve(null);
+// The item on screen is done: a pass if there is enough to record one,
+// otherwise skipped with its link kept. Says which, so the next item's sound
+// does not play over this one's.
+function fpBatchSettle() {
+  if (!_fpBatch || !_fpItem) return null;
+  const it = _fpItem;
+  const why = fpBatchMissing(it);
+  if (!why) {
+    const type = fpCurrentType();
+    // startingAnswers() is every check at its PASSING answer — including the
+    // inverted one, where passing means "no".
+    const item = fpMakeItem(it, type, fpTypes().startingAnswers(type), 'field_batch');
+    _fpBatch.last = { serial: item.serial_num, flagged: false,
+      sub: 'Passed · ' + [type.name, it.manufacturer, it.model].filter(Boolean).join(' · ') };
+    try { if (navigator.vibrate) navigator.vibrate(35); } catch (_) {}
+    fpCommit(item);
+    return 'pass';
+  }
+  _fpBatch.skipped++;
+  if (it.tag_url) fpQueueTagLink({ url: it.tag_url, uid: it.nfc_tag_uid, ref: it.public_ref,
+                                   serial: it.serial_raw }, null);
+  _fpBatch.last = {
+    serial: it.serial_raw || it.tag_label || 'Unknown tag', flagged: true,
+    sub: `Not recorded — ${why}.` + (it.tag_url ? ' Its link is kept.' : ''),
+  };
+  playSound('scanFail');
+  _fpItem = null; _fpChecks = []; _fpEditing = false;
+  _fpBatch.currentKey = null;
+  return 'skip';
+}
+
+// Puts a freshly tapped item on screen as the one being inspected.
+function fpBatchOpen(res, hit, candidates, key, settled) {
+  _fpBatch.currentKey = key;
+  if (hit) {
+    fpAdopt(hit, true);
+  } else {
+    // Only a serial read off the tag's own text record goes in the serial box.
+    // A hardware uid, a certificate code or a link identifies the TAG, and a
+    // record whose serial is one of those names nothing anyone can find.
+    fpAdopt({ serial_raw: String(res.serial || '').trim(), manufacturer: '', model: '',
+              equipment_type: '', item_type: '', lot_number: '', mfg_month: '',
+              mfg_year: '', description: '' }, false);
+    // One of our own blank tags: the printed number and its link go on the item.
+    // Its link is never treated as somebody else's.
+    const blank = fpStockFor(candidates, res);
+    if (blank) {
+      _fpItem.tag_label = blank.tag_label;
+      _fpItem.tag_url = blank.tag_url || '';
+    }
+  }
+  _fpItem.nfc_tag_uid = _fpItem.nfc_tag_uid || res.uid || '';
+  // Recorded on every tap, not just the unknown ones: re-recording the link is
+  // what keeps the mapping current when a customer re-tags an item.
+  if (res.url) _fpItem.tag_url = res.url;
+
+  const why = fpBatchMissing(_fpItem);
+  if (why) {
+    if (!settled) playSound('scanFail');
+    const what = _fpItem.tag_label
+      ? `${_fpItem.tag_label} is one of your blank tags.`
+      : hit ? `On file, but ${why}.` : 'Not on file.';
+    fpBatchHint(`${what} Add info to record it — tap on without it and this one is skipped.`, true);
+  } else {
+    // The first tap of a run has nothing before it to sound for.
+    if (!settled) playSound('ladder');
+    fpBatchHint('Inspecting. Tap the next item to pass it, or press Fail.');
+  }
+  fpRenderAll();
+}
+
+// What the server knows, for an item this device has never synced — a rack
+// from another crew, or an item added since the last sync. Tried the same way
+// whether the item was tapped, scanned or typed: by certificate code, by link,
+// then by serial. Only reachable online, and a miss here is still a miss.
+function fpLookupOnline(res) {
+  if (!res.ref && !res.url && !res.serial) return Promise.resolve(null);
   if (!root_LiaSync()) return Promise.resolve(null);
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return Promise.resolve(null);
 
@@ -1417,8 +1765,7 @@ function fpBatchLookupOnline(res) {
       : Promise.resolve(null);
 
     // A third-party link the server has seen before, even though this device has
-    // not — another crew tapped the same item and recorded its link. Matched on
-    // the canonical form, which is what the server stores.
+    // not. Matched on the canonical form, which is what the server stores.
     const byUrl = () => {
       const tl = window.LiaTagLink;
       const key = res.url && tl ? tl.urlKey(res.url) : '';
@@ -1427,140 +1774,177 @@ function fpBatchLookupOnline(res) {
         .then(r => adopt(r && !r.error && r.data && r.data[0]));
     };
 
-    return byRef().then(hit => hit || byUrl());
+    const bySerial = () => {
+      const key = res.serial && window.LiaCache ? window.LiaCache.serialKey(res.serial) : '';
+      if (!key) return Promise.resolve(null);
+      return sb.from('fall_protection_public').select(cols).eq('serial_key', key)
+        .order('inspection_date', { ascending: false }).limit(1)
+        .then(r => adopt(r && !r.error && r.data && r.data[0]));
+    };
+
+    return byRef().then(hit => hit || byUrl()).then(hit => hit || bySerial());
   }).catch(() => null);
 }
 
-function fpBatchRecord(res, hit, type, key) {
-  const rec = Object.assign({}, hit, {
-    nfc_tag_uid: hit.nfc_tag_uid || res.uid || '',
-    // Recorded on every tap-through too, not just on the flagged ones: a tag
-    // whose link we already know still read that link, and re-recording it is
-    // what keeps the mapping current when a customer re-tags an item.
-    tag_url: hit.tag_url || res.url || '',
-  });
-  // startingAnswers() is every check at its PASSING answer — including the
-  // inverted one, where passing means "no". That is the whole record.
-  const item = fpMakeItem(rec, type, fpTypes().startingAnswers(type), 'field_batch');
-  if (!item.serial_num) {
-    fpBatchFlag(res, hit, 'That item has no serial number on file. Enter one and inspect it.', true);
+// Fail: the reader stops — the next tap must not pass this item — and the checks
+// open for him to mark what failed. Save then asks for the photo.
+function fpBatchFail() {
+  if (!_fpBatch || !_fpItem || _fpBatch.failing) return;
+  if (!fpCurrentType()) {
+    _fpEditing = true;
+    fpBatchQuietForForm();
+    fpBatchHint('Pick the equipment type first — it decides which checks there are to fail.', true);
+    fpRenderAll();
     return;
   }
-  _fpBatch.count++;
-  _fpBatch.recorded.push({ key: key, id: item.id, serial: item.serial_num });
-  _fpBatch.last = { serial: item.serial_num, sub: [type.name, hit.manufacturer, hit.model].filter(Boolean).join(' · '), flagged: false };
-  fpBatchHint('');
-  fpBuzz();
-  fpCommit(item);
-}
-
-// Stops the run and hands the item to the ordinary screen, carrying everything
-// the tag gave us — including the link itself, which is the one thing the tech
-// can read off the item and act on when nothing else resolved.
-// `needsField` — the run stopped because something has to be typed or picked
-// before this item can be inspected at all, so the fields open rather than the
-// read-only record. Landing on a card he cannot edit is a dead end.
-function fpBatchFlag(res, hit, why, needsField) {
-  playSound('scanFail');
-  fpBatchStop(true);
-  _fpBatch.last = {
-    serial: (hit && hit.serial_raw) || res.serial || res.uid || res.ref || 'Unknown tag',
-    sub: why, url: res.url || '', flagged: true,
-  };
-  _fpBatch.pendingTag = res;
-  if (hit) fpAdopt(hit, true);
-  // Only a serial goes in the serial box. A hardware uid or a certificate code
-  // is an identifier of the TAG, and pre-filling one produces a record whose
-  // serial number is a string nobody can find anywhere on the item.
-  else fpBlank(String(res.serial || '').trim());
-  if (_fpItem) {
-    _fpItem.nfc_tag_uid = _fpItem.nfc_tag_uid || res.uid || '';
-    if (res.url) _fpItem.tag_url = res.url;
-  }
-  if (needsField) _fpEditing = true;
-  fpHint(why + (res.url ? ` Tag link: ${res.url}` : ''), true);
+  if (_fpEditing) fpApplyEditForm();
+  _fpBatch.failing = true;
+  fpBatchQuiet();
+  fpBuildChecks();
+  fpHint('');
+  fpBatchHint('Tap every check that failed, then add a photo.', true);
   fpRenderAll();
 }
 
-// Pulls the last recorded item back out of the run so it can be failed
-// properly — checks, photo and all. The queued upload goes with it: nothing
-// should be able to reach the server saying it passed.
-function fpBatchFailLast() {
-  if (!_fpBatch || !_fpBatch.recorded.length) return;
+// Changed his mind: the item is back to passing and the reader back on.
+function fpBatchCancelFail() {
+  if (!_fpBatch || !_fpBatch.failing) return;
+  fpBuildChecks();
+  fpBatchHint('Back to passing. Tap the next item to pass this one.');
+  fpBatchResume();
+}
+
+function fpBatchEdit() {
+  if (!_fpBatch || !_fpItem || _fpBatch.failing) return;
+  _fpEditing = true;
+  fpBatchQuietForForm();
+  fpRenderAll();
+}
+
+// iOS draws its reader sheet over the app, which would cover the form and the
+// keyboard. Android draws nothing, so it keeps listening.
+function fpBatchQuietForForm() {
+  if (_fpBatch && _fpBatch.stream && _fpBatch.stream.needsArming) fpBatchQuiet();
+}
+
+// Undo the last pass: it comes back on screen to be failed or corrected, and
+// whatever had just been tapped goes back to not-yet-looked-at.
+function fpBatchUndo() {
+  if (!_fpBatch || _fpBatch.failing) return;
   const last = _fpBatch.recorded[_fpBatch.recorded.length - 1];
+  if (!last || !last.pass) return;
   const item = fpBatchWithdraw(last);
   if (!item) return;
-  fpBatchStop(true);
-  const type = fpTypes().bySlug(item.equipment_type);
+  const dropped = _fpItem && (_fpItem.serial_raw || _fpItem.tag_label);
+  if (_fpBatch.currentKey) delete _fpBatch.lastAt[_fpBatch.currentKey];
+  _fpBatch.currentKey = last.key;
   fpAdopt({
+    asset_id: item.asset_id, public_ref: item.public_ref,
     serial_raw: item.serial_num, manufacturer: item.manufacturer, model: item.model,
     equipment_type: item.equipment_type, item_type: item.item_type,
     description: item.description, lot_number: item.lot_number,
     mfg_month: item.mfg_month, mfg_year: item.mfg_year,
-    nfc_tag_uid: item.nfc_tag_serial, last_inspected: null,
+    nfc_tag_uid: item.nfc_tag_serial, tag_url: item.tag_url, tag_label: item.tag_label,
+    external: item.external,
   }, true);
-  if (type) { _fpChecks = fpTypes().startingAnswers(type); }
-  fpHint(`${item.serial_num} — mark what failed.`, true);
-  fpRenderAll();
-}
-
-function fpBatchUndo() {
-  if (!_fpBatch || !_fpBatch.recorded.length) return;
-  const last = _fpBatch.recorded[_fpBatch.recorded.length - 1];
-  const item = fpBatchWithdraw(last);
-  if (!item) return;
   _fpBatch.last = null;
-  fpBatchHint(`${item.serial_num} removed from this run.`);
+  fpBatchHint(`${item.serial_num} is back — not recorded. Fail it, or tap the next item to pass it.` +
+              (dropped ? ` Tap ${dropped} again when you get to it.` : ''));
   fpRenderAll();
 }
 
-// Take a batch-recorded item back out of the job AND out of the upload queue.
+// Take a recorded item back out of the job AND out of the upload queue, so
+// nothing can reach the server saying it passed.
 function fpBatchWithdraw(entry) {
   const idx = (_job && _job.items || []).findIndex(i => i.id === entry.id);
   if (idx < 0) return null;
   const item = _job.items[idx];
   _job.items.splice(idx, 1);
   const sync = root_LiaSync();
-  if (sync && sync.dequeue) sync.dequeue(entry.id);
+  if (sync && sync.dequeue) { sync.dequeue(entry.id); sync.dequeue(entry.id + ':ext'); sync.dequeue(entry.id + ':photo'); }
   saveNow();
   _fpBatch.recorded.pop();
-  _fpBatch.count = Math.max(0, _fpBatch.count - 1);
   delete _fpBatch.lastAt[entry.key];
   fpRenderPending();
-  return item;
+  return Object.assign({ asset_id: entry.asset_id, public_ref: entry.public_ref }, item);
 }
 
-// A tap that recorded something must be felt without looking — the tech is
-// holding the item, not the phone.
-function fpBuzz() {
-  playSound('ladder');
-  try { if (navigator.vibrate) navigator.vibrate(35); } catch (_) {}
+// Called by fpCommit for every item that lands during a run, pass or fail.
+function fpBatchRecorded(item) {
+  if (!_fpBatch) return;
+  _fpBatch.recorded.push({
+    key: _fpBatch.currentKey || ('i:' + item.id), id: item.id, serial: item.serial_num,
+    pass: !!item.overall_pass,
+    asset_id: _fpItem && _fpItem.asset_id, public_ref: _fpItem && _fpItem.public_ref,
+  });
+  if (!item.overall_pass) {
+    _fpBatch.last = { serial: item.serial_num, flagged: true,
+                      sub: 'Removed from service — ' + fpFailedPrompts(item.checks).join('; ') };
+    fpBatchHint('Recorded as failed. Tap the next item.');
+  }
+  _fpBatch.currentKey = null;
+}
+
+function fpBatchTally() {
+  if (!_fpBatch) return '';
+  const passed = _fpBatch.recorded.filter(r => r.pass).length;
+  const failed = _fpBatch.recorded.length - passed;
+  return [`${passed} passed`,
+          failed ? `${failed} failed` : '',
+          _fpBatch.skipped ? `${_fpBatch.skipped} skipped` : ''].filter(Boolean).join(' · ');
 }
 
 function fpRenderBatch() {
   if (!_fpBatch) return;
+  const b = _fpBatch;
   const c = $('fp-batch-count');
-  if (c) c.textContent = `${_fpBatch.count} recorded`;
+  if (c) c.textContent = fpBatchTally();
+  const live = $('fp-batch-live-txt');
+  if (live) live.textContent = b.failing ? 'Paused — failing'
+                             : b.stream ? 'Listening' : 'Paused';
+  const dot = $('fp-batch-dot');
+  if (dot) dot.style.visibility = b.stream ? '' : 'hidden';
 
   const l = $('fp-batch-last');
   if (l) {
-    const last = _fpBatch.last;
+    const last = b.last;
+    l.style.display = last || !_fpItem ? '' : 'none';
     l.className = 'fp-batch-last' + (last ? (last.flagged ? ' flag' : ' ok') : '');
     l.innerHTML = last
       ? `<span class="sn">${esc(last.serial)}</span>
-         <span class="sub">${esc(last.sub || '')}</span>
-         ${last.url ? `<span class="lnk">${esc(last.url)}</span>` : ''}`
+         <span class="sub">${esc(last.sub || '')}</span>`
       : '<span class="sub">Waiting for the first tap…</span>';
   }
 
-  const none = _fpBatch.recorded.length === 0;
-  const fail = $('fp-btn-batch-fail'); if (fail) fail.disabled = none;
-  const undo = $('fp-btn-batch-undo'); if (undo) undo.disabled = none;
+  const has = !!_fpItem;
+  const busy = b.failing || _fpEditing;
+  const missing = has && fpBatchMissing(_fpItem);
+  const cur = $('fp-batch-cur');
+  if (cur) cur.style.display = has && !busy ? '' : 'none';
+  const ways = $('fp-batch-ways');
+  if (ways) ways.style.display = busy ? 'none' : '';
+  const typed = $('fp-batch-typed');
+  if (typed && busy) typed.style.display = 'none';
+  const edit = $('fp-btn-batch-edit');
+  if (edit) {
+    edit.textContent = missing ? 'Add info' : 'Edit info';
+    edit.classList.toggle('need', !!missing);
+  }
+
+  const lastRec = b.recorded[b.recorded.length - 1];
+  const undo = $('fp-btn-batch-undo');
+  if (undo) undo.disabled = busy || !(lastRec && lastRec.pass);
+  const done = $('fp-btn-batch-stop');
+  if (done) {
+    done.disabled = b.failing;
+    done.textContent = has && !missing ? 'Pass & finish' : 'Finish';
+  }
   const arm = $('fp-btn-batch-arm');
-  if (arm) arm.style.display = (_fpBatch.stream && _fpBatch.stream.needsArming) ? '' : 'none';
+  if (arm) arm.style.display = !b.failing && !(_fpEditing && !b.stream)
+    && (!b.stream || b.stream.needsArming) ? '' : 'none';
 
   const h = $('fp-batch-hint');
-  if (h) { h.textContent = _fpBatch.hint || ''; h.className = 'fp-hint' + (_fpBatch.warn ? ' warn' : ''); }
+  if (h) { h.textContent = b.hint || ''; h.className = 'fp-hint' + (b.warn ? ' warn' : ''); }
 }
 
 (function fpBatchWire() {
@@ -1570,16 +1954,62 @@ function fpRenderBatch() {
   if (start) start.addEventListener('click', fpBatchStart);
 
   const stop = $('fp-btn-batch-stop');
-  if (stop) stop.addEventListener('click', () => fpBatchStop(false));
+  if (stop) stop.addEventListener('click', fpBatchFinish);
 
+  // iOS: the tech dismissed Apple's sheet, or it timed out for good. Android
+  // never needs this unless the stream was stopped for a form.
   const arm = $('fp-btn-batch-arm');
   if (arm) arm.addEventListener('click', () => {
-    if (_fpBatch && _fpBatch.stream) { _fpBatch.stream.arm(); fpBatchHint('Reader re-opened.'); }
+    if (!_fpBatch) return;
+    if (_fpBatch.stream) _fpBatch.stream.arm(); else fpBatchListen();
+    fpBatchHint('Reader re-opened.');
+    fpRenderBatch();
   });
 
   const fail = $('fp-btn-batch-fail');
-  if (fail) fail.addEventListener('click', fpBatchFailLast);
+  if (fail) fail.addEventListener('click', fpBatchFail);
+  const edit = $('fp-btn-batch-edit');
+  if (edit) edit.addEventListener('click', fpBatchEdit);
+  const cancel = $('fp-btn-fail-cancel');
+  if (cancel) cancel.addEventListener('click', fpBatchCancelFail);
 
   const undo = $('fp-btn-batch-undo');
   if (undo) undo.addEventListener('click', fpBatchUndo);
+
+  // Scanned or typed, an item goes through the run exactly as a tap does.
+  const scan = $('fp-btn-batch-scan');
+  if (scan) scan.addEventListener('click', () => {
+    if (!_fpBatch) return;
+    // iOS's reader sheet would sit over the camera. Back on after the scan.
+    fpBatchQuietForForm();
+    window._fpAwaitScan = true;
+    startScan();
+  });
+  const type = $('fp-btn-batch-type');
+  if (type) type.addEventListener('click', () => {
+    const row = $('fp-batch-typed');
+    if (!row) return;
+    const show = row.style.display === 'none';
+    row.style.display = show ? 'flex' : 'none';
+    if (show) $('fp-batch-serial').focus();
+  });
+  const find = $('fp-btn-batch-find');
+  const input = $('fp-batch-serial');
+  const go = () => {
+    const v = input.value.trim();
+    if (!v || !_fpBatch) return;
+    input.value = '';
+    fpBatchTag({ serial: v });
+  };
+  if (find) find.addEventListener('click', go);
+  if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
 })();
+
+// The scanner hands its result here while a run is going. Called from scan.js.
+function fpBatchScanned(value) {
+  if (!_fpBatch) return false;
+  fpBatchListen();
+  if (value) fpBatchTag({ serial: value });
+  else fpRenderBatch();
+  return true;
+}

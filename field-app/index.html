@@ -377,6 +377,13 @@
     .add-ladder-btn { background: var(--ok); color: #fff; border-radius: 10px; padding: 15px;
                       font-size: 16px; font-weight: 700; flex: 1; border: none; cursor: pointer; }
     .add-ladder-btn:active { background: #27ae60; }
+    .add-ladder-btn.next { background: var(--surf2); color: var(--ok-fg);
+                           border: 1.5px solid var(--ok); }
+    .add-ladder-btn.next:active { background: rgba(var(--ok-rgb),.14); }
+    .ladder-lookup { font-size: 12px; line-height: 1.35; padding: 6px 9px; margin-top: 6px;
+                     border-radius: 8px; border: 1px solid var(--border); background: var(--surf2); }
+    .ladder-lookup.hit { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
+    .ladder-lookup.miss { color: var(--muted); }
     .cancel-edit-btn { background: var(--surf2); color: var(--fg); border: 1px solid var(--border);
                        border-radius: 10px; padding: 15px 18px; font-size: 15px; font-weight: 600;
                        cursor: pointer; flex-shrink: 0; display: none; }
@@ -641,6 +648,10 @@
                          background: rgba(var(--bad-rgb),.10); }
     .fp-batch-act.done { color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.35);
                          background: rgba(var(--accent-rgb),.12); }
+    .fp-batch-act.big { min-height: 52px; font-size: 15px; }
+    .fp-batch-act.info.need { color: var(--accent-fg); border-color: rgba(var(--accent-rgb),.45);
+                              background: rgba(var(--accent-rgb),.14); }
+    #fp-batch-cur { margin-bottom: 5px; }
     .fp-batch-act:disabled { opacity: .38; }
     .fp-batch-act:active { opacity: .7; }
 
@@ -968,6 +979,9 @@
       </div>
       <button class="scan-btn" id="btn-scan" style="margin-top:15px;">📷</button>
     </div>
+    <!-- What the catalogue knows about the serial just scanned, or that it knows
+         nothing. Either way the ladder is added: not on file is a first visit. -->
+    <div class="ladder-lookup" id="fi-lookup" style="display:none;"></div>
 
     <!-- Brand | Type | Length on one row -->
     <div class="meta-row-3">
@@ -1047,12 +1061,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
       </button>
     </div>
-    <!-- Tapping through a rack the tech has already inspected by hand. Offered
-         alongside single tap, never instead of it: some techs work item by item
-         and see the checks every time, and that flow is unchanged. -->
+    <!-- Tapping through a rack: the reader stays on, each tap brings up the item
+         being inspected, and the next tap passes it. Offered alongside single
+         tap, never instead of it: some techs work item by item. -->
     <button class="fp-batch-start" id="fp-btn-batch" style="display:none;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M9 17h6M12 14v6"/></svg>
-      Tap through — record passes as you go
+      Tap through — the next tap passes the last
     </button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
@@ -1062,21 +1076,35 @@
     <div class="fp-hint" id="fp-hint"></div>
   </div>
 
-  <!-- Tap-through. Replaces the four ways while it is running so there is only
-       one thing to do: present the next item. Every tap records a PASS, because
-       the inspection already happened in the tech's hands — anything the app
-       cannot resolve, or anything he wants to fail, stops the run. -->
+  <!-- Tap-through. Replaces the four ways while it is running. A tap puts the
+       item on screen as the one being inspected, every check at passing; the
+       NEXT tap records it as passed. Fail is the only thing he presses for a
+       defect, and Add info the only thing for an item we know too little about. -->
   <div id="fp-batch-panel" style="display:none;">
     <div class="fp-batch-hdr">
-      <span class="fp-batch-live"><span class="fp-batch-dot"></span>Tap through</span>
-      <span class="fp-batch-count" id="fp-batch-count">0 recorded</span>
+      <span class="fp-batch-live"><span class="fp-batch-dot" id="fp-batch-dot"></span><span id="fp-batch-live-txt">Listening</span></span>
+      <span class="fp-batch-count" id="fp-batch-count"></span>
     </div>
     <div class="fp-batch-last" id="fp-batch-last"></div>
+    <div class="fp-batch-acts" id="fp-batch-cur" style="display:none;">
+      <button class="fp-batch-act fail big" id="fp-btn-batch-fail">Fail</button>
+      <button class="fp-batch-act info big" id="fp-btn-batch-edit">Edit info</button>
+    </div>
+    <!-- An item with no tag, or a tag that will not read: scanned or typed, it
+         goes through the run exactly as a tap would, and passes the one before. -->
+    <div class="fp-batch-acts" id="fp-batch-ways">
+      <button class="fp-batch-act" id="fp-btn-batch-scan">Scan instead</button>
+      <button class="fp-batch-act" id="fp-btn-batch-type">Type instead</button>
+    </div>
+    <div class="fp-typed" id="fp-batch-typed" style="display:none;">
+      <input type="text" id="fp-batch-serial" class="field-input" placeholder="Serial number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-p" id="fp-btn-batch-find" style="font-size:13px;padding:8px 14px;">Next</button>
+    </div>
     <div class="fp-batch-acts">
       <button class="fp-batch-act" id="fp-btn-batch-arm" style="display:none;">Keep tapping</button>
-      <button class="fp-batch-act fail" id="fp-btn-batch-fail">Fail last</button>
-      <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last</button>
-      <button class="fp-batch-act done" id="fp-btn-batch-stop">Done</button>
+      <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last pass</button>
+      <button class="fp-batch-act done" id="fp-btn-batch-stop">Finish</button>
     </div>
     <div class="fp-hint" id="fp-batch-hint"></div>
   </div>
@@ -1098,6 +1126,7 @@
   <div id="fp-save-panel" style="display:none;">
     <div class="fp-overall" id="fp-overall"></div>
     <button class="add-ladder-btn" id="fp-btn-save">Pass &amp; Next Item</button>
+    <button class="btn-g" id="fp-btn-fail-cancel" style="display:none;width:100%;margin-top:6px;">It passed — cancel</button>
   </div>
 
   <div id="fp-items-panel" style="display:none;">
@@ -1127,6 +1156,9 @@
   <!-- PANEL 3: Add button (above ladder list so no scrolling needed) -->
   <div id="add-btn-panel">
     <button class="add-ladder-btn" id="btn-add-ladder">+ Add Ladder</button>
+    <!-- Adds this one and reopens the camera for the next: a rack of ladders is
+         scan, parts, one tap, repeat. -->
+    <button class="add-ladder-btn next" id="btn-add-next">Add &amp; Scan Next</button>
     <button class="cancel-edit-btn" id="btn-cancel-edit">Cancel</button>
   </div>
 
@@ -1282,10 +1314,20 @@
                placeholder="Anything worth adding…" autocomplete="off">
       </div>
     </div>
-    <div class="fp-hint">Stored on this phone until you are back on wifi. Kept for 2 years.</div>
+    <div class="fp-hint">Kept on this phone until it uploads with the rest of your work. Kept for 2 years.</div>
   </div>
   <button class="btn-p sheet-done" id="fp-btn-confirm-condemn" style="background:var(--bad);">Confirm Removal</button>
   <button class="btn-g sheet-done" id="fp-btn-cancel-condemn" style="margin-top:6px;">Back to checks</button>
+</div>
+
+<!-- A failed item with no photo is not recorded. The one alert the app raises:
+     leaving it is how an item that failed stays in service on paper. -->
+<div class="settings-sheet hidden" id="fp-alert" role="alertdialog" aria-labelledby="fp-alert-ttl">
+  <div class="sheet-handle"></div>
+  <div class="sheet-ttl" id="fp-alert-ttl" style="color:var(--bad-fg);">Failed item — no photo</div>
+  <div class="sheet-desc" id="fp-alert-msg"></div>
+  <button class="btn-p sheet-done" id="fp-alert-go" style="background:var(--bad);">Take the photo</button>
+  <button class="btn-g sheet-done" id="fp-alert-leave" style="margin-top:6px;">Leave — don't record it</button>
 </div>
 
 <!-- A tag whose hyperlink matched nothing. The link is shown first because it is
@@ -1374,6 +1416,7 @@
 <script src="./js/entry.js"></script>
 <script src="./js/list.js"></script>
 <script src="./js/nfc.js"></script>
+<script src="./js/photos.js"></script>
 <script src="./js/sync.js"></script>
 <script src="./js/sync-state.js"></script>
 <script src="./js/fp-types.js"></script>

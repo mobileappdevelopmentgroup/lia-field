@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 31
+-- Migrations included: 32
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -3532,6 +3532,20 @@ $$;
 
 
 --
+-- Name: photo_path_account(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.photo_path_account(p_path text) RETURNS uuid
+    LANGUAGE sql IMMUTABLE
+    AS $_$
+  SELECT CASE
+    WHEN split_part(p_path, '/', 1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    THEN split_part(p_path, '/', 1)::uuid
+  END;
+$_$;
+
+
+--
 -- Name: preflight_work_order(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4028,6 +4042,73 @@ BEGIN
          nullif(e->>'note','')
     FROM jsonb_array_elements(v_scored) e;
 
+  RETURN v_id;
+END;
+$$;
+
+
+--
+-- Name: record_fp_photo(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_fp_photo(p jsonb) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_user    uuid := auth.uid();
+  v_account uuid;
+  v_path    text := nullif(btrim(coalesce(p->>'storage_path', '')), '');
+  v_serial  text := nullif(btrim(coalesce(p->>'serial_num', '')), '');
+  v_at      timestamptz;
+  v_insp    uuid;
+  v_id      uuid;
+BEGIN
+  IF v_user IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  v_account := public.my_account_id();
+  IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
+
+  IF v_path IS NULL THEN RAISE EXCEPTION 'A storage path is required'; END IF;
+  IF public.photo_path_account(v_path) IS DISTINCT FROM v_account OR v_path LIKE '%..%' THEN
+    RAISE EXCEPTION 'That photo is not in your account''s folder';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM storage.objects o
+                  WHERE o.bucket_id = 'fp-photos' AND o.name = v_path) THEN
+    RAISE EXCEPTION 'That photo has not been uploaded';
+  END IF;
+
+  IF v_serial IS NULL THEN RAISE EXCEPTION 'A serial number is required'; END IF;
+  v_at := nullif(p->>'captured_at', '')::timestamptz;
+  IF v_at IS NULL THEN RAISE EXCEPTION 'The inspection''s capture time is required'; END IF;
+
+  SELECT i.id INTO v_insp
+    FROM public.fp_inspections i
+    JOIN public.assets a ON a.id = i.asset_id
+   WHERE i.account_id = v_account
+     AND i.captured_at = v_at
+     AND a.serial_key = public.serial_key(v_serial)
+     AND NOT i.is_deleted
+   ORDER BY i.is_current DESC, i.created_at DESC
+   LIMIT 1;
+  -- The phone queues the photo behind its inspection, so this means the
+  -- inspection has not landed yet. The queue retries; the photo is not lost.
+  IF v_insp IS NULL THEN RAISE EXCEPTION 'Its inspection has not been uploaded yet'; END IF;
+
+  INSERT INTO public.inspection_photos
+    (account_id, subject_kind, subject_id, storage_path, bytes, width, height,
+     captured_at, uploaded_by)
+  VALUES
+    (v_account, 'fp_inspection', v_insp, v_path,
+     nullif(p->>'bytes', '')::integer, nullif(p->>'width', '')::integer,
+     nullif(p->>'height', '')::integer,
+     coalesce(nullif(p->>'photo_captured_at', '')::timestamptz, v_at), v_user)
+  ON CONFLICT (storage_path) DO NOTHING
+  RETURNING id INTO v_id;
+
+  IF v_id IS NULL THEN
+    SELECT id INTO v_id FROM public.inspection_photos
+     WHERE storage_path = v_path AND account_id = v_account;
+  END IF;
   RETURN v_id;
 END;
 $$;
@@ -8434,6 +8515,14 @@ GRANT ALL ON FUNCTION public.record_certificate_view(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.record_fp_external(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_fp_external(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION record_fp_photo(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_fp_photo(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_fp_photo(p jsonb) TO authenticated;
 
 
 --

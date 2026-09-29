@@ -1,6 +1,6 @@
 // Tap-through: the second way techs work a rack. Single tap is unchanged and
-// tested in fp-capture; this covers the batch run — a pass per tap with no form
-// in between, and every way a run is made to stop.
+// tested in fp-capture; this covers the run — a tap puts the item on screen,
+// the next tap passes it, and Fail is the only thing pressed for a defect.
 //
 // Served over HTTP because the run leans on IndexedDB (the catalogue) and
 // fetch (config.json), neither of which works under file://.
@@ -36,12 +36,12 @@ const ok = (l,g,w) => { const good = JSON.stringify(g) === JSON.stringify(w); if
 // A stand-in for @exxili/capacitor-nfc, installed before any page script runs
 // so the Tap-through button is wired the way it is on a real handset. Reports
 // android, where the stream needs no re-arming.
-await p.addInitScript(() => {
+const nfcStub = (platform) => {
   const listeners = {};
   window.__nfc = { started: 0, cancelled: 0 };
   window.Capacitor = {
     isNativePlatform: () => true,
-    getPlatform: () => 'android',
+    getPlatform: () => platform,
     Plugins: { NFC: {
       startScan: async () => { window.__nfc.started++; throw new Error("Android NFC scanning does not require 'startScan' method."); },
       cancelScan: () => { window.__nfc.cancelled++; return Promise.reject(new Error('not implemented')); },
@@ -63,13 +63,14 @@ await p.addInitScript(() => {
     }));
   };
   window.__liveListeners = () => (listeners.nfcTag || []).length;
-});
+};
+await p.addInitScript(nfcStub, 'android');
 
 await p.goto(BASE);
 await p.waitForTimeout(400);
 
 // Seed the on-device catalogue: three items with types, one with no type.
-await p.evaluate(async () => {
+const seed = pg => pg.evaluate(async () => {
   await LiaCache.status();                       // creates the v2 schema
   const db = await new Promise(r => { const q = indexedDB.open('lia-field'); q.onsuccess = () => r(q.result); });
   await new Promise((res, rej) => {
@@ -86,6 +87,8 @@ await p.evaluate(async () => {
     t.onerror = () => rej(t.error);
   });
 });
+
+await seed(p);
 
 await p.click('#btn-new-job'); await p.waitForTimeout(150);
 await p.click('.scope-opt[data-scope="fall_protection"]'); await p.waitForTimeout(300);
@@ -108,166 +111,275 @@ ok('and Android is not asked to re-arm',
 
 await p.evaluate(() => window.__tap({ serial:'H-1', url:'https://lia.test/fp/?t=REF0000001', uid:'04:A1:B2:C3' }));
 await p.waitForTimeout(250);
-ok('a tap records the item with no form in between', await p.evaluate(() => _job.items.length), 1);
+ok('a tap puts the item on screen as the one being inspected', await p.evaluate(() => ({
+     serial: _fpItem && _fpItem.serial_raw, checks: $('fp-checks-panel').style.display !== 'none' })),
+   { serial:'H-1', checks:true });
+ok('with every check at its passing answer',
+   await p.evaluate(() => _fpChecks.length > 0 && _fpChecks.every(c => c.answer === c.pass_answer)), true);
+ok('locked until the tech says it failed',
+   await p.$$eval('#fp-checks-list button', b => b.every(x => x.disabled)), true);
+ok('with no save button — the next tap is the save',
+   await p.evaluate(() => $('fp-save-panel').style.display), 'none');
+ok('Fail and Edit info are offered beside it', await p.evaluate(() => ({
+     cur: $('fp-batch-cur').style.display !== 'none', edit: $('fp-btn-batch-edit').textContent })),
+   { cur:true, edit:'Edit info' });
+ok('and the reader is still listening', await p.evaluate(() => window.__liveListeners()), 1);
+ok('nothing is recorded by the tap itself', await p.evaluate(() => _job.items.length), 0);
+
+// A tag left against the phone fires repeatedly; that is one presentation, and
+// it must not confirm the item it is presenting.
+await p.evaluate(() => { window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }); window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }); });
+await p.waitForTimeout(250);
+ok('a tag held against the phone does not pass itself',
+   await p.evaluate(() => _job.items.length), 0);
+// Past the repeat window, the same tag again is still not "the next item".
+await p.evaluate(() => { _fpBatch.lastAt = {}; window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }); });
+await p.waitForTimeout(250);
+ok('nor does tapping it again later', await p.evaluate(() => _job.items.length), 0);
+
+// The next tag: the one before it passed.
+await p.evaluate(() => window.__tap({ url:'https://lia.test/fp/?t=REF0000002' }));
+await p.waitForTimeout(250);
+ok('the next tap records the previous item', await p.evaluate(() => _job.items.length), 1);
 const first = await p.evaluate(() => _job.items[0]);
-ok('as a pass', first.overall_pass, true);
+ok('as a pass', [first.serial_num, first.overall_pass], ['H-1', true]);
 ok('against the checklist for its type', first.item_type, 'Body harness');
 ok('with every check answered at its passing answer',
    first.checks.every(c => c.answer === c.pass_answer), true);
-ok('and recorded as a batch pass, not as answered on screen', first.source, 'field_batch');
-ok('the run counts it', await p.$eval('#fp-batch-count', e => e.textContent), '1 recorded');
+ok('recorded as a tap-through pass, not as answered on screen', first.source, 'field_batch');
+ok('keeping the link off the tag', first.tag_url, 'https://lia.test/fp/?t=REF0000001');
+ok('and the new item is now the one on screen, resolved by its certificate code',
+   await p.evaluate(() => _fpItem.serial_raw), 'H-2');
+ok('the run counts the pass', await p.$eval('#fp-batch-count', e => e.textContent), '1 passed');
+ok('and shows it', await p.$eval('#fp-batch-last', e => e.textContent.includes('H-1')), true);
 
-// A tag left against the phone fires repeatedly; that is one presentation.
-await p.evaluate(() => { window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }); window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }); });
-await p.waitForTimeout(250);
-ok('a tag held against the phone is not recorded twice',
-   await p.evaluate(() => _job.items.length), 1);
-
-// Resolvable by the certificate code alone — no serial record on the tag.
-await p.evaluate(() => window.__tap({ url:'https://lia.test/fp/?t=REF0000002' }));
-await p.waitForTimeout(250);
-ok('a url-only tag resolves through its certificate code',
-   await p.evaluate(() => _job.items[0].serial_num), 'H-2');
-ok('the run counts both', await p.$eval('#fp-batch-count', e => e.textContent), '2 recorded');
-
-// ── Undo ────────────────────────────────────────────────────────────────────
-ok('the queued upload holds both', await p.evaluate(() => LiaSync.queueLength()), 2);
+// ── Undo last pass ──────────────────────────────────────────────────────────
+ok('the queued upload holds the pass', await p.evaluate(() => LiaSync.queueLength()), 1);
 await p.click('#fp-btn-batch-undo'); await p.waitForTimeout(200);
-ok('undo takes the last one back out of the job', await p.evaluate(() => _job.items.length), 1);
+ok('undo takes the pass back out of the job', await p.evaluate(() => _job.items.length), 0);
 ok('and out of the upload queue, so it cannot reach the server',
-   await p.evaluate(() => LiaSync.queueLength()), 1);
-ok('the count follows', await p.$eval('#fp-batch-count', e => e.textContent), '1 recorded');
+   await p.evaluate(() => LiaSync.queueLength()), 0);
+ok('putting that item back on screen to fail or correct',
+   await p.evaluate(() => _fpItem.serial_raw), 'H-1');
+ok('the count follows', await p.$eval('#fp-batch-count', e => e.textContent), '0 passed');
 
-// ── An item that cannot be passed honestly stops the run ────────────────────
-await p.evaluate(() => window.__tap({ serial:'H-3' }));   // on file, but no equipment type
-await p.waitForTimeout(300);
-ok('an item with no equipment type stops the run rather than passing it',
-   await p.evaluate(() => ({ batch: $('fp-batch-panel').style.display !== 'none',
-                             checks: $('fp-checks-panel').style.display !== 'none' })),
-   { batch:false, checks:true });
-ok('and hands it to the ordinary screen, filled in',
-   await p.evaluate(() => _fpItem.serial_raw), 'H-3');
-ok('the run is paused, not ended', await p.evaluate(() => !!_fpBatch), true);
-ok('with its reader released while the tech is off it',
+// ── Fail ────────────────────────────────────────────────────────────────────
+await p.click('#fp-btn-batch-fail'); await p.waitForTimeout(200);
+ok('Fail stops the reader, so the next tap cannot pass it',
    await p.evaluate(() => window.__liveListeners()), 0);
+ok('opens the checks', await p.$$eval('#fp-checks-list button', b => b.every(x => !x.disabled)), true);
+ok('and will not save until a check is marked failed', await p.evaluate(() => ({
+     shown: $('fp-save-panel').style.display !== 'none', disabled: $('fp-btn-save').disabled })),
+   { shown:true, disabled:true });
+ok('with a way back if he changed his mind',
+   await p.evaluate(() => $('fp-btn-fail-cancel').style.display !== 'none'), true);
 
-// Give it a type and pass it; the run picks up where it left off.
-await p.selectOption('#fpf-equipment_type', await p.evaluate(() => LiaFpTypes.all()[0].slug));
-await p.waitForTimeout(150);
-await p.click('#fp-btn-save'); await p.waitForTimeout(300);
-ok('finishing that item returns to the run', await p.evaluate(() => ({
-     batch: $('fp-batch-panel').style.display !== 'none', live: window.__liveListeners() })),
-   { batch:true, live:1 });
-ok('and it was recorded as answered on screen, not as a batch pass',
-   await p.evaluate(() => _job.items[0].source), 'field');
+// Changed his mind: back to passing and listening.
+await p.click('#fp-btn-fail-cancel'); await p.waitForTimeout(200);
+ok('cancelling a fail puts the reader back on', await p.evaluate(() => ({
+     live: window.__liveListeners(), locked: [...document.querySelectorAll('#fp-checks-list button')].every(x => x.disabled) })),
+   { live:1, locked:true });
 
-// ── Fail last: a pass already recorded, taken back to be failed properly ─────
-await p.evaluate(() => window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }));
-await p.waitForTimeout(250);
-const beforeFail = await p.evaluate(() => ({ items:_job.items.length, queue:LiaSync.queueLength() }));
-await p.click('#fp-btn-batch-fail'); await p.waitForTimeout(300);
-ok('failing the last one withdraws the pass it already recorded',
-   await p.evaluate(() => _job.items.length), beforeFail.items - 1);
-ok('and unqueues it, so no upload can claim it passed',
-   await p.evaluate(() => LiaSync.queueLength()), beforeFail.queue - 1);
-ok('putting the item back on the checks with its type intact',
-   await p.evaluate(() => ({ checks: $('fp-checks-panel').style.display !== 'none',
-                             serial: _fpItem.serial_raw, type: _fpItem.item_type })),
-   { checks:true, serial:'H-1', type:'Body harness' });
-ok('every check still starts at passing — only the tech fails one',
-   await p.evaluate(() => _fpChecks.every(c => c.answer === c.pass_answer)), true);
-// Fail a check, and it becomes a removal rather than a pass.
+// Fail it for real: a check, then a photo.
+await p.click('#fp-btn-batch-fail'); await p.waitForTimeout(200);
 await p.evaluate(() => { const b = document.querySelectorAll('#fp-checks-list .fp-seg')[0].querySelectorAll('button');
   (_fpChecks[0].pass_answer ? b[1] : b[0]).click(); });
 await p.waitForTimeout(150);
-ok('which turns the save into a removal', await p.$eval('#fp-btn-save', e => e.textContent.trim()),
-   'Add Photo & Remove →');
-await p.click('#fp-btn-batch-stop').catch(() => {});
-await p.evaluate(() => { _fpBatch = null; _fpItem = null; _fpChecks = []; fpRenderAll(); });
-await p.waitForTimeout(150);
-await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+ok('marking a check turns the save into a removal', await p.$eval('#fp-btn-save', e => [e.textContent.trim(), e.disabled]),
+   ['Add Photo & Remove →', false]);
+await p.click('#fp-btn-save'); await p.waitForTimeout(200);
+ok('which asks for a photo', await p.evaluate(() => !$('fp-condemn-sheet').classList.contains('hidden')), true);
+ok('and will not confirm without one', await p.$eval('#fp-btn-confirm-condemn', e => e.disabled), true);
+// A tap while the photo sheet is up is ignored — the reader is off.
+await p.evaluate(() => window.__tap({ serial:'H-2' })); await p.waitForTimeout(250);
+ok('no tap can land while an item is being failed', await p.evaluate(() => _job.items.length), 0);
+await p.evaluate(() => { const blob = new Blob([new Uint8Array([0xff,0xd8,0xff,0xd9])], { type:'image/jpeg' });
+  _fpPhoto = { blob, bytes:4, width:1, height:1, capturedAt:new Date().toISOString(), previewUrl:URL.createObjectURL(blob) }; fpRenderPhoto(); });
+await p.click('#fp-btn-confirm-condemn'); await p.waitForTimeout(300);
+const failed = await p.evaluate(() => _job.items[0]);
+ok('the item is recorded as failed', [failed.serial_num, failed.overall_pass], ['H-1', false]);
+ok('as answered on screen', failed.source, 'field');
+ok('with its photo kept in the photo store, not in the job',
+   [!!failed.photo.id, failed.photo.dataUrl, await p.evaluate(id => LiaPhotos.get(id).then(r => !!(r && r.blob)), failed.photo.id)],
+   [true, undefined, true]);
+ok('and queued for upload behind its inspection', await p.evaluate(id => {
+     const q = JSON.parse(localStorage.getItem('lia-upload-queue'));
+     const a = q.findIndex(e => e.clientId === id), b = q.findIndex(e => e.clientId === id + ':photo');
+     return [a >= 0, b > a, q[b] && q[b].kind, q[b] && q[b].payload.captured_at === _job.items[0].capturedAt];
+   }, failed.id), [true, true, 'fp_photo', true]);
+ok('and the run is listening again with nothing on screen', await p.evaluate(() => ({
+     live: window.__liveListeners(), item: !!_fpItem })), { live:1, item:false });
+ok('counting it', await p.$eval('#fp-batch-count', e => e.textContent), '0 passed · 1 failed');
 
-// ── An unknown tag: flagged, with its link kept and shown ────────────────────
-await p.evaluate(() => window.__tap({ url:'https://lia.test/fp/?t=ZZZZZZZZZZ', uid:'DE:AD:BE:EF' }));
-await p.waitForTimeout(400);
-ok('a tag matching nothing stops the run',
-   await p.evaluate(() => $('fp-batch-panel').style.display !== 'none'), false);
-ok('and says so rather than silently passing it',
-   await p.$eval('#fp-hint', e => /not on file/i.test(e.textContent)), true);
-ok('keeping the link off the tag and showing it to the tech',
-   await p.$eval('#fp-hint', e => e.textContent.includes('https://lia.test/fp/?t=ZZZZZZZZZZ')), true);
-ok('the tech can pass or fail it from there',
-   await p.evaluate(() => $('fp-checks-panel').style.display !== 'none'), true);
-ok('with the tag id carried across so it is on file next time',
-   await p.evaluate(() => _fpItem.nfc_tag_uid), 'DEADBEEF');
+// ── Too little to pass: Add info, or it is skipped ──────────────────────────
+await p.evaluate(() => { _fpBatch.lastAt = {}; window.__tap({ serial:'H-3' }); });   // on file, no type
+await p.waitForTimeout(300);
+ok('an item with no type stays on screen rather than stopping the run', await p.evaluate(() => ({
+     serial: _fpItem.serial_raw, live: window.__liveListeners(), edit: $('fp-btn-batch-edit').textContent })),
+   { serial:'H-3', live:1, edit:'Add info' });
+const beforeSkip = await p.evaluate(() => _job.items.length);
+await p.evaluate(() => window.__tap({ serial:'H-2' }));
+await p.waitForTimeout(300);
+ok('tapping on without adding it records nothing for it',
+   await p.evaluate(() => _job.items.length), beforeSkip);
+ok('and says so', await p.$eval('#fp-batch-last', e => /H-3[\s\S]*Not recorded — no equipment type/.test(e.textContent)), true);
+ok('counting it as skipped', await p.$eval('#fp-batch-count', e => e.textContent), '0 passed · 1 failed · 1 skipped');
 
-// ── A third-party tag: a link into somebody else's system ───────────────────
-// The commonest tag on a customer's existing rack. It carries no serial we
-// know, no certificate code, and a link we may or may not be able to read — and
-// the app must not invent an identifier for it. The host here is not trusted, so
-// nothing is fetched: that is the ordinary web outcome, and the decision still
-// has to reach the tech.
-await p.evaluate(() => { fpBatchStop(false); _fpItem = null; _fpChecks = []; _fpLink = null; fpRenderAll(); });
-await p.waitForTimeout(150);
-await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+// Add info on Android: the reader keeps listening, and a tap takes what he typed.
+await p.evaluate(() => { _fpBatch.lastAt = {}; window.__tap({ serial:'H-3' }); });   // H-2 passes
+await p.waitForTimeout(300);
+await p.click('#fp-btn-batch-edit'); await p.waitForTimeout(150);
+ok('Add info opens the fields', await p.evaluate(() => $('fp-edit-form').style.display !== 'none'), true);
+ok('without stopping the reader on Android', await p.evaluate(() => window.__liveListeners()), 1);
+await p.selectOption('#fpf-equipment_type', await p.evaluate(() => LiaFpTypes.all()[0].slug));
+await p.fill('#fpf-manufacturer', 'Guardian');
+// An item already in the run is not "the next item" — it changes nothing.
+await p.evaluate(() => window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' }));
+await p.waitForTimeout(300);
+ok('a tap on an item already in the run neither passes nor replaces the one on screen',
+   await p.evaluate(() => [_fpItem && _fpItem.serial_raw, _job.items.some(i => i.serial_num === 'H-3')]), ['H-3', false]);
 await p.evaluate(() => window.__tap({ url:'https://acme.example/tag/FP158354', uid:'AB:CD:EF:01' }));
-await p.waitForTimeout(500);
+await p.waitForTimeout(400);
+const h3 = await p.evaluate(() => _job.items.find(i => i.serial_num === 'H-3'));
+ok('a tap mid-edit passes the item with what was typed',
+   h3 && [h3.overall_pass, h3.manufacturer, h3.source], [true, 'Guardian', 'field_batch']);
 
-ok('a foreign link stops the run and asks the tech',
-   await p.evaluate(() => !$('fp-link-sheet').classList.contains('hidden')), true);
-ok('showing him the link, which is the one thing he can act on unaided',
-   await p.$eval('#fp-link-body', e => e.textContent.includes('https://acme.example/tag/FP158354')), true);
-ok('and saying plainly that nothing was fetched from an untrusted source',
-   await p.$eval('#fp-link-body', e => /not a trusted source/i.test(e.textContent)), true);
-// All three outcomes the tech is offered must be live, or the sheet is a trap.
-ok('with all three decisions available',
-   await p.evaluate(() => ['fp-btn-link-inspect','fp-btn-link-save','fp-btn-link-ignore']
-     .map(id => !$(id).disabled)), [true, true, true]);
-
-// "Save the link only": the pairing is kept so the next tap resolves, and
-// nothing is recorded as an inspection.
-const beforeLink = await p.evaluate(() => ({ items: _job.items.length, queue: LiaSync.queueLength() }));
-await p.click('#fp-btn-link-save'); await p.waitForTimeout(300);
-ok('saving the link records no inspection',
-   await p.evaluate(() => _job.items.length), beforeLink.items);
-ok('but does queue the link, so the next tap on it resolves',
-   await p.evaluate(() => LiaSync.queueLength()), beforeLink.queue + 1);
-ok('as its own kind of record, not as an inspection',
-   await p.evaluate(() => JSON.parse(localStorage.getItem('lia-upload-queue')).pop().kind), 'fp_tag_link');
-ok('and the run picks back up',
-   await p.evaluate(() => $('fp-batch-panel').style.display !== 'none'), true);
-
-// "Inspect this item": the ordinary screen, carrying the link — and NOT the
-// hardware uid in the serial box, which is the bug this whole path exists to
-// stop. A uid is printed nowhere on the item.
-await p.evaluate(() => window.__tap({ url:'https://acme.example/tag/OTHER', uid:'11:22:33:44' }));
-await p.waitForTimeout(500);
-await p.click('#fp-btn-link-inspect'); await p.waitForTimeout(300);
-ok('inspecting it opens the fields', await p.evaluate(() => $('fp-edit-form').style.display !== 'none'), true);
-ok('with the serial box EMPTY rather than holding the hardware id',
+// ── An unknown tag: on screen, blank, with its link kept ─────────────────────
+ok('a foreign tag does not stop the run or open the link sheet', await p.evaluate(() => ({
+     sheet: !$('fp-link-sheet').classList.contains('hidden'), live: window.__liveListeners() })),
+   { sheet:false, live:1 });
+ok('it is on screen with the serial box EMPTY, never the hardware id',
    await p.evaluate(() => _fpItem.serial_raw), '');
-ok('the link carried onto the record',
-   await p.evaluate(() => _fpItem.tag_url), 'https://acme.example/tag/OTHER');
-ok('and the tag id kept too', await p.evaluate(() => _fpItem.nfc_tag_uid), '11223344');
+ok('carrying the link and the tag id', await p.evaluate(() => [_fpItem.tag_url, _fpItem.nfc_tag_uid]),
+   ['https://acme.example/tag/FP158354', 'ABCDEF01']);
+ok('and offering Add info', await p.$eval('#fp-btn-batch-edit', e => e.textContent), 'Add info');
+const beforeLink = await p.evaluate(() => ({ items:_job.items.length, queue:LiaSync.queueLength() }));
+await p.click('#fp-btn-batch-stop'); await p.waitForTimeout(300);
+ok('finishing on it records no inspection', await p.evaluate(() => _job.items.length), beforeLink.items);
+ok('but keeps the link, so the next tap on it resolves',
+   await p.evaluate(() => JSON.parse(localStorage.getItem('lia-upload-queue')).pop().kind), 'fp_tag_link');
+ok('and the run is over', await p.evaluate(() => ({ batch: !!_fpBatch, live: window.__liveListeners() })),
+   { batch:false, live:0 });
 
-await p.evaluate(() => { fpBatchStop(false); _fpItem = null; _fpChecks = []; _fpLink = null; fpRenderAll(); });
+// ── Typed or scanned, the same as a tap ─────────────────────────────────────
+await p.evaluate(() => { _job.items = []; fpRenderAll(); });
+await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+await p.click('#fp-btn-batch-type'); await p.waitForTimeout(100);
+await p.fill('#fp-batch-serial', 'H-1'); await p.press('#fp-batch-serial', 'Enter');
+await p.waitForTimeout(300);
+ok('a typed serial puts the item on screen like a tap', await p.evaluate(() => _fpItem && _fpItem.serial_raw), 'H-1');
+await p.evaluate(() => { window.startScan = () => {}; });
+await p.click('#fp-btn-batch-scan'); await p.waitForTimeout(100);
+await p.evaluate(() => _onScanSuccess('H-2')); await p.waitForTimeout(300);
+ok('and a scanned one passes the item before it, like a tap',
+   await p.evaluate(() => [_job.items.map(i => [i.serial_num, i.source]), _fpItem && _fpItem.serial_raw]),
+   [[['H-1', 'field_batch']], 'H-2']);
+ok('the reader is still listening after the scan', await p.evaluate(() => window.__liveListeners()), 1);
+await p.evaluate(() => fpBatchStop());
 await p.waitForTimeout(150);
+
+// ── Finish passes the last item ─────────────────────────────────────────────
+await p.evaluate(() => { _job.items = []; fpRenderAll(); });
+await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+await p.evaluate(() => window.__tap({ serial:'H-2' })); await p.waitForTimeout(300);
+ok('Finish says it will pass what is on screen',
+   await p.$eval('#fp-btn-batch-stop', e => e.textContent), 'Pass & finish');
+await p.click('#fp-btn-batch-stop'); await p.waitForTimeout(300);
+ok('and does — the last item has no next tap to pass it',
+   await p.evaluate(() => _job.items.map(i => [i.serial_num, i.overall_pass])), [['H-2', true]]);
+
+// ── Saved on every tap; the app dying loses nothing ────────────────────────
+await p.evaluate(() => { _job.items = []; saveNow(); });
+await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+await p.evaluate(() => window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' })); await p.waitForTimeout(300);
+const jobId = await p.evaluate(() => _job.id);
+ok('the item tapped is saved into the job the moment it is tapped',
+   await p.evaluate(id => (loadJobs()[id].fpInProgress || {}).item.serial_raw, jobId), 'H-1');
+await p.reload(); await p.waitForTimeout(500);       // the app dies
+await p.evaluate(id => openJob(id), jobId); await p.waitForTimeout(400);
+ok('reopening the job records it as passed, as the next tap would have',
+   await p.evaluate(() => _job.items.map(i => [i.serial_num, i.overall_pass, i.source])), [['H-1', true, 'field_batch']]);
+ok('and it is no longer in hand', await p.evaluate(id => [!!_fpItem, !!loadJobs()[id].fpInProgress], jobId), [false, false]);
+
+// ── Failed with no photo: the one alert ─────────────────────────────────────
+await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+await p.evaluate(() => window.__tap({ serial:'H-2' })); await p.waitForTimeout(300);
+await p.click('#fp-btn-batch-fail'); await p.waitForTimeout(150);
+await p.evaluate(() => { const b = document.querySelectorAll('#fp-checks-list .fp-seg')[0].querySelectorAll('button');
+  (_fpChecks[0].pass_answer ? b[1] : b[0]).click(); });
+await p.waitForTimeout(100);
+await p.evaluate(() => goScreen('jobs')); await p.waitForTimeout(200);
+ok('leaving with a failed item that has no photo is stopped', await p.evaluate(() => ({
+     stayed: $('screen-detail').classList.contains('active'),
+     alert: !$('fp-alert').classList.contains('hidden') })), { stayed:true, alert:true });
+ok('saying what is at stake', await p.$eval('#fp-alert-msg', e => /H-2[\s\S]*no photo[\s\S]*not recorded/.test(e.textContent)), true);
+await p.click('#fp-alert-go'); await p.waitForTimeout(200);
+ok('Take the photo goes straight to the photo', await p.evaluate(() => !$('fp-condemn-sheet').classList.contains('hidden')), true);
+await p.click('#fp-btn-cancel-condemn'); await p.waitForTimeout(150);
+
+// The app dies mid-fail: reopening brings it back, and says so.
+await p.reload(); await p.waitForTimeout(500);
+await p.evaluate(id => openJob(id), jobId); await p.waitForTimeout(400);
+ok('a failed item the app died on comes back on screen, not recorded as passed', await p.evaluate(() => ({
+     serial: _fpItem && _fpItem.serial_raw, recorded: _job.items.some(i => i.serial_num === 'H-2'),
+     alert: !$('fp-alert').classList.contains('hidden') })), { serial:'H-2', recorded:false, alert:true });
+ok('with the check he failed still failed',
+   await p.evaluate(() => _fpChecks.some(c => c.answer !== c.pass_answer)), true);
+ok('and only one way on from there: take the photo',
+   await p.$eval('#fp-alert-leave', e => e.style.display), 'none');
+await p.click('#fp-alert-go'); await p.waitForTimeout(150);
+await p.click('#fp-btn-cancel-condemn'); await p.waitForTimeout(150);
+
+// Leaving anyway is allowed, but only on purpose.
+await p.evaluate(() => goScreen('jobs')); await p.waitForTimeout(150);
+await p.click('#fp-alert-leave'); await p.waitForTimeout(200);
+ok('"Leave — don\'t record it" leaves, recording nothing', await p.evaluate(id => ({
+     jobs: $('screen-jobs').classList.contains('active'),
+     recorded: loadJobs()[id].items.some(i => i.serial_num === 'H-2'),
+     held: !!loadJobs()[id].fpInProgress }), jobId), { jobs:true, recorded:false, held:false });
+await p.evaluate(id => openJob(id), jobId); await p.waitForTimeout(300);
 
 // ── A run cannot outlive the screen it belongs to ───────────────────────────
 // Left armed, the reader keeps firing into a job the tech has left — and on
 // iOS leaves Apple's sheet up over whatever he moved to.
-// The previous flag left a run paused; clear it and start a clean one.
-await p.evaluate(() => { fpBatchStop(false); _fpItem = null; _fpChecks = []; fpRenderAll(); });
-await p.waitForTimeout(150);
 await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
 ok('a run is live before leaving', await p.evaluate(() => ({
      live: window.__liveListeners(), batch: !!_fpBatch })), { live:1, batch:true });
+await p.evaluate(() => { _job.items = []; _fpBatch.lastAt = {}; window.__tap({ serial:'H-2' }); });
+await p.waitForTimeout(300);
 await p.evaluate(() => goScreen('jobs')); await p.waitForTimeout(200);
-ok('leaving the job ends the run and releases the reader',
+ok('leaving the screen records the item that was on it as passed, rather than losing it',
+   await p.evaluate(() => loadJobs()[_job.id].items.map(i => [i.serial_num, i.overall_pass, i.source])),
+   [['H-2', true, 'field_batch']]);
+ok('ends the run and releases the reader',
    await p.evaluate(() => ({ live: window.__liveListeners(), batch: !!_fpBatch })),
    { live:0, batch:false });
 ok('and puts the batch panel away',
    await p.evaluate(() => $('fp-batch-panel').style.display), 'none');
+
+// ── iOS: same flow, but Apple's sheet sits over the app ─────────────────────
+// The sheet would cover the form and the keyboard, so Add info stops the reader
+// there, and finishing the form brings it back.
+const q = await b.newPage();
+q.on('pageerror', e => errs.push('ios: ' + e.message));
+await q.addInitScript(nfcStub, 'ios');
+await q.goto(BASE); await q.waitForTimeout(400);
+await seed(q);
+await q.click('#btn-new-job'); await q.waitForTimeout(150);
+await q.click('.scope-opt[data-scope="fall_protection"]'); await q.waitForTimeout(300);
+await q.click('#fp-btn-batch'); await q.waitForTimeout(200);
+await q.evaluate(() => window.__tap({ serial:'H-1', uid:'04:A1:B2:C3' })); await q.waitForTimeout(300);
+ok('iOS: a tap puts the item on screen the same way', await q.evaluate(() => _fpItem.serial_raw), 'H-1');
+await q.evaluate(() => window.__tap({ serial:'H-2' })); await q.waitForTimeout(300);
+ok('iOS: and the next tap passes it', await q.evaluate(() => _job.items.map(i => [i.serial_num, i.source])),
+   [['H-1', 'field_batch']]);
+await q.click('#fp-btn-batch-edit'); await q.waitForTimeout(150);
+ok('iOS: Edit info stops the reader so its sheet does not cover the form',
+   await q.evaluate(() => window.__liveListeners()), 0);
+await q.click('#fp-btn-done-edit'); await q.waitForTimeout(200);
+ok('iOS: and finishing the form brings the reader back',
+   await q.evaluate(() => window.__liveListeners()), 1);
+await q.close();
 
 console.log('\npage errors:', errs.length ? errs : 'none');
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');

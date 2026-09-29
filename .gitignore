@@ -29,3 +29,7 @@ DerivedData/
 # do not belong in a git history. Regenerate with tools/bsi-products.mjs.
 bsi-products.json
 bsi-form-dump.json
+
+# Built installers and store bundles handed to testers. Kept beside the code
+# they were built from, never committed.
+lia-deliverables/

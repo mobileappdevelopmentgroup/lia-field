@@ -269,7 +269,9 @@
   }
 
   function pendingSummary() {
-    var q = readQueue().filter(function (e) { return !isDeferrable(e); });
+    // Photos count: the tech should see they have not gone yet. Support
+    // traffic does not — it has its own "waiting" on the ticket.
+    var q = readQueue().filter(function (e) { return String(e.kind || '').indexOf('support_') !== 0; });
     return {
       total: q.length,
       failing: q.filter(function (e) { return e.attempts >= 3; }).length,
@@ -294,6 +296,13 @@
     // Uploading it is what makes the next tap on it resolve, on any phone.
     if (entry.kind === 'fp_tag_link') {
       return sb.rpc('record_fp_tag_link', { p: entry.payload });
+    }
+    // The photo of a failed item: the file to Storage, then filed against its
+    // inspection. See photos.js. Queued behind the inspection it belongs to.
+    if (entry.kind === 'fp_photo') {
+      return root.LiaPhotos
+        ? root.LiaPhotos.upload(sb, entry.payload)
+        : Promise.resolve({ error: { message: 'Photo upload is not available in this build.' } });
     }
     // A tag this tech WROTE. Not optional and not deferrable — see the classes
     // below. The tag is physically on the equipment; if this never lands, the
@@ -331,7 +340,10 @@
   //                 what strands a day's inspections — but NEVER dropped. A tech
   //                 who reported something and was told it went has to be right.
   var OPTIONAL_KINDS = ['fp_external', 'fp_tag_link'];
-  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply'];
+  // A photo is deferrable too: it is large, so it is the likeliest thing to
+  // fail on a weak signal, and it must never hold up a day of inspections — but
+  // it is the evidence for a removal from service, so it is never dropped.
+  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply', 'fp_photo'];
   var OPTIONAL_ATTEMPTS = 3;
 
   function isOptional(entry) {

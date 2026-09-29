@@ -158,6 +158,11 @@ echo "Running tag stock assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/25_tag_stock_test.sql"
 
+echo
+echo "Running fall protection photo assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/26_fp_photos_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

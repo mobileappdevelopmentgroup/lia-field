@@ -157,15 +157,21 @@ await p.evaluate(async () => {
 });
 await p.waitForTimeout(600);
 ok('the photo is accepted', await p.evaluate(()=>!!_fpPhoto), true);
-ok('and downscaled well under the original',
-   await p.evaluate(()=>_fpPhoto.bytes < 400000), true);
+ok('and compressed well under the original',
+   await p.evaluate(()=>_fpPhoto.bytes <= 200 * 1024), true);
 ok('confirm is now enabled', await p.$eval('#fp-btn-confirm-condemn', e=>e.disabled), false);
 await p.fill('#fp-condemn-note','Tagged, pulled from truck 14');
-await p.click('#fp-btn-confirm-condemn'); await p.waitForTimeout(300);
+await p.click('#fp-btn-confirm-condemn'); await p.waitForTimeout(500);
 ok('the condemned item is recorded', await p.evaluate(()=>_job.items.length), 2);
 const rec = await p.evaluate(()=>_job.items[0]);
 ok('marked as failed', rec.overall_pass, false);
-ok('with the photo attached', !!rec.photo, true);
+ok('with the photo attached, by id', !!(rec.photo && rec.photo.id), true);
+ok('the file itself is not in the job — localStorage is too small for photos',
+   rec.photo.dataUrl === undefined, true);
+const stored = await p.evaluate(id => LiaPhotos.get(id).then(r => r && { bytes: r.blob.size, type: r.blob.type, w: r.width, h: r.height }), rec.photo.id);
+ok('it is in the photo store as a JPEG', stored && stored.type, 'image/jpeg');
+ok('shrunk to 1280 px on the long edge', stored && [stored.w, stored.h], [1280, 960]);
+ok('and small enough to be cheap to keep', stored && stored.bytes <= 200 * 1024, true);
 ok('and the optional note kept', rec.discard_note, 'Tagged, pulled from truck 14');
 ok('the client sends no discard_reason — the database composes it',
    rec.discard_reason===undefined, true);

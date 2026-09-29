@@ -140,6 +140,16 @@ await page.fill('#fi-serial', '1509167');
 await page.waitForTimeout(150);
 await shot('ladder-entry', '#btn-scan');
 
+// A scanned ladder the catalogue knows, and the button that adds it and opens
+// the camera for the next one.
+await page.evaluate(() => {
+  $('fi-brand').value = 'Werner'; $('fi-type').value = 'Step'; $('fi-length').value = '8';
+  showLadderLookup('hit', { brand: 'Werner', type: 'Step', length: '8', last: '2025-09-30' });
+});
+await page.waitForTimeout(150);
+await shot('ladder-next', '#btn-add-next');
+await page.evaluate(() => clearFormAll());
+
 // ── A fall protection job ────────────────────────────────────────────────────
 await page.evaluate(() => { goScreen('jobs'); renderJobList(); });
 await page.waitForTimeout(150);
@@ -185,17 +195,27 @@ await shot('fp-condemn', '#fp-btn-photo');
 await page.click('#fp-btn-cancel-condemn'); await page.waitForTimeout(200);
 
 // ── Tap-through ──────────────────────────────────────────────────────────────
-// NFC does not exist in headless Chromium, so the panel is shown directly. What
-// the picture has to convey is the layout and the count, and both are real.
+// NFC does not exist in headless Chromium, so the run is set up directly: seven
+// passed, the last one shown, and the item just tapped on screen with its
+// checks at passing. Fail is what is ringed — it is the only thing to press.
 await page.evaluate(() => {
-  _fpItem = null; _fpChecks = [];
-  _fpBatch = { count: 7, recorded: [], last: {
-    serial: 'FP158361', sub: 'Crane lift sling · BUCKINGHAM', flagged: false,
-  }, lastAt: {}, stream: null, hint: 'Hold the phone to each item. Keep the screen on.' };
-  fpRenderAll();
+  _fpChecks = [];
+  _fpBatch = {
+    recorded: Array.from({ length: 7 }, (_, i) => ({ key: 'k' + i, id: 'i' + i, serial: 'FP15835' + i, pass: true })),
+    skipped: 0, lastAt: {}, failing: false, currentKey: 'a:x',
+    stream: { needsArming: false, stop() {}, arm() {} },
+    last: { serial: 'FP158361', sub: 'Passed · Crane lift sling · BUCKINGHAM', flagged: false },
+    hint: 'Inspecting. Tap the next item to pass it, or press Fail.', warn: false,
+  };
+  fpAdopt({
+    serial_raw: 'FP158362', manufacturer: 'BUCKINGHAM', model: 'U69P98Q2',
+    equipment_type: 'crane_lift_sling', item_type: 'Crane lift sling',
+    description: 'Yellow web sling, 6 ft', last_inspected: '2025-08-22',
+  }, true);
 });
 await page.waitForTimeout(250);
-await shot('fp-batch', '#fp-batch-panel');
+await shot('fp-batch', '#fp-btn-batch-fail');
+await page.evaluate(() => { _fpBatch = null; _fpItem = null; _fpChecks = []; fpRenderAll(); });
 
 // ── A tag we do not know ─────────────────────────────────────────────────────
 await page.evaluate(() => {

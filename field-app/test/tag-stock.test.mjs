@@ -146,14 +146,14 @@ await p.evaluate(() => { _fpItem = null; _fpChecks = []; fpRenderAll(); });
 await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
 await p.evaluate((u) => window.__tap({ url: u, uid: 'AA:BB:CC:DD' }), LINK('C'));
 await p.waitForTimeout(500);
-ok('in a run, a blank tag stops it rather than passing anything',
+ok('in a run, a blank tag is put on screen and nothing is passed',
    await p.evaluate(() => ({ batch: $('fp-batch-panel').style.display !== 'none', items: _job.items.length })),
-   { batch: false, items: 1 });
+   { batch: true, items: 1 });
 ok('without reading its sheet or asking about a supplier',
    await p.evaluate(() => $('fp-link-sheet').classList.contains('hidden')), true);
-ok('handing the tech a new item with the tag on it',
-   await p.evaluate(() => [_fpItem.tag_label, _fpItem.tag_url, $('fp-edit-form').style.display !== 'none']),
-   ['FP161342', LINK('C'), true]);
+ok('as a new item with the tag on it, offering Add info',
+   await p.evaluate(() => [_fpItem.tag_label, _fpItem.tag_url, $('fp-btn-batch-edit').textContent]),
+   ['FP161342', LINK('C'), 'Add info']);
 ok('still no request to Google', googleHits, 0);
 await p.evaluate(() => { fpBatchStop(false); _fpItem = null; _fpChecks = []; _fpLink = null; fpRenderAll(); });
 await p.waitForTimeout(150);

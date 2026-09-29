@@ -146,6 +146,13 @@ edit is discarded and nothing reaches testers.
 Creating the key: Play Console → Setup → API access. `CLAUDE.md` has the
 permissions to grant. Without a key, upload by hand in the Play Console.
 
+## Where finished builds go
+
+Copy every finished installer and store bundle into **`lia-deliverables/<version>/`**
+at the root of this repo — the `.aab`, the `.ipa`, the DMGs, the Windows
+installer. It is gitignored. It replaced `~/Desktop/Lia-Deliverables/` on
+2026-09-29 so the builds sit beside the code they came from, in one place.
+
 ## 6. macOS → DMG
 
 ```bash

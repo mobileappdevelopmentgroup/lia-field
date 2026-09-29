@@ -90,6 +90,13 @@ function clearEntryForm() {
   _qtyExplicit = false;
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
   updateSerialWarnState();
+  showLadderLookup(null);
+  // What stays in the form for the next ladder is marked as carried over, so
+  // that ladder's own record replaces it if it has one.
+  LOOKUP_FIELDS.forEach(([id]) => {
+    const el = $(id);
+    if (el.value.trim()) el.dataset.src = 'carry'; else delete el.dataset.src;
+  });
   _currentParts = new Map();
   _currentFlags = NO_FLAGS();
   renderPartButtons();
@@ -98,7 +105,8 @@ function clearEntryForm() {
 }
 
 function clearFormAll() {
-  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  ['fi-serial','fi-brand','fi-type','fi-length','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) { el.value=''; delete el.dataset.src; } });
+  showLadderLookup(null);
   const qty = $('fi-part-qty'); if (qty) qty.value = '1';
   _qtyExplicit = false;
   document.querySelectorAll('.cf-input').forEach(i => { i.value = ''; });
@@ -333,11 +341,133 @@ function renderCustomFieldsForm() {
 
 // ── Add Ladder / Save Edits ───────────────────────────────────────────────────
 $('btn-add-ladder').addEventListener('click', () => { if (_editingIdx >= 0) saveEdits(); else addLadder(); });
+// Add, then straight back to the camera for the next ladder. If the add was
+// refused — no serial, no work order — the camera stays shut so the tech sees
+// why.
+$('btn-add-next').addEventListener('click', () => {
+  if (_editingIdx >= 0) return;
+  if (!addLadder()) return;
+  const a = document.activeElement;
+  if (a && typeof a.blur === 'function') a.blur();
+  startScan();
+});
 $('btn-cancel-edit').addEventListener('click', cancelEdit);
 
 function setEditMode(editing) {
   $('btn-add-ladder').textContent = editing ? 'Save Edits' : '+ Add Ladder';
   $('btn-cancel-edit').style.display = editing ? 'block' : 'none';
+  $('btn-add-next').style.display = editing ? 'none' : '';
+}
+
+// ── What we know about a scanned serial ─────────────────────────────────────
+// A ladder that has EVER been inspected is already in BSI with its brand, type
+// and length, so the serial alone is enough to record it. One that never has
+// needs those details. The tech knows which is which better than we do; the
+// point of looking it up is to tell him, and to fill in what we have so he does
+// not type it again. Leaving the details blank is his call either way — the
+// ladder is always added.
+//
+// Three places, cheapest first:
+//   · the device catalogue — every ladder the account had at the last sync
+//   · this phone's own jobs — inspected here and not yet synced back down
+//   · the database, when online — inspected since this phone last synced
+//
+// The server's details are preferred — over whatever carried over from the
+// previous ladder (a rack is usually one model, so they carry over on purpose)
+// and over anything an earlier scan filled in. The one thing they never replace
+// is a field the tech edited himself for this ladder: that is him fixing it,
+// and it goes up and corrects the record.
+//
+// Each field says where its value came from, in data-src:
+//   auto   — filled by a lookup
+//   carry  — left over from the previous ladder
+//   (none) — typed by the tech
+// A hit fills every field that is empty, auto or carry. A miss clears only
+// auto values — they belonged to a different serial — and keeps the rest.
+const LOOKUP_FIELDS = [['fi-brand', 'brand'], ['fi-type', 'type'], ['fi-length', 'length']];
+
+function lookupLadder(serial) {
+  const sn = String(serial || '').trim();
+  // Editing a ladder already in the list: its fields are what the tech entered
+  // for it, and a lookup must not quietly replace them.
+  if (_editingIdx >= 0) return Promise.resolve(null);
+  if (!sn) { showLadderLookup(null); return Promise.resolve(null); }
+  const fromCache = window.LiaCache
+    ? window.LiaCache.findBySerial(sn, 'ladder').catch(() => null)
+    : Promise.resolve(null);
+  return fromCache
+    .then(hit => hit ? { brand: hit.brand, type: hit.ladder_type, length: hit.length,
+                         last: hit.last_inspected } : null)
+    .then(hit => hit || ladderOnThisPhone(sn))
+    .then(hit => hit || ladderOnline(sn))
+    .then(hit => {
+      if ($('fi-serial').value.trim() !== sn) return null;    // moved on already
+      LOOKUP_FIELDS.forEach(([id, key]) => {
+        const el = $(id);
+        const mine = el.value.trim() && !el.dataset.src;
+        if (hit && hit[key] && !mine) { el.value = hit[key]; el.dataset.src = 'auto'; }
+        else if (!hit && el.dataset.src === 'auto') { el.value = ''; delete el.dataset.src; }
+      });
+      showLadderLookup(hit ? 'hit' : 'miss', hit);
+      return hit;
+    })
+    .catch(() => { showLadderLookup(null); return null; });
+}
+
+// Typing in one of them makes it the tech's own value.
+LOOKUP_FIELDS.forEach(([id]) => $(id).addEventListener('input', () => { delete $(id).dataset.src; }));
+
+// A typed serial is looked up exactly like a scanned one, once he has finished
+// typing it — on leaving the field or pressing Enter, not on every keystroke.
+$('fi-serial').addEventListener('change', () => lookupLadder($('fi-serial').value));
+
+function ladderKey(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+// The most recent record of this serial in any job on the phone.
+function ladderOnThisPhone(sn) {
+  const k = ladderKey(sn);
+  let best = null;
+  Object.values(loadJobs()).forEach(job => (job.ladders || []).forEach(l => {
+    if (ladderKey(l.serialNum) !== k) return;
+    if (!best || String(l.capturedAt || '') > String(best.capturedAt || '')) best = l;
+  }));
+  return best ? { brand: best.brand, type: best.type, length: best.length,
+                  last: String(best.capturedAt || '').slice(0, 10) } : null;
+}
+
+// Offline is the normal state on a job site, so this is a bonus, never a wait:
+// no connection, no client, or any error is simply "not found".
+function ladderOnline(sn) {
+  const sync = window.LiaSync;
+  if (!sync || (typeof navigator !== 'undefined' && navigator.onLine === false)) return Promise.resolve(null);
+  return sync.client().then(sb => {
+    if (!sb) return null;
+    return sb.from('ladder_inspections_public')
+      .select('brand, type, length, inspection_date')
+      .eq('serial_key', ladderKey(sn))
+      .order('inspection_date', { ascending: false })
+      .limit(1)
+      .then(r => {
+        const row = r && !r.error && r.data && r.data[0];
+        return row ? { brand: row.brand, type: row.type, length: row.length, last: row.inspection_date } : null;
+      });
+  }).catch(() => null);
+}
+
+function showLadderLookup(state, hit) {
+  const el = $('fi-lookup');
+  if (!el) return;
+  if (!state) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = '';
+  el.className = 'ladder-lookup ' + state;
+  if (state === 'hit') {
+    const what = [hit.brand, hit.type, hit.length ? hit.length + ' ft' : '']
+      .filter(Boolean).join(' · ');
+    el.textContent = 'Inspected before' + (hit.last ? ` (${hit.last})` : '') +
+      (what ? ': ' + what : '') + '. BSI already has its details — the serial is enough.';
+  } else {
+    el.textContent = 'Never inspected that we know of — BSI will need its brand, type and length.';
+  }
 }
 
 // The four checkboxes that sit under Length on the BSI ladder form.
@@ -354,6 +484,9 @@ let _currentFlags = NO_FLAGS();
 // and the parts catalogue are both wrong for it.
 function applyScopeToDetail(job) {
   const isFp = jobScope(job) === 'fall_protection';
+  // Read before anything below clears the screen: it is what this job had in
+  // hand when it was last left, or when the app died.
+  const inProgress = job && job.fpInProgress;
   // Any run belonged to the job being left, whatever the new one is.
   if (typeof fpBatchStop === 'function') fpBatchStop(false);
   ['form-panel', 'parts-panel', 'add-btn-panel', 'recent-panel']
@@ -368,6 +501,7 @@ function applyScopeToDetail(job) {
       .forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
   } else if (typeof fpReset === 'function') {
     fpReset();
+    if (inProgress && typeof fpRecover === 'function') fpRecover(inProgress);
   }
   const share = $('btn-share-csv');
   // The ladder CSV shape does not describe a fall protection item.
@@ -500,12 +634,12 @@ function demandWorkOrder() {
 
 function addLadder() {
   const serial = $('fi-serial').value.trim();
-  if (needsWorkOrder()) { demandWorkOrder(); return; }
+  if (needsWorkOrder()) { demandWorkOrder(); return false; }
   if (!serial) {
     const el = $('fi-serial');
     el.focus(); el.style.borderColor = 'var(--err)';
     setTimeout(() => { el.style.borderColor = ''; }, 1200);
-    return;
+    return false;
   }
   if (!_job.ladders) _job.ladders = [];
   const added = buildLadderFromForm();
@@ -517,6 +651,7 @@ function addLadder() {
   scheduleSave();
   playSound('ladder');
   $('fi-serial').focus();
+  return true;
 }
 
 function saveEdits() {

@@ -24,7 +24,7 @@ with migrations 11–17 live on production (`docs/RELEASE.md` is how it was done
 - **The Windows installer builds.** `LIA_CONFIG_JSON` repo secret set, and
   **Actions → Build Lia Office (Windows)** produced `Lia Setup 1.7.0.exe`
   (x64, 85 MB) on its first run — run `35464632388`. Copied to
-  `~/Desktop/Lia-Deliverables/`. The build moved to CI rather than the local
+  `lia-deliverables/`. The build moved to CI rather than the local
   path in `docs/WINDOWS-BUILD.md`: the bench Windows PC is for **testing only**,
   so neither the toolchain nor `config.json` has to live on it.
 - **The Windows build now runs every unit test.** A manual run uses *master's*
@@ -52,7 +52,7 @@ with migrations 11–17 live on production (`docs/RELEASE.md` is how it was done
   the service account was made in Google Cloud and granted through
   **Users and permissions** instead, which works and avoids that page entirely.
 - **Tester pack refreshed** for an Android tester onboarding 2026-09-20.
-  `~/Desktop/Lia-Deliverables/` now holds the 1.7.0 .aab, the Windows
+  `lia-deliverables/` now holds the 1.7.0 .aab, the Windows
   installer, a README with the full onboarding checklist (Play tester list →
   Supabase invite → `create_lia_user` as a `tech` on the Batavia account), and a
   rewritten `FOR-TESTERS.md` — the old one told testers the app never signs in
@@ -138,7 +138,7 @@ this into BSI* from Merge Field Work, *Run this again*, a way home from every
 screen, a working layout from 800×640 up, and issue/feature reporting.
 
 Shipped as **1.11.0**: Android versionCode 9, iOS build 10 (VALID), all three
-desktop builds in `~/Desktop/Lia-Deliverables/`. Migrations **24 and 25 applied**.
+desktop builds in `lia-deliverables/`. Migrations **24 and 25 applied**.
 
 **1.11.1 — office only.** Merge Field Work asked `inspections` for
 `uploaded_at`, a column only `fp_inspections` has, and failed the whole pull in
@@ -146,12 +146,12 @@ front of a work order; it reads `created_at` now, which is the same fact. Every
 desktop test stubs the Supabase client and a stub answers to any column name, so
 `electron/test/columns.test.mjs` checks the app's real column lists against the
 committed schema snapshot. The three desktop builds in
-`~/Desktop/Lia-Deliverables/` are 1.11.1; the phones stay on 1.11.0 and need no
+`lia-deliverables/` are 1.11.1; the phones stay on 1.11.0 and need no
 reinstall.
 
 
 **1.12.0 — 2026-09-21.** Android **versionCode 10**, iOS **build 11**, all three
-desktop builds in `~/Desktop/Lia-Deliverables/`.
+desktop builds in `lia-deliverables/`.
 
 Three things that did not work on a real device, all of them silent: **Save CSV
 did nothing at all on Android** (the WebView has neither the Web Share API nor a
@@ -186,7 +186,7 @@ Migrations **26 and 27 are written and tested but NOT applied** — Field Work a
 the shared catalogue need them. `docs/QUEUE.md` has what is left.
 
 **1.12.1 — 2026-09-21.** Android **versionCode 11**, iOS **build 12**, all three
-desktop builds in `~/Desktop/Lia-Deliverables/`. Migrations **26 and 27 applied
+desktop builds in `lia-deliverables/`. Migrations **26 and 27 applied
 and verified** against the live database.
 
 **Fall protection pushes to BSI.** It never could: `FP_FORM` guessed at a form
@@ -232,7 +232,7 @@ Android 12 carries the same JS without it, which changes nothing on Android.
 **1.13.0 — 2026-09-28.** Android **versionCode 13** (Play internal), iOS **build
 14** (TestFlight internal), Lia Office **1.13.0** for macOS (arm64 + Intel DMG,
 signed, not notarized) and Windows (CI run `36478435154`, unsigned; 51/51 unit
-tests on Windows). Installers in `~/Desktop/Lia-Deliverables/1.13.0/`.
+tests on Windows). Installers in `lia-deliverables/1.13.0/`.
 Migrations **28–31** live.
 
 **Nate's Google-Sheet tags imported.** 645 tags: 288 items, 287 certificates
@@ -456,7 +456,7 @@ listing and nothing should be until the testers come back.
 
 ## Deliverables ready to send
 
-Staged in **`~/Desktop/Lia-Deliverables/`**, built from `1a42405`:
+Staged in **`lia-deliverables/`**, built from `1a42405`:
 
 | File | For |
 |------|-----|
@@ -492,13 +492,13 @@ catalog quantities everywhere (the June 12 work), on top of the barcode scanner.
   filled in (privacy policy URL, data safety = no data collected, camera
   justification), `lia-field-v1.0-vc1.aab` uploaded and rolled out.
   The tester opt-in link is deliberately kept out of this repo — it lives in
-  `~/Desktop/Lia-Deliverables/FOR-TESTERS.md`, and Play Console shows it under
+  `lia-deliverables/FOR-TESTERS.md`, and Play Console shows it under
   Test and release → Testing → Internal testing → Testers.
 - Enrolled in **Play App Signing** — the local keystore
   (`a6dc5243…`) is now the *upload* key only; Google holds the app signing key
   that end users' installs are signed with. The two fingerprints differ by
   design.
-- Rewrote `~/Desktop/Lia-Deliverables/FOR-TESTERS.md` for the Play install path,
+- Rewrote `lia-deliverables/FOR-TESTERS.md` for the Play install path,
   with an uninstall-first warning (see below).
 
 ### Blocked on you

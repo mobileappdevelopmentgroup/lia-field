@@ -28,7 +28,14 @@ $('btn-scan').addEventListener('click', () => {
   if (a && typeof a.blur === 'function') a.blur();
   startScan();
 });
-$('btn-scan-cancel').addEventListener('click', stopScan);
+$('btn-scan-cancel').addEventListener('click', () => {
+  stopScan();
+  // A tap-through run quieted its reader for the camera (iOS); put it back.
+  if (window._fpAwaitScan) {
+    window._fpAwaitScan = false;
+    if (typeof fpBatchScanned === 'function') fpBatchScanned(null);
+  }
+});
 $('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
 
 async function startScan() {
@@ -144,12 +151,14 @@ function _onScanSuccess(value) {
     window._fpAwaitScan = false;
     playSound('scan');
     stopScan();
+    if (typeof fpBatchScanned === 'function' && fpBatchScanned(value)) return;
     if (typeof fpLookup === 'function') fpLookup(value);
     return;
   }
   $('fi-serial').value = value;
   playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
   stopScan();
+  if (typeof lookupLadder === 'function') lookupLadder(value);
 }
 
 // Fallback: decode a photo from the OS camera (used only when getUserMedia is denied)
@@ -162,9 +171,10 @@ async function _onFallbackPhotoCaptured(e) {
   $('scan-overlay').classList.remove('hidden');
   const code = await _decodeImageFile(file);
   if (code) {
-    $('fi-serial').value = code;
-    playSound(updateSerialWarnState() ? 'scanFail' : 'scan');
+    // Same routing as the live viewfinder: a fall protection lookup or run
+    // gets it if one asked, otherwise the ladder serial.
     $('scan-overlay').classList.add('hidden');
+    _onScanSuccess(code);
   } else {
     $('fi-serial').value = '';
     updateSerialWarnState();

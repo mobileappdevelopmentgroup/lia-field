@@ -20,13 +20,18 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 // the problem: asking a tech on a ladder which version he is running gets a
 // wrong answer or no answer, and a bug report without a build number is a
 // guessing game.
-const LIA_APP_VERSION = '1.13.0';
+const LIA_APP_VERSION = '1.14.0';
 
 function goScreen(name) {
   // A tap-through run belongs to one job on one screen. Leaving without ending
   // it would leave the NFC reader armed behind the tech's back — and on iOS,
-  // Apple's sheet up over whatever he moved to.
-  if (name !== 'detail' && typeof fpBatchStop === 'function') fpBatchStop(false);
+  // Apple's sheet up over whatever he moved to. Leaving also records the item
+  // that was on screen as passed, rather than losing it.
+  // An item failed with no photo is not recorded; leaving would lose it
+  // silently. That one thing stops the tech at the door.
+  if (name !== 'detail' && $('screen-detail') && $('screen-detail').classList.contains('active')
+      && typeof fpBlockLeave === 'function' && fpBlockLeave(name)) return;
+  if (name !== 'detail' && typeof fpBatchLeave === 'function') fpBatchLeave();
   ['auth','sync','jobs','detail','help'].forEach(s => {
     const el = $(`screen-${s}`);
     if (el) el.classList.toggle('active', s === name);
