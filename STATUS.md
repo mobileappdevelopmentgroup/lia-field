@@ -229,6 +229,24 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.14.0 — 2026-09-29.** Android **versionCode 14** (Play internal), iOS **build
+15** (TestFlight internal — the group takes every build). Phone only: Lia Office
+has no changes and was not rebuilt. Bundles in `lia-deliverables/1.14.0/`.
+⚠️ **Migration 32 is NOT applied yet** — until it is, failure photos wait in the
+phone's upload queue and retry; nothing is lost and inspections still upload.
+
+**Tap-through passes on the next tap.** A tap puts the item on screen with every
+check at passing; the next tap, scan or typed serial records it. Fail is the only
+press for a defect. The item in hand is saved on every change and recovered if
+the app dies; a failed item with no photo raises the app's one alert.
+
+**Failure photos upload (32).** Private `fp-photos` bucket, compressed to
+~1280 px / ~200 KB, kept in IndexedDB rather than localStorage, deleted from the
+phone once filed.
+
+**Ladders: Add & Scan Next,** and scanned or typed serials fill in what the
+device, the phone's own jobs or the server knows.
+
 **1.13.0 — 2026-09-28.** Android **versionCode 13** (Play internal), iOS **build
 14** (TestFlight internal), Lia Office **1.13.0** for macOS (arm64 + Intel DMG,
 signed, not notarized) and Windows (CI run `36478435154`, unsigned; 51/51 unit
