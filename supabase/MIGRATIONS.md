@@ -56,7 +56,7 @@ suite and the only path to rebuilding the database from nothing.
 | `29_fp_tag_stock_field` | the phone can pull the blank tags (`my_tag_stock`); an item matched by a stocked link takes its printed label; consolidation moves stock |
 | `30_consolidate_fold_first` | `consolidate_to_one_account` folds same-serial items before moving, moves every account table, and refuses under an umbrella |
 | `31_tag_stock_office` | `tag_stock_list()` for Lia Office's Tags screen |
-| `32_fp_photos` | failure photos actually upload: private `fp-photos` bucket (JPEG, ≤ 1 MB), account-folder storage policies, `record_fp_photo()` files one against its inspection — **not applied yet** |
+| `32_fp_photos` | failure photos actually upload: private `fp-photos` bucket (JPEG, ≤ 1 MB), account-folder storage policies, `record_fp_photo()` files one against its inspection — applied 2026-09-29 |
 
 ## Where things are
 

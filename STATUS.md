@@ -232,8 +232,8 @@ Android 12 carries the same JS without it, which changes nothing on Android.
 **1.14.0 — 2026-09-29.** Android **versionCode 14** (Play internal), iOS **build
 15** (TestFlight internal — the group takes every build). Phone only: Lia Office
 has no changes and was not rebuilt. Bundles in `lia-deliverables/1.14.0/`.
-⚠️ **Migration 32 is NOT applied yet** — until it is, failure photos wait in the
-phone's upload queue and retry; nothing is lost and inspections still upload.
+Migration **32 applied** the same day, after the builds went out — photos queued
+in the meantime upload on the phones' next sync.
 
 **Tap-through passes on the next tap.** A tap puts the item on screen with every
 check at passing; the next tap, scan or typed serial records it. Fail is the only

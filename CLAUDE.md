@@ -32,9 +32,10 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**32 is written but NOT applied** (2026-09-29) — the `fp-photos` bucket, its
-storage policies and `record_fp_photo()`. Phones on 1.14.0 queue failure photos
-until it lands.
+**32 was applied 2026-09-29** — the private `fp-photos` bucket, its storage
+policies and `record_fp_photo()`, so failure photos from 1.14.0 upload. Verified
+from outside with the publishable key: `record_fp_photo` answers 401 `42501`
+(exists, anon refused) and the bucket is not publicly readable.
 **29–31 were applied 2026-09-28** — `my_tag_stock()` for the phone and the
 label copied from stock onto an item matched by link (29); a rewritten
 `consolidate_to_one_account()` (30); `tag_stock_list()` for Lia Office's Tags
