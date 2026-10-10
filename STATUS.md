@@ -229,6 +229,29 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.0 — 2026-10-10.** Android **versionCode 15** (Play internal), iOS **build
+16** (TestFlight internal, in beta testing). Phone only: **Lia Office was not
+rebuilt**, so the screen that publishes part sets is in the source but not yet in
+anybody's hands. Bundles in `lia-deliverables/1.15.0/`.
+⚠️ **Migration 33 is NOT applied yet** — rehearsed (`supabase/test/run-apply-33.sh`),
+bundle at `supabase/dist/apply-33.sql`. Until it lands, phones keep only their
+own part sets; nothing else depends on it.
+
+**Ladders.** Add & Scan Next reopens the camera on a phone (the add raised the
+keyboard in the same tap, and a failed `play()` left the camera held). **Add &
+Duplicate** keeps the camera open and adds every new barcode with the same parts;
+Done opens the last one for editing. A serial nobody knows offers brand → type →
+length as one-tap buttons. Suggestion lists stay inside the visible area above
+the keyboard.
+
+**Part sets.** More than one set of quick-tap buttons; Main is still what the
+lead's list writes into, and each job remembers its set. The library box
+searches by part number, then description. Sets the office publishes (33) are
+read-only on the phone — Copy to edit.
+
+**Fall protection.** Pass & Next Item reopens the reader (or camera) the item
+came from.
+
 **1.14.0 — 2026-09-29.** Android **versionCode 14** (Play internal), iOS **build
 15** (TestFlight internal — the group takes every build). Phone only: Lia Office
 has no changes and was not rebuilt. Bundles in `lia-deliverables/1.14.0/`.
