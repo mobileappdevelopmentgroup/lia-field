@@ -122,6 +122,9 @@
       return pullTypes(sb).then(function () {
         return pullParts(sb);
       }).then(function () {
+        // After the parts, so every part a set names is already in the library.
+        return pullPartSets(sb);
+      }).then(function () {
         // The account's blank tags, so a tap on one is recognised as ours
         // rather than as somebody else's link. Never fatal, like the parts.
         return root.LiaTagStock ? root.LiaTagStock.pull(sb) : false;
@@ -155,6 +158,17 @@
     return sb.rpc('account_parts_catalog').then(function (r) {
       if (r.error || !r.data) return false;
       return mergeCrewParts(r.data);
+    }).catch(function () { return false; });
+  }
+
+  // The office's named button sets ("Ford plant"). Fetched whole: a set missing
+  // from the answer is one the office took down. A failed fetch — no signal,
+  // or a database without migration 33 — keeps what the phone already had.
+  function pullPartSets(sb) {
+    if (typeof mergePublishedSets !== 'function') return Promise.resolve(false);
+    return sb.rpc('account_part_sets_catalog').then(function (r) {
+      if (r.error || !Array.isArray(r.data)) return false;
+      return mergePublishedSets(r.data);
     }).catch(function () { return false; });
   }
 

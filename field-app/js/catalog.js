@@ -151,8 +151,198 @@ function getLibrary() {
   return lib;
 }
 
+// ── Favourite sets ────────────────────────────────────────────────────────────
+// Different sites use different parts, so a tech can keep more than one set of
+// quick-tap buttons and switch between them.
+//
+// "Main" is the library's own favourites — `favorited` and `order` on each part
+// — and stays the one the lead's published list (mergeCrewParts) writes into.
+// Every other set is just an ordered list of part names, kept apart from the
+// library, so a list published from the office never rearranges a site set a
+// tech built for himself. The quantity per tap belongs to the part, not the
+// set: a ×2 part is ×2 whichever buttons it is on.
+//
+// The set in use is remembered per job (openJob), since a job is a site.
+//
+// Sets the office publishes (migration 33) live beside the tech's own, marked
+// `published`. They are read-only here: the office republishing must never
+// overwrite a change a tech made, and a tech's change must never pass for the
+// office's. A tech who wants one different copies it.
+const MAIN_PART_SET = 'main';
+
+function loadPartSets() {
+  try {
+    const s = JSON.parse(localStorage.getItem('lia-part-sets') || 'null');
+    if (s && Array.isArray(s.sets)) return s;
+  } catch {}
+  return { active: MAIN_PART_SET, sets: [] };
+}
+function savePartSets(ps) { localStorage.setItem('lia-part-sets', JSON.stringify(ps)); }
+
+function listPartSets() {
+  return [{ id: MAIN_PART_SET, name: 'Main', published: false }]
+    .concat(loadPartSets().sets.map(s => ({ id: s.id, name: s.name, published: !!s.published })));
+}
+function isPublishedPartSet(id) {
+  return loadPartSets().sets.some(s => s.id === id && s.published);
+}
+
+// What account_part_sets_catalog() returned, whole. Published sets are
+// replaced to match; the tech's own sets are not touched. Returns true if
+// anything changed.
+function mergePublishedSets(rows) {
+  if (!Array.isArray(rows)) return false;
+  const ps = loadPartSets();
+  const before = JSON.stringify(ps);
+  const incoming = rows.filter(r => r && r.id && String(r.name || '').trim()).map(r => ({
+    id: 'pub-' + r.id,
+    name: String(r.name).trim().slice(0, 40),
+    favs: (Array.isArray(r.parts) ? r.parts : []).map(n => String(n || '').trim()).filter(Boolean),
+    published: true,
+  }));
+  // Published first, in the office's order, then the tech's own.
+  ps.sets = incoming.concat(ps.sets.filter(s => !s.published));
+  if (!ps.sets.some(s => s.id === ps.active)) ps.active = MAIN_PART_SET;
+  const changed = JSON.stringify(ps) !== before;
+  if (changed) savePartSets(ps);
+  // A set naming a part the device has never heard of would show no button.
+  incoming.forEach(s => s.favs.forEach(n => ensureInLibrary(n)));
+  return changed;
+}
+
+// A published set the tech wants different: a copy of their own, chosen.
+function copyPartSet(id) {
+  const src = loadPartSets().sets.find(s => s.id === id);
+  if (!src) return null;
+  const nid = createPartSet((src.name + ' (mine)').slice(0, 40));
+  const ps = loadPartSets();
+  const copy = ps.sets.find(s => s.id === nid);
+  if (copy) { copy.favs = src.favs.slice(); savePartSets(ps); }
+  return nid;
+}
+function activePartSet() {
+  const ps = loadPartSets();
+  return ps.sets.some(s => s.id === ps.active) ? ps.active : MAIN_PART_SET;
+}
+function setActivePartSet(id) {
+  const ps = loadPartSets();
+  ps.active = ps.sets.some(s => s.id === id) ? id : MAIN_PART_SET;
+  savePartSets(ps);
+  return ps.active;
+}
+function createPartSet(name) {
+  const n = String(name || '').trim().slice(0, 40);
+  if (!n) return null;
+  const ps = loadPartSets();
+  const id = 'set-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  ps.sets.push({ id, name: n, favs: [] });
+  ps.active = id;
+  savePartSets(ps);
+  return id;
+}
+function renamePartSet(id, name) {
+  const n = String(name || '').trim().slice(0, 40);
+  const ps = loadPartSets();
+  const set = ps.sets.find(s => s.id === id);
+  if (!set || !n || set.published) return false;
+  set.name = n;
+  savePartSets(ps);
+  return true;
+}
+// Main cannot be deleted: it is where the lead's list lands.
+function deletePartSet(id) {
+  const ps = loadPartSets();
+  ps.sets = ps.sets.filter(s => s.id !== id || s.published);
+  if (ps.active === id) ps.active = MAIN_PART_SET;
+  savePartSets(ps);
+}
+
+// lower-cased name → slot, for the set in use.
+function favoriteSlots(lib) {
+  const m = new Map();
+  const id = activePartSet();
+  if (id === MAIN_PART_SET) {
+    lib.forEach(p => { if (p.favorited) m.set(p.name.toLowerCase(), p.order ?? 999); });
+    return m;
+  }
+  const set = loadPartSets().sets.find(s => s.id === id);
+  (set ? set.favs : []).forEach((n, i) => m.set(String(n).toLowerCase(), i + 1));
+  return m;
+}
+
 function getFavoritedParts() {
-  return getLibrary().filter(p => p.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  const lib = getLibrary();
+  const slots = favoriteSlots(lib);
+  return lib.filter(p => slots.has(p.name.toLowerCase()))
+            .sort((a, b) => slots.get(a.name.toLowerCase()) - slots.get(b.name.toLowerCase()));
+}
+
+// Star or unstar a part in the set in use.
+function toggleFavorite(name) {
+  const id = activePartSet();
+  if (id === MAIN_PART_SET) {
+    const lib = getLibrary();
+    const item = lib.find(x => x.name === name);
+    if (!item) return;
+    // Touched: from here on this part is the tech's, and a catalogue
+    // published from the office leaves it alone.
+    item.touched = true;
+    item.favorited = !item.favorited;
+    if (item.favorited) {
+      const maxOrder = lib.filter(x => x.favorited).reduce((m, x) => Math.max(m, x.order ?? 0), 0);
+      item.order = maxOrder + 1;
+    } else {
+      delete item.order;
+      normalizeOrders(lib);
+    }
+    savePartsLibrary(lib);
+    return;
+  }
+  const ps = loadPartSets();
+  const set = ps.sets.find(s => s.id === id);
+  if (!set || set.published) return;
+  const i = set.favs.findIndex(n => n.toLowerCase() === name.toLowerCase());
+  if (i >= 0) set.favs.splice(i, 1); else set.favs.push(name);
+  savePartSets(ps);
+}
+
+// Move a starred part to slot `pos` (1-based) in the set in use.
+function moveFavorite(name, pos) {
+  const id = activePartSet();
+  if (id === MAIN_PART_SET) {
+    const lib = getLibrary();
+    const item = lib.find(x => x.name === name);
+    if (!item) return;
+    item.touched = true;
+    const favs = lib.filter(x => x.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+    const to = Math.max(1, Math.min(favs.length, pos));
+    favs.splice(favs.indexOf(item), 1);
+    favs.splice(to - 1, 0, item);
+    favs.forEach((p, i) => { p.order = i + 1; });
+    savePartsLibrary(lib);
+    return;
+  }
+  const ps = loadPartSets();
+  const set = ps.sets.find(s => s.id === id);
+  if (!set || set.published) return;
+  const i = set.favs.findIndex(n => n.toLowerCase() === name.toLowerCase());
+  if (i < 0) return;
+  const [n] = set.favs.splice(i, 1);
+  set.favs.splice(Math.max(1, Math.min(set.favs.length + 1, pos)) - 1, 0, n);
+  savePartSets(ps);
+}
+
+// A part removed from the library leaves every set too.
+function forgetFavoriteEverywhere(name) {
+  const ps = loadPartSets();
+  let dirty = false;
+  ps.sets.forEach(s => {
+    if (s.published) return;               // the office's; it comes back next sync anyway
+    const before = s.favs.length;
+    s.favs = s.favs.filter(n => n.toLowerCase() !== name.toLowerCase());
+    if (s.favs.length !== before) dirty = true;
+  });
+  if (dirty) savePartSets(ps);
 }
 
 function normalizeOrders(lib) {

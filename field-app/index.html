@@ -354,6 +354,7 @@
                 line-height: 1; color: var(--muted); flex-shrink: 0; }
     .star-btn.starred { color: #f0c040; }
     .star-btn:active { opacity: .6; }
+    .star-btn:disabled, .lib-pos:disabled { opacity: .55; cursor: default; }
     .part-lib-name { flex: 1; font-family: var(--mono); font-size: 14px;
                      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lib-qty-wrap { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
@@ -370,6 +371,27 @@
                font-size: 13px; font-weight: 700; padding: 3px 4px; text-align: center;
                outline: none; -webkit-appearance: none; appearance: none; }
     .lib-pos:focus { border-color: var(--accent); }
+    .part-lib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .part-lib-text .part-lib-name { flex: none; }
+    .part-lib-desc { font-size: 11px; color: var(--muted); overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; }
+    .lib-section { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .06em;
+                   text-transform: uppercase; padding: 6px 2px 0; }
+    .lib-more { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0; }
+    /* Favourite sets: the picker in the library, the switcher above the buttons */
+    .lib-set-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-shrink: 0; flex-wrap: wrap; }
+    .lib-set-row select { flex: 1; min-width: 120px; background: var(--surf2); color: var(--text);
+                          border: 1px solid var(--border); border-radius: 8px; padding: 9px 8px; font-size: 14px; }
+    .lib-set-btn { background: var(--surf2); color: var(--text); border: 1px solid var(--border);
+                   border-radius: 8px; padding: 9px 10px; font-size: 13px; cursor: pointer; }
+    .lib-set-btn:active { background: var(--surf3); }
+    .lib-set-btn.danger { color: var(--err-fg); border-color: rgba(var(--err-rgb),.35); }
+    .part-set-bar { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+    .part-set-bar:empty { display: none; }
+    .part-set-chip { flex-shrink: 0; background: var(--surf2); border: 1px solid var(--border);
+                     color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 12px;
+                     font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .part-set-chip.active { background: rgba(var(--accent-rgb),.18); border-color: var(--accent); color: var(--accent-fg); }
 
     /* ── Add Ladder button panel (sticky bottom) ── */
     #add-btn-panel { flex-shrink: 0; padding: 10px 12px; display: flex; gap: 8px;
@@ -380,10 +402,20 @@
     .add-ladder-btn.next { background: var(--surf2); color: var(--ok-fg);
                            border: 1.5px solid var(--ok); }
     .add-ladder-btn.next:active { background: rgba(var(--ok-rgb),.14); }
+    /* Three across on a phone: the two follow-on buttons give up some size. */
+    .add-ladder-btn.next { font-size: 14px; padding: 12px 6px; line-height: 1.2; }
     .ladder-lookup { font-size: 12px; line-height: 1.35; padding: 6px 9px; margin-top: 6px;
                      border-radius: 8px; border: 1px solid var(--border); background: var(--surf2); }
     .ladder-lookup.hit { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
     .ladder-lookup.miss { color: var(--muted); }
+    .lookup-pick { display: block; margin-top: 6px; width: 100%; background: var(--surf);
+                   color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 7px;
+                   padding: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .lookup-pick:active { background: rgba(var(--accent-rgb),.14); }
+    .detail-step { flex-shrink: 0; align-self: center; font-size: 12px; font-weight: 800;
+                   color: var(--accent-fg); margin-right: auto; }
+    .part-btn.detail-btn { font-family: inherit; font-size: 12px; }
+    .part-btn.detail-btn.other { color: var(--muted); font-style: italic; }
     .cancel-edit-btn { background: var(--surf2); color: var(--fg); border: 1px solid var(--border);
                        border-radius: 10px; padding: 15px 18px; font-size: 15px; font-weight: 600;
                        cursor: pointer; flex-shrink: 0; display: none; }
@@ -1140,6 +1172,9 @@
   <!-- PANEL 2: Parts grid + manual input -->
   <div id="parts-panel">
     <div class="parts-selected" id="parts-selected"></div>
+    <!-- Which favourite set the buttons below come from; only shown when
+         there is more than one. -->
+    <div class="part-set-bar" id="part-set-bar"></div>
     <div class="parts-grid" id="parts-grid"></div>
     <div class="parts-manual-row">
       <div class="ac-wrap">
@@ -1159,6 +1194,9 @@
     <!-- Adds this one and reopens the camera for the next: a rack of ladders is
          scan, parts, one tap, repeat. -->
     <button class="add-ladder-btn next" id="btn-add-next">Add &amp; Scan Next</button>
+    <!-- Adds this one, then every barcode scanned until Done becomes another
+         ladder with the same parts. -->
+    <button class="add-ladder-btn next" id="btn-add-dup">Add &amp; Duplicate</button>
     <button class="cancel-edit-btn" id="btn-cancel-edit">Cancel</button>
   </div>
 
@@ -1396,12 +1434,28 @@
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
-  <div class="sheet-desc">★ Starred parts appear as quick-tap buttons. The × column sets how many are added per tap — a part set to ×2 counts 2, 4, 6… everywhere, including search results. Tap a selected part's chip to type the exact count.</div>
-  <div class="sheet-fields" id="lib-list"></div>
+  <div class="lib-set-row">
+    <select id="lib-set" aria-label="Favorites set"></select>
+    <button class="lib-set-btn" id="lib-set-new">+ New set</button>
+    <button class="lib-set-btn" id="lib-set-rename">Rename</button>
+    <button class="lib-set-btn danger" id="lib-set-delete">Delete</button>
+    <button class="lib-set-btn" id="lib-set-copy" style="display:none;">Copy to edit</button>
+  </div>
+  <div class="sheet-desc" id="lib-set-note" style="display:none;margin-bottom:10px;">
+    Published by your office — every tech gets the same buttons, so it can't be
+    changed here. Copy it to make a set of your own.
+  </div>
+  <div class="sheet-add-row" id="lib-set-edit" style="display:none;">
+    <input type="text" id="lib-set-name" maxlength="40" placeholder="Set name (e.g. Ford plant)" autocomplete="off">
+    <button class="btn-p" id="lib-set-save" style="font-size:14px;padding:12px 18px;">Save</button>
+    <button class="lib-set-btn" id="lib-set-cancel">Cancel</button>
+  </div>
+  <div class="sheet-desc">★ Starred parts are the quick-tap buttons for the set chosen above. The × column sets how many are added per tap — a part set to ×2 counts 2, 4, 6… everywhere, including search results. Tap a selected part's chip to type the exact count.</div>
   <div class="sheet-add-row">
-    <input type="text" id="new-lib-input" placeholder="New part # (e.g. Lgh123WP)" autocomplete="off">
+    <input type="search" id="new-lib-input" placeholder="Search part # or description, or add a new part" autocomplete="off" autocapitalize="characters">
     <button class="btn-p" id="btn-add-lib-part" style="font-size:14px;padding:12px 18px;">Add</button>
   </div>
+  <div class="sheet-fields" id="lib-list"></div>
   <button class="btn-ok sheet-done" id="btn-close-library">Done</button>
 </div>
 

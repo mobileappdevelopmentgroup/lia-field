@@ -447,6 +447,38 @@ ipcMain.handle('parts:save', async (_event, payload) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── IPC: published part sets ────────────────────────────────────────────────
+// Named sets of quick-tap buttons ("Ford plant") published beside the list
+// above. A set is a name and an ordered list of part numbers; the quantity per
+// tap belongs to the part. On the phone a published set is read-only. See
+// supabase/migrations/33_published_part_sets.sql.
+
+ipcMain.handle('partsets:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('account_part_sets_catalog');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, sets: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('partsets:save', async (_event, payload) => {
+  try {
+    const list = (payload && payload.sets) || [];
+    if (!Array.isArray(list)) return { ok: false, error: 'Nothing to save.' };
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('save_account_part_sets', {
+      p: { sets: list.map(x => ({
+        id: x.id || null,
+        name: String(x.name || '').trim(),
+        parts: (Array.isArray(x.parts) ? x.parts : []).map(n => String(n || '').trim()).filter(Boolean),
+      })) },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 // ── IPC: fall protection catalog ─────────────────────────────────────────────
 // Models and the checks techs are asked. Templates are versioned and an
 // inspection pins the version it was performed against, so editing a checklist

@@ -325,6 +325,15 @@
         p('<strong>Add &amp; Scan Next</strong> adds the ladder and opens the camera ' +
           'again straight away. For a row of ladders: scan, add parts, one tap, ' +
           'repeat. <strong>+ Add Ladder</strong> adds just the one.'),
+        p('<strong>Add &amp; Duplicate</strong> is for a rack of ladders getting the ' +
+          'same parts. It adds this ladder, opens the camera and keeps it open: every ' +
+          'new barcode it reads is added as another ladder with the same parts. Press ' +
+          '<strong>Done</strong> to stop, and the last ladder scanned opens for editing.'),
+        p('For a ladder that has never been inspected, press <strong>Pick brand, type ' +
+          '&amp; length</strong>. The part buttons become brands, then types, then ' +
+          'lengths — one tap each — and the parts come back when you are done. ' +
+          '<strong>Skip</strong> leaves one blank; <strong>Type it</strong> is for ' +
+          'anything not offered.'),
         shot('ladder-next', 'A ladder inspected before: its details are filled in.'),
         shot('ladder-entry', 'Ladder entry. Scan the plate, or type it.'),
         steps([
@@ -335,6 +344,14 @@
         ]),
         p('Parts are added from the parts library so the names always match what ' +
           'the office expects. Tap a part twice to make it a quantity of two.'),
+        p('Different sites use different parts, so you can keep more than one set ' +
+          'of part buttons. In the library (☰), <strong>+ New set</strong> starts one ' +
+          'and the ★ you tap go into whichever set is chosen. Switch sets from the ' +
+          'row above the part buttons; each job remembers the set you used on it. ' +
+          'The box at the top of the library searches every part by number or ' +
+          'description. Sets marked <strong>(office)</strong> come from your office ' +
+          'and update when you sync; to change one, press <strong>Copy to edit</strong> ' +
+          'and change your copy.'),
         note('Anything you are unsure about goes in the description. It comes ' +
              'through to the office with the rest.'),
       ],

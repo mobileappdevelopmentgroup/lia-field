@@ -30,6 +30,9 @@ $('btn-scan').addEventListener('click', () => {
 });
 $('btn-scan-cancel').addEventListener('click', () => {
   stopScan();
+  // Add & Duplicate keeps the camera open until this button; ending it opens
+  // the last ladder it added for editing.
+  if (typeof ladderBatchActive === 'function' && ladderBatchActive()) { endLadderBatch(); return; }
   // A tap-through run quieted its reader for the camera (iOS); put it back.
   if (window._fpAwaitScan) {
     window._fpAwaitScan = false;
@@ -38,30 +41,43 @@ $('btn-scan-cancel').addEventListener('click', () => {
 });
 $('scan-photo-input-fallback').addEventListener('change', _onFallbackPhotoCaptured);
 
+// Resolves true when the live viewfinder is up, false when it fell back to the
+// OS camera (or nothing).
 async function startScan() {
+  // Already open — a second stream on the same camera fails on most phones.
+  if (_scanStream) stopScan();
+  let stream;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
     });
-    const track = stream.getVideoTracks()[0];
-    const caps = track.getCapabilities?.();
-    if (caps?.zoom) {
-      await track.applyConstraints({ advanced: [{ zoom: Math.min(3, caps.zoom.max) }] });
-    }
-    $('scan-video').srcObject = stream;
-    await $('scan-video').play();
-    _scanStream = stream;
   } catch (_) {
     $('scan-photo-input-fallback').click();
-    return;
+    return false;
   }
+  // From here the camera is ours, and every way out must either show it or
+  // release it. A failed play() used to be treated as "no camera": the stream
+  // was left running with no overlay, the photo fallback was clicked outside a
+  // tap (so nothing opened), and the next attempt found the camera held.
+  _scanStream = stream;
+  const track = stream.getVideoTracks()[0];
+  try {
+    const caps = track.getCapabilities?.();
+    if (caps?.zoom) await track.applyConstraints({ advanced: [{ zoom: Math.min(3, caps.zoom.max) }] });
+  } catch (_) {}
+  $('scan-video').srcObject = stream;
   _scanFailCount = 0;
   _scanDecoding = false;
   $('scan-hint').textContent = "Aim at barcode — tap if it doesn't auto-read";
   $('scan-hint').classList.remove('warn');
   $('scan-overlay').classList.remove('hidden');
+  // The element is autoplay + muted + playsinline, so a rejected play() is not
+  // fatal — the frames still arrive and the decoder reads them.
+  try { await $('scan-video').play(); } catch (_) {}
+  if (_scanStream !== stream) return false;           // cancelled meanwhile
   _scanInterval = setInterval(_autoDecodeTick, 400);
   $('scan-overlay').addEventListener('click', _manualDecodeTick);
+  return true;
 }
 
 function stopScan() {
@@ -130,6 +146,8 @@ async function _manualDecodeTick(e) {
   const result = await _decodeScanCanvas().catch(() => null);
   if (result) {
     _onScanSuccess(result);
+    // Still open (Add & Duplicate): keep reading.
+    if (_scanStream) _scanInterval = setInterval(_autoDecodeTick, 400);
     return;
   }
   $('fi-serial').value = '';
@@ -153,6 +171,11 @@ function _onScanSuccess(value) {
     stopScan();
     if (typeof fpBatchScanned === 'function' && fpBatchScanned(value)) return;
     if (typeof fpLookup === 'function') fpLookup(value);
+    return;
+  }
+  // Add & Duplicate: every read is a ladder, and the camera stays open.
+  if (typeof ladderBatchActive === 'function' && ladderBatchActive()) {
+    ladderBatchScanned(value);
     return;
   }
   $('fi-serial').value = value;

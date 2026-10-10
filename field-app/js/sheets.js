@@ -199,9 +199,7 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
     placeAcList(input, list);
   }
 
-  const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
-  window.visualViewport?.addEventListener('resize', reflow);
-  window.visualViewport?.addEventListener('scroll', reflow);
+  const reflow = watchAcList(input, list);
 
   input.addEventListener('input',  () => showList(input.value.trim()));
   input.addEventListener('focus',  () => {
@@ -237,93 +235,221 @@ $('btn-open-library').addEventListener('click',  openLibrary);
 $('btn-close-library').addEventListener('click', closeLibrary);
 $('lib-backdrop').addEventListener('click',      closeLibrary);
 
-function openLibrary()  { renderLibList(); $('lib-sheet').classList.remove('hidden'); $('lib-backdrop').classList.remove('hidden'); }
+function openLibrary() {
+  $('new-lib-input').value = '';
+  closeSetEditor();
+  renderLibSets();
+  renderLibList();
+  $('lib-sheet').classList.remove('hidden'); $('lib-backdrop').classList.remove('hidden');
+}
 function closeLibrary() { $('lib-sheet').classList.add('hidden'); $('lib-backdrop').classList.add('hidden'); }
+
+// ── Favourite sets, in the library ──────────────────────────────────────────
+function renderLibSets() {
+  const sel = $('lib-set');
+  const active = activePartSet();
+  sel.innerHTML = listPartSets().map(s =>
+    `<option value="${esc(s.id)}"${s.id === active ? ' selected' : ''}>★ ${esc(s.name)}${s.published ? ' (office)' : ''}</option>`).join('');
+  const main = active === MAIN_PART_SET;
+  const pub = isPublishedPartSet(active);
+  $('lib-set-rename').style.display = main || pub ? 'none' : '';
+  $('lib-set-delete').style.display = main || pub ? 'none' : '';
+  $('lib-set-copy').style.display = pub ? '' : 'none';
+  $('lib-set-note').style.display = pub ? '' : 'none';
+  $('lib-set-delete').textContent = 'Delete';
+  delete $('lib-set-delete').dataset.armed;
+}
+
+// Switching set changes the buttons, and the job remembers it: a job is a
+// site, and the next time it is opened the same set comes back.
+function usePartSet(id) {
+  setActivePartSet(id);
+  if (typeof _job !== 'undefined' && _job) { _job.partSet = activePartSet(); scheduleSave(); }
+  renderPartButtons();
+}
+
+$('lib-set').addEventListener('change', () => {
+  usePartSet($('lib-set').value);
+  closeSetEditor();
+  renderLibSets(); renderLibList();
+});
+
+let _setEditing = null;            // 'new' | 'rename'
+function openSetEditor(mode) {
+  _setEditing = mode;
+  const cur = listPartSets().find(s => s.id === activePartSet());
+  $('lib-set-name').value = mode === 'rename' && cur ? cur.name : '';
+  $('lib-set-edit').style.display = 'flex';
+  $('lib-set-name').focus();
+}
+function closeSetEditor() { _setEditing = null; $('lib-set-edit').style.display = 'none'; }
+function saveSetEditor() {
+  const name = $('lib-set-name').value.trim();
+  if (!name) { $('lib-set-name').focus(); return; }
+  if (_setEditing === 'rename') renamePartSet(activePartSet(), name);
+  else usePartSet(createPartSet(name));
+  closeSetEditor();
+  renderLibSets(); renderLibList(); renderPartButtons();
+}
+$('lib-set-new').addEventListener('click', () => openSetEditor('new'));
+$('lib-set-copy').addEventListener('click', () => {
+  const id = copyPartSet(activePartSet());
+  if (!id) return;
+  usePartSet(id);
+  renderLibSets(); renderLibList();
+});
+$('lib-set-rename').addEventListener('click', () => openSetEditor('rename'));
+$('lib-set-cancel').addEventListener('click', closeSetEditor);
+$('lib-set-save').addEventListener('click', saveSetEditor);
+$('lib-set-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); saveSetEditor(); }
+  else if (e.key === 'Escape') closeSetEditor();
+});
+// Two taps, no dialog: a native confirm() can wedge a WebView.
+$('lib-set-delete').addEventListener('click', () => {
+  const btn = $('lib-set-delete');
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = '1';
+    btn.textContent = 'Tap again to delete';
+    setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = 'Delete'; } }, 3000);
+    return;
+  }
+  deletePartSet(activePartSet());
+  usePartSet(MAIN_PART_SET);
+  renderLibSets(); renderLibList();
+});
+
+// ── The list, and searching it ──────────────────────────────────────────────
+// Two thousand parts is not a list anybody scrolls. With nothing typed the
+// sheet shows the starred parts of the set in use; typing filters the whole
+// library — part numbers first, then, separately, parts whose description
+// matches. Each section is capped so a one-letter query stays quick.
+const LIB_SECTION_CAP = 60;
+const libNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 function renderLibList() {
   const lib = getLibrary();
   const list = $('lib-list');
   list.innerHTML = '';
-  if (!lib.length) { list.innerHTML = '<div class="cf-empty">No parts yet — add one below.</div>'; return; }
-  const favCount = lib.filter(p => p.favorited).length;
-  const sorted = [...lib].sort((a, b) => {
-    if (a.favorited !== b.favorited) return a.favorited ? -1 : 1;
-    if (a.favorited && b.favorited) return (a.order ?? 999) - (b.order ?? 999);
-    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  if (!lib.length) { list.innerHTML = '<div class="cf-empty">No parts yet — add one above.</div>'; return; }
+  const slots = favoriteSlots(lib);
+  const favCount = slots.size;
+  const locked = isPublishedPartSet(activePartSet());
+  const isFav = p => slots.has(p.name.toLowerCase());
+  const raw = $('new-lib-input').value.trim();
+  const q = libNorm(raw);
+
+  const section = (label) => {
+    const h = document.createElement('div');
+    h.className = 'lib-section';
+    h.textContent = label;
+    list.appendChild(h);
+  };
+  const more = (n) => {
+    const m = document.createElement('div');
+    m.className = 'lib-more';
+    m.textContent = `${n} more — keep typing to narrow it down`;
+    list.appendChild(m);
+  };
+  const rows = (arr) => {
+    arr.slice(0, LIB_SECTION_CAP).forEach(p => list.appendChild(libRow(p, isFav(p), slots, favCount, locked)));
+    if (arr.length > LIB_SECTION_CAP) more(arr.length - LIB_SECTION_CAP);
+  };
+
+  if (!q) {
+    const favs = lib.filter(isFav).sort((a, b) => slots.get(a.name.toLowerCase()) - slots.get(b.name.toLowerCase()));
+    if (favs.length) rows(favs);
+    else list.innerHTML = '<div class="cf-empty">Nothing starred in this set yet.</div>';
+    const hint = document.createElement('div');
+    hint.className = 'lib-more';
+    hint.textContent = `Type above to search all ${lib.length} parts by number or description.`;
+    list.appendChild(hint);
+    return;
+  }
+
+  // Part numbers: starts-with beats contains, starred first within each.
+  const byNumber = [];
+  lib.forEach(p => {
+    const n = libNorm(p.name);
+    const at = n.indexOf(q);
+    if (at >= 0) byNumber.push([at === 0 ? 0 : 1, isFav(p) ? 0 : 1, p]);
   });
-  sorted.forEach(p => {
-    const dqty = p.defaultQty || 1;
-    const row = document.createElement('div');
-    row.className = 'part-lib-row';
-    row.innerHTML = `
-      <button class="star-btn${p.favorited ? ' starred' : ''}" title="${p.favorited ? 'Unfavorite' : 'Favorite'}">${p.favorited ? '★' : '☆'}</button>
+  byNumber.sort((a, b) => a[0] - b[0] || a[1] - b[1] ||
+    a[2].name.localeCompare(b[2].name, undefined, { sensitivity: 'base' }));
+  const numbered = new Set(byNumber.map(r => r[2].name));
+
+  // Descriptions: every word typed must appear, in any order.
+  const words = raw.toLowerCase().split(/\s+/).filter(Boolean);
+  const byDesc = lib.filter(p => {
+    if (numbered.has(p.name)) return false;
+    const d = (typeof partDescription === 'function' ? partDescription(p.name) : '').toLowerCase();
+    return d && words.every(w => d.includes(w));
+  }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  if (!byNumber.length && !byDesc.length) {
+    list.innerHTML = `<div class="cf-empty">No part matches “${esc(raw)}”. Tap Add to put it in the library.</div>`;
+    return;
+  }
+  if (byNumber.length) { section('Part number'); rows(byNumber.map(r => r[2])); }
+  if (byDesc.length)   { section('Description'); rows(byDesc); }
+}
+
+// locked: the set in use is the office's, so its stars and slots are shown
+// but cannot be changed.
+function libRow(p, fav, slots, favCount, locked) {
+  const dqty = p.defaultQty || 1;
+  const desc = typeof partDescription === 'function' ? partDescription(p.name) : '';
+  const row = document.createElement('div');
+  row.className = 'part-lib-row';
+  row.innerHTML = `
+    <button class="star-btn${fav ? ' starred' : ''}" title="${fav ? 'Unfavorite' : 'Favorite'}"${locked ? ' disabled' : ''}>${fav ? '★' : '☆'}</button>
+    <div class="part-lib-text">
       <span class="part-lib-name">${esc(p.name)}</span>
-      ${p.favorited ? `<div class="lib-pos-wrap">
-        <span class="lib-pos-label">Slot</span>
-        <input class="lib-pos" type="number" min="1" max="${favCount}" value="${p.order ?? 1}" title="Button grid position (1 = first slot)">
-      </div>` : ''}
-      <div class="lib-qty-wrap">
-        <span class="lib-qty-label">×</span>
-        <input class="lib-qty" type="number" min="1" max="99" value="${dqty}" title="Default qty per first tap">
-      </div>
-      <button class="cf-del" title="Remove from library">×</button>
-    `;
-    row.querySelector('.star-btn').addEventListener('click', () => {
-      const libData = getLibrary();
-      const item = libData.find(x => x.name === p.name);
-      if (!item) return;
-      // Touched: from here on this part is the tech's, and a catalogue
-      // published from the office leaves it alone.
-      item.touched = true;
-      item.favorited = !item.favorited;
-      if (item.favorited) {
-        const maxOrder = libData.filter(x => x.favorited).reduce((m, x) => Math.max(m, x.order ?? 0), 0);
-        item.order = maxOrder + 1;
-      } else {
-        delete item.order;
-        normalizeOrders(libData);
-      }
-      savePartsLibrary(libData);
-      renderLibList(); renderPartButtons();
-    });
-    if (p.favorited) {
-      const posEl = row.querySelector('.lib-pos');
-      posEl.addEventListener('change', () => {
-        const libData = getLibrary();
-        const item = libData.find(x => x.name === p.name);
-        if (!item) return;
-        item.touched = true;
-        const favs = libData.filter(x => x.favorited).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-        const newPos = Math.max(1, Math.min(favs.length, parseInt(posEl.value, 10) || 1));
-        const idx = favs.indexOf(item);
-        favs.splice(idx, 1);
-        favs.splice(newPos - 1, 0, item);
-        favs.forEach((p, i) => { p.order = i + 1; });
-        savePartsLibrary(libData);
-        renderLibList(); renderPartButtons();
-      });
-    }
-    const qtyEl = row.querySelector('.lib-qty');
-    qtyEl.addEventListener('change', () => {
-      const v = Math.max(1, parseInt(qtyEl.value, 10) || 1);
-      qtyEl.value = v;
-      const libData = getLibrary();
-      const item = libData.find(x => x.name === p.name);
-      if (item) { item.defaultQty = v; item.touched = true; savePartsLibrary(libData); }
-      renderPartButtons();
-    });
-    row.querySelector('.cf-del').addEventListener('click', () => {
-      const libData = getLibrary().filter(x => x.name !== p.name);
-      normalizeOrders(libData);
-      savePartsLibrary(libData);
-      renderLibList(); renderPartButtons();
-    });
-    list.appendChild(row);
+      ${desc ? `<span class="part-lib-desc">${esc(desc)}</span>` : ''}
+    </div>
+    ${fav ? `<div class="lib-pos-wrap">
+      <span class="lib-pos-label">Slot</span>
+      <input class="lib-pos" type="number" min="1" max="${favCount}" value="${slots.get(p.name.toLowerCase()) ?? 1}" title="Button grid position (1 = first slot)"${locked ? ' disabled' : ''}>
+    </div>` : ''}
+    <div class="lib-qty-wrap">
+      <span class="lib-qty-label">×</span>
+      <input class="lib-qty" type="number" min="1" max="99" value="${dqty}" title="Default qty per first tap">
+    </div>
+    <button class="cf-del" title="Remove from library">×</button>
+  `;
+  row.querySelector('.star-btn').addEventListener('click', () => {
+    toggleFavorite(p.name);
+    renderLibList(); renderPartButtons();
   });
+  if (fav) {
+    const posEl = row.querySelector('.lib-pos');
+    posEl.addEventListener('change', () => {
+      moveFavorite(p.name, parseInt(posEl.value, 10) || 1);
+      renderLibList(); renderPartButtons();
+    });
+  }
+  const qtyEl = row.querySelector('.lib-qty');
+  qtyEl.addEventListener('change', () => {
+    const v = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+    qtyEl.value = v;
+    const libData = getLibrary();
+    const item = libData.find(x => x.name === p.name);
+    if (item) { item.defaultQty = v; item.touched = true; savePartsLibrary(libData); }
+    renderPartButtons();
+  });
+  row.querySelector('.cf-del').addEventListener('click', () => {
+    const libData = getLibrary().filter(x => x.name !== p.name);
+    normalizeOrders(libData);
+    savePartsLibrary(libData);
+    forgetFavoriteEverywhere(p.name);
+    renderLibList(); renderPartButtons();
+  });
+  return row;
 }
 
 $('btn-add-lib-part').addEventListener('click', addLibPart);
 $('new-lib-input').addEventListener('keydown', e => { if (e.key === 'Enter') addLibPart(); });
+$('new-lib-input').addEventListener('input', renderLibList);
 
 function addLibPart() {
   const name = $('new-lib-input').value.trim();
@@ -334,6 +460,6 @@ function addLibPart() {
     lib.push({ name, favorited: false, defaultQty: 1, touched: true });
     savePartsLibrary(lib);
   }
-  $('new-lib-input').value = '';
+  // The search is left on the part, so it can be starred straight away.
   renderLibList();
 }

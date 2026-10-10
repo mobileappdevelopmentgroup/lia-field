@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 32
+-- Migrations included: 33
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -78,6 +78,26 @@ CREATE FUNCTION public.account_descendants(p_account uuid) RETURNS TABLE(account
     SELECT a.id FROM public.accounts a JOIN tree t ON a.parent_account_id = t.id
   )
   SELECT id FROM tree;
+$$;
+
+
+--
+-- Name: account_part_sets_catalog(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.account_part_sets_catalog() RETURNS TABLE(id uuid, name text, parts jsonb, ord integer, mine boolean, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN QUERY
+  SELECT s.id, s.name, s.parts, s.ord, (s.account_id = v_account), s.updated_at
+    FROM public.account_part_sets s
+   WHERE public.can_use_catalog(s.account_id) AND NOT s.is_deleted
+   ORDER BY (s.account_id = v_account) DESC, s.ord NULLS LAST, s.name;
+END;
 $$;
 
 
@@ -1090,6 +1110,15 @@ BEGIN
   UPDATE public.certificate_views SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
   UPDATE public.known_networks    SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
   UPDATE public.support_tickets   SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+
+  -- 33: published part sets. A clash on a live name keeps the kept account's
+  -- set; the other is tombstoned rather than dropped, like every catalogue.
+  UPDATE public.account_part_sets s SET is_deleted = true, updated_at = now()
+    FROM (SELECT id, row_number() OVER (PARTITION BY name_key
+                                        ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+            FROM public.account_part_sets WHERE NOT is_deleted) r
+   WHERE s.id = r.id AND r.rn > 1;
+  UPDATE public.account_part_sets SET account_id = v_keep WHERE account_id <> v_keep;
 
   -- Only accounts nobody belongs to any more, and nothing is left in them.
   DELETE FROM public.accounts
@@ -4725,6 +4754,80 @@ $$;
 
 
 --
+-- Name: save_account_part_sets(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_account_part_sets(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_sets    jsonb := coalesce(p->'sets', '[]'::jsonb);
+  v_keep    uuid[] := '{}';
+  v_id      uuid;
+  v_name    text;
+  v_parts   jsonb;
+  v_n       integer := 0;
+  v_i       integer := 0;
+  e         jsonb;
+BEGIN
+  IF jsonb_typeof(v_sets) <> 'array' THEN
+    RAISE EXCEPTION 'sets must be a list';
+  END IF;
+
+  -- Names are checked before anything is written, so a clash leaves the
+  -- account exactly as it was rather than half-saved.
+  IF (SELECT count(*) <> count(DISTINCT lower(btrim(x->>'name')))
+        FROM jsonb_array_elements(v_sets) x) THEN
+    RAISE EXCEPTION 'Two sets have the same name';
+  END IF;
+
+  FOR e IN SELECT * FROM jsonb_array_elements(v_sets) LOOP
+    v_i := v_i + 1;
+    v_name := btrim(coalesce(e->>'name', ''));
+    IF v_name = '' THEN RAISE EXCEPTION 'A set needs a name'; END IF;
+    IF length(v_name) > 40 THEN RAISE EXCEPTION 'Set names are 40 characters at most'; END IF;
+
+    -- Trimmed, empties dropped, order kept. The same part twice — in any
+    -- case — keeps its first position and spelling.
+    SELECT coalesce(jsonb_agg(pn ORDER BY n), '[]'::jsonb) INTO v_parts
+      FROM (SELECT btrim(x.v) AS pn, x.n,
+                   row_number() OVER (PARTITION BY upper(btrim(x.v)) ORDER BY x.n) AS rk
+              FROM jsonb_array_elements_text(coalesce(e->'parts', '[]'::jsonb))
+                   WITH ORDINALITY AS x(v, n)
+             WHERE btrim(x.v) <> '') q
+     WHERE rk = 1;
+
+    v_id := NULL;
+    IF nullif(e->>'id', '') IS NOT NULL THEN
+      UPDATE public.account_part_sets
+         SET name = v_name, parts = v_parts, ord = v_i, is_deleted = false, updated_at = now()
+       WHERE id = (e->>'id')::uuid AND account_id = v_account
+      RETURNING id INTO v_id;
+    END IF;
+    IF v_id IS NULL THEN
+      INSERT INTO public.account_part_sets (account_id, name, parts, ord, created_by)
+      VALUES (v_account, v_name, v_parts, v_i, auth.uid())
+      RETURNING id INTO v_id;
+    END IF;
+
+    v_keep := v_keep || v_id;
+    v_n := v_n + 1;
+  END LOOP;
+
+  UPDATE public.account_part_sets
+     SET is_deleted = true, updated_at = now()
+   WHERE account_id = v_account AND NOT is_deleted AND NOT (id = ANY (v_keep));
+
+  RETURN json_build_object('saved', v_n,
+    'sets', (SELECT coalesce(json_agg(json_build_object('id', id, 'name', name) ORDER BY ord), '[]'::json)
+               FROM public.account_part_sets WHERE account_id = v_account AND NOT is_deleted));
+END;
+$$;
+
+
+--
 -- Name: save_account_parts(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5452,6 +5555,26 @@ CREATE TABLE public.account_members (
     removed_by uuid,
     removed_reason text,
     CONSTRAINT account_members_role_check CHECK ((role = ANY (ARRAY['lead'::text, 'tech'::text])))
+);
+
+
+--
+-- Name: account_part_sets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_part_sets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    name text NOT NULL,
+    name_key text GENERATED ALWAYS AS (lower(btrim(name))) STORED,
+    parts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    ord integer,
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT account_part_sets_name_check CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 40))),
+    CONSTRAINT account_part_sets_parts_check CHECK ((jsonb_typeof(parts) = 'array'::text))
 );
 
 
@@ -6224,6 +6347,14 @@ ALTER TABLE ONLY public.account_members
 
 
 --
+-- Name: account_part_sets account_part_sets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_part_sets
+    ADD CONSTRAINT account_part_sets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: account_parts account_parts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6522,6 +6653,13 @@ CREATE INDEX account_members_active_idx ON public.account_members USING btree (a
 --
 
 CREATE INDEX account_members_rep_idx ON public.account_members USING btree (rep_number) WHERE (rep_number IS NOT NULL);
+
+
+--
+-- Name: account_part_sets_name_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX account_part_sets_name_uq ON public.account_part_sets USING btree (account_id, name_key) WHERE (NOT is_deleted);
 
 
 --
@@ -7065,6 +7203,14 @@ ALTER TABLE ONLY public.account_members
 
 ALTER TABLE ONLY public.account_members
     ADD CONSTRAINT account_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_part_sets account_part_sets_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_part_sets
+    ADD CONSTRAINT account_part_sets_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -7649,6 +7795,19 @@ CREATE POLICY account_members_select_own ON public.account_members FOR SELECT US
 
 
 --
+-- Name: account_part_sets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_part_sets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: account_part_sets account_part_sets_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY account_part_sets_read ON public.account_part_sets FOR SELECT TO authenticated USING (public.can_use_catalog(account_id));
+
+
+--
 -- Name: account_parts; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8044,6 +8203,14 @@ GRANT ALL ON FUNCTION public.account_ancestors(p_account uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.account_descendants(p_account uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.account_descendants(p_account uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION account_part_sets_catalog(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.account_part_sets_catalog() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.account_part_sets_catalog() TO authenticated;
 
 
 --
@@ -8598,6 +8765,14 @@ GRANT ALL ON FUNCTION public.restore_inspection(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION save_account_part_sets(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_account_part_sets(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_account_part_sets(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION save_account_parts(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8722,6 +8897,13 @@ GRANT ALL ON FUNCTION public.visible_account_ids() TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.account_members TO authenticated;
+
+
+--
+-- Name: TABLE account_part_sets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.account_part_sets TO authenticated;
 
 
 --

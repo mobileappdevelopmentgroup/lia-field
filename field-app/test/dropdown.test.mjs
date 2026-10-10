@@ -124,6 +124,52 @@ ok('it is never taller than the space it is in', g.maxH <= 180, true);
 ok('no page errors', errs, []);
 await p.close(); await ctx.close();
 
+// ── Near the bottom of a short screen: never clipped, never off-screen ─────
+// The part-number list hangs off the lowest input on the form. Every screen is
+// overflow: hidden, so a list positioned inside it that ran past the screen's
+// edge was cut off — present, but nowhere to be seen. Checked by hit-testing:
+// the middle of the list must be the list, not whatever is behind it.
+({ p, ctx, errs } = await open(560));
+await p.click('#fi-part-manual');
+await p.fill('#fi-part-manual', 'L');
+await p.waitForTimeout(200);
+g = await geom(p, 'fi-part-manual', 'ac-part-list');
+const hit = await p.evaluate(() => {
+  const l = document.getElementById('ac-part-list'), r = l.getBoundingClientRect();
+  const el = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(20, r.height / 2));
+  return !!el && l.contains(el);
+});
+ok('the part list opens', g.open, true);
+ok('entirely on screen', g.topInView && g.bottomInView, true);
+ok('and is actually visible there, not clipped by the screen', hit, true);
+ok('no page errors', errs, []);
+await p.close(); await ctx.close();
+
+// ── Keyboard up, little room either side: stays out from behind the keys ───
+// The visual viewport is faked to be what iOS reports with the keyboard open
+// and the page panned: a narrow visible band around the field. A list given a
+// minimum height regardless of room ran down behind the keyboard.
+({ p, ctx, errs } = await open(844));
+const kb = await p.evaluate(() => {
+  const input = document.getElementById('fi-brand');
+  const r = input.getBoundingClientRect();
+  const band = { offsetTop: r.top - 50, height: (r.bottom - (r.top - 50)) + 60 };
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: {
+    offsetTop: band.offsetTop, height: band.height, addEventListener() {}, removeEventListener() {} } });
+  return { visTop: band.offsetTop, visBot: band.offsetTop + band.height };
+});
+await p.click('#fi-brand');
+await p.waitForTimeout(150);
+const lr = await p.evaluate(() => {
+  const l = document.getElementById('ac-brand-list'), r = l.getBoundingClientRect();
+  return { top: r.top, bottom: r.bottom, shown: getComputedStyle(l).visibility !== 'hidden' && r.height > 0 };
+});
+ok('with the keyboard up the list still shows in the room there is', lr.shown, true);
+ok('and ends above the keyboard', lr.bottom <= kb.visBot + 1, true);
+ok('and starts below the top of what is visible', lr.top >= kb.visTop - 1, true);
+ok('no page errors', errs, []);
+await p.close(); await ctx.close();
+
 await b.close();
 server.close();
 console.log(fails ? `\n${fails} failed` : '\nAll dropdown placement assertions passed.');

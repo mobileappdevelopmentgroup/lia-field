@@ -7,6 +7,8 @@
 -- 29 and 30 re-emit the function; the live database has all three.
 \ir ../migrations/29_fp_tag_stock_field.sql
 \ir ../migrations/30_consolidate_fold_first.sql
+-- 33 re-emits consolidate_to_one_account() to move published part sets.
+\ir ../migrations/33_published_part_sets.sql
 
 -- ── Refuses while companies sit under an umbrella (30) ──────────────────────
 -- 16_umbrella_test left accounts arranged under Batavia. Merging them would
@@ -69,6 +71,11 @@ BEGIN
     (j2, (SELECT user_id FROM account_members WHERE account_id = a2 LIMIT 1));
 
   INSERT INTO known_networks (account_id, cidr, label) VALUES (a2, '10.9.9.0/24', 'cons office');
+
+  -- Published part sets (33): one each, plus the same name in both.
+  INSERT INTO account_part_sets (account_id, name, parts) VALUES
+    (a1, 'Cons A', '["G13"]'), (a2, 'Cons B', '["W44"]'),
+    (a1, 'Cons Same', '["G13"]'), (a2, 'Cons Same', '["W44"]');
 END $$;
 
 DO $$
@@ -141,6 +148,11 @@ BEGIN
   PERFORM pg_temp.want('an item with a tag and no certificate yet is kept',
     (SELECT a.serial_raw FROM fp_tag_stock s JOIN assets a ON a.id = s.asset_id
       WHERE s.tag_label = 'FPC00002'), 'CONS-TAGGED');
+  PERFORM pg_temp.want('published part sets are not deleted with their old account',
+    (SELECT string_agg(name, ',' ORDER BY name) FROM account_part_sets
+      WHERE name LIKE 'Cons %' AND NOT is_deleted), 'Cons A,Cons B,Cons Same');
+  PERFORM pg_temp.want('and a name in both keeps one live set, the other kept as deleted',
+    (SELECT count(*)::int FROM account_part_sets WHERE name = 'Cons Same'), 2);
 END $$;
 
 -- Two accounts may each hold the same work order number — that namespacing is

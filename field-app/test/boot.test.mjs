@@ -49,6 +49,11 @@ function stubScript(session) {
     '      { asset_id:"a2", serial_raw:"H-2", serial_key:"H2", kind:"fall_protection", is_deleted:false, updated_at:"2026-01-01T00:00:01Z" },',
     '      { asset_id:"a3", serial_raw:"L-1", serial_key:"L1", kind:"ladder",          is_deleted:false, updated_at:"2026-01-01T00:00:02Z" }',
     '    ], error: null });',
+    // Published part sets (33). window.__setsDown stands in for no signal,
+    // or a database that has not had the migration.
+    '    if (fn === "account_part_sets_catalog") return Promise.resolve(window.__setsDown',
+    '      ? { data: null, error: { message: "function does not exist" } }',
+    '      : { data: [{ id: "s1", name: "Site X", parts: ["G13", "W44"], ord: 1, mine: true }], error: null });',
     '    return Promise.resolve({ data: null, error: null });',
     '  },',
     '}; } };',
@@ -182,6 +187,16 @@ ok('and Done appears, so the keyboard can be put away',
 await p.click('#btn-entry-done'); await p.waitForTimeout(200);
 ok('pressing it releases the field',
    await p.evaluate(() => document.activeElement?.id || 'none'), 'none');
+ok('no errors', errs, []);
+await p.close(); await ctx.close();
+
+// ── The office's part sets come down with the catalogue ─────────────────────
+({ p, errs, ctx } = await open({ synced: true }));
+ok('a sync brings the office\'s part sets',
+   await p.evaluate(() => listPartSets().filter(s => s.published).map(s => [s.name, s.published])), [['Site X', true]]);
+await p.evaluate(() => { window.__setsDown = true; return LiaSync.pullCatalog({}); });
+ok('and a sync that cannot fetch them keeps what the phone had',
+   await p.evaluate(() => listPartSets().filter(s => s.published).map(s => s.name)), ['Site X']);
 ok('no errors', errs, []);
 await p.close(); await ctx.close();
 

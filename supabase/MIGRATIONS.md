@@ -57,6 +57,7 @@ suite and the only path to rebuilding the database from nothing.
 | `30_consolidate_fold_first` | `consolidate_to_one_account` folds same-serial items before moving, moves every account table, and refuses under an umbrella |
 | `31_tag_stock_office` | `tag_stock_list()` for Lia Office's Tags screen |
 | `32_fp_photos` | failure photos actually upload: private `fp-photos` bucket (JPEG, ≤ 1 MB), account-folder storage policies, `record_fp_photo()` files one against its inspection — applied 2026-09-29 |
+| `33_published_part_sets` | named part sets the office publishes to the field: `account_part_sets`, `save_account_part_sets()`, `account_part_sets_catalog()`; re-emits `consolidate_to_one_account()` so sets move with an account — **not yet applied** |
 
 ## Where things are
 

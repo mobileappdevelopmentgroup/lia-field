@@ -146,6 +146,87 @@ ok('editing a ladder hides Add & Scan Next', await p.$eval('#btn-add-next', e =>
 await p.evaluate(() => setEditMode(false));
 ok('and it comes back after', await p.$eval('#btn-add-next', e => e.style.display), '');
 
+// ── Add & Scan Next leaves the keyboard down ────────────────────────────────
+await p.evaluate(() => { clearFormAll(); $('fi-serial').value = '313131'; });
+await p.click('#btn-add-next'); await p.waitForTimeout(200);
+ok('Add & Scan Next does not put the cursor in the serial field (the keyboard would cover the camera)',
+   await p.evaluate(() => document.activeElement && document.activeElement.id === 'fi-serial'), false);
+
+// ── Add & Duplicate ─────────────────────────────────────────────────────────
+// The real scanner, stubbed at the camera: startScan resolves "live" and
+// stopScan is counted, so the run can be watched end to end.
+await p.evaluate(() => {
+  clearFormAll();
+  window.__scans = 0; window.__stops = 0;
+  // A live viewfinder: without a stream the run takes the one-photo fallback.
+  window.startScan = () => { window.__scans++; _scanStream = { getTracks: () => [] }; return Promise.resolve(true); };
+  _job.ladders = _job.ladders.filter(l => l.serialNum !== '100200');
+  const real = window.stopScan; window.stopScan = () => { window.__stops++; real(); };
+  $('fi-serial').value = '700001';
+  _currentParts.set('G13', 2); _currentParts.set('W44', 1); renderSelectedParts();
+  _currentFlags.lubricated = true;
+});
+const before = await p.evaluate(() => _job.ladders.length);
+await p.click('#btn-add-dup'); await p.waitForTimeout(200);
+ok('Add & Duplicate adds the ladder on the form and opens the camera',
+   await p.evaluate(() => [_job.ladders[0].serialNum, window.__scans, ladderBatchActive(), $('btn-scan-cancel').textContent]),
+   ['700001', 1, true, 'Done']);
+
+await p.evaluate(() => _onScanSuccess('700002')); await p.waitForTimeout(400);
+await p.evaluate(() => _onScanSuccess('700002')); await p.waitForTimeout(100);   // same barcode, next tick
+await p.evaluate(() => _onScanSuccess('100200')); await p.waitForTimeout(400);   // a ladder on file
+ok('every new barcode becomes a ladder with the same parts, and the camera stays open',
+   await p.evaluate(() => _job.ladders.slice(0, 3).map(l => [l.serialNum, l.parts.map(x => x.name + 'x' + x.qty).join(',')])),
+   [['100200', 'G13x2,W44x1'], ['700002', 'G13x2,W44x1'], ['700001', 'G13x2,W44x1']]);
+ok('reading the same barcode twice adds it once', await p.evaluate(() => _job.ladders.length), before + 3);
+ok('a known ladder keeps its own brand', await p.evaluate(() => _job.ladders[0].brand), 'Werner');
+ok('the flags are not duplicated', await p.evaluate(() => [_job.ladders[0].flags.lubricated, _job.ladders[2].flags.lubricated]),
+   [null, true]);
+ok('the camera was never closed mid-run', await p.evaluate(() => window.__stops), 0);
+
+await p.evaluate(() => _onScanSuccess('70A003')); await p.waitForTimeout(200);
+ok('a read that is not a serial is not added', await p.evaluate(() => [_job.ladders.length, $('scan-hint').classList.contains('warn')]),
+   [before + 3, true]);
+
+await p.$eval('#btn-scan-cancel', e => e.click()); await p.waitForTimeout(200);
+ok('Done ends it and opens the last ladder scanned for editing',
+   await p.evaluate(() => [ladderBatchActive(), _editingIdx, $('fi-serial').value, $('btn-scan-cancel').textContent]),
+   [false, 0, '100200', 'Cancel']);
+ok('while editing, Add & Duplicate is hidden', await p.$eval('#btn-add-dup', e => e.style.display), 'none');
+await p.evaluate(() => cancelEdit());
+
+// ── A serial nobody knows: brand, type and length from buttons ──────────────
+await p.evaluate(() => { clearFormAll(); });
+await p.evaluate(() => _onScanSuccess('424299')); await p.waitForTimeout(250);
+ok('a serial not on file offers the button picker', await p.$eval('#btn-pick-details', e => e.textContent), 'Pick brand, type & length');
+await p.click('#btn-pick-details'); await p.waitForTimeout(100);
+const btns = () => p.$$eval('#parts-grid .part-btn', e => e.map(x => x.textContent));
+ok('the part buttons become brands', (await btns()).slice(0, 3), ['Little Giant', 'Werner', 'Louisville']);
+ok('with the step named above them', await p.$eval('#part-set-bar .detail-step', e => e.textContent), 'Brand · 1 of 3');
+await p.click('#parts-grid .part-btn:has-text("Louisville")'); await p.waitForTimeout(100);
+ok('a brand tap fills Brand and moves on to Type',
+   await p.evaluate(() => [$('fi-brand').value, $('fi-brand').dataset.src || null]), ['Louisville', null]);
+ok('the buttons are now types', (await btns()).slice(0, 2), ['Extension', 'Step']);
+await p.click('#parts-grid .part-btn:has-text("Extension")'); await p.waitForTimeout(100);
+ok('then lengths, long ones for an extension ladder', (await btns()).slice(0, 2), ['8 ft', '10 ft']);
+await p.click('#parts-grid .part-btn:has-text("28 ft")'); await p.waitForTimeout(100);
+ok('the last tap fills Length and the parts come back',
+   await p.evaluate(() => [$('fi-type').value, $('fi-length').value, _detailStep, !!document.querySelector('#parts-grid .detail-btn')]),
+   ['Extension', '28', null, false]);
+
+await p.click('#btn-pick-details'); await p.waitForTimeout(100);
+await p.click('#part-set-bar .part-set-chip:has-text("Skip")'); await p.waitForTimeout(100);
+ok('Skip leaves a field as it was and moves on', await p.$eval('#part-set-bar .detail-step', e => e.textContent), 'Type · 2 of 3');
+ok('the current answer is lit', await p.$eval('#parts-grid .part-btn.active', e => e.textContent), 'Extension');
+await p.click('#parts-grid .part-btn:has-text("Type it")'); await p.waitForTimeout(100);
+ok('Type it puts the cursor in the field and the parts back',
+   await p.evaluate(() => [document.activeElement.id, _detailStep]), ['fi-type', null]);
+
+await p.click('#btn-pick-details'); await p.waitForTimeout(100);
+await p.evaluate(() => _onScanSuccess('100200')); await p.waitForTimeout(250);
+ok('scanning a known ladder puts the parts back', await p.evaluate(() => _detailStep), null);
+await p.evaluate(() => clearFormAll());
+
 console.log('\npage errors:', errs.length ? errs : 'none');
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');
 await b.close(); server.close();

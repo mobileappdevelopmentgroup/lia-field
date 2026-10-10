@@ -1068,7 +1068,10 @@ function fpCommit(item) {
     _fpItem = null; _fpChecks = []; _fpEditing = false;
     // A failed item stopped the reader; a passed one never did.
     fpBatchResume();
-  } else fpReset();
+  } else {
+    fpReset();
+    fpReadNext();
+  }
 }
 
 function fpPhotoPayload(item) {
@@ -1339,6 +1342,37 @@ function fpCloseAlert() {
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
+// How the item on screen was reached, one item at a time: 'tap', 'scan', or
+// null for typed. Pass & Next Item reopens the same way for the next one —
+// a tech tapping a rack should not have to press Tap again between items.
+let _fpVia = null;
+
+function fpTapRead() {
+  _fpVia = 'tap';
+  fpHint('Hold the phone against the tag…');
+  window.LiaNfc.read().then(res => {
+    // A tag may carry the serial, or only its own hardware id, or only a
+    // URL — the catalogue indexes all four ways in, so any of them resolves
+    // the item. The whole read is passed along so the link is recorded even
+    // when something else is what matched.
+    fpLookup(res.serial, [res.uid, res.ref, res.url], res);
+  }).catch(err => fpHint(err.message || 'No tag read.', true));
+}
+
+function fpScanRead() {
+  _fpVia = 'scan';
+  // Reuses the ladder scanner; it writes into #fi-serial, so read it back.
+  window._fpAwaitScan = true;
+  startScan();
+}
+
+// After an item is recorded one at a time: straight back to the reader or the
+// camera it came from.
+function fpReadNext() {
+  if (_fpVia === 'tap' && window.LiaNfc && window.LiaNfc.isAvailable()) fpTapRead();
+  else if (_fpVia === 'scan') fpScanRead();
+}
+
 (function fpWire() {
   const tap = $('fp-btn-tap');
   // A dead button is worse than no button: hide Tap outright where NFC is not
@@ -1346,24 +1380,11 @@ function fpCloseAlert() {
   if (tap && (!window.LiaNfc || !window.LiaNfc.isAvailable())) {
     tap.style.display = 'none';
   } else if (tap) {
-    tap.addEventListener('click', () => {
-      fpHint('Hold the phone against the tag…');
-      window.LiaNfc.read().then(res => {
-        // A tag may carry the serial, or only its own hardware id, or only a
-        // URL — the catalogue indexes all four ways in, so any of them resolves
-        // the item. The whole read is passed along so the link is recorded even
-        // when something else is what matched.
-        fpLookup(res.serial, [res.uid, res.ref, res.url], res);
-      }).catch(err => fpHint(err.message || 'No tag read.', true));
-    });
+    tap.addEventListener('click', fpTapRead);
   }
 
   const scan = $('fp-btn-scan');
-  if (scan) scan.addEventListener('click', () => {
-    // Reuses the ladder scanner; it writes into #fi-serial, so read it back.
-    window._fpAwaitScan = true;
-    startScan();
-  });
+  if (scan) scan.addEventListener('click', fpScanRead);
 
   const type = $('fp-btn-type');
   if (type) type.addEventListener('click', () => {
@@ -1374,14 +1395,14 @@ function fpCloseAlert() {
   });
 
   const lookup = $('fp-btn-lookup');
-  if (lookup) lookup.addEventListener('click', () => fpLookup($('fp-serial-input').value));
+  if (lookup) lookup.addEventListener('click', () => { _fpVia = null; fpLookup($('fp-serial-input').value); });
   const input = $('fp-serial-input');
   if (input) input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); fpLookup(input.value); }
+    if (e.key === 'Enter') { e.preventDefault(); _fpVia = null; fpLookup(input.value); }
   });
 
   const nw = $('fp-btn-new');
-  if (nw) nw.addEventListener('click', () => { fpHint(''); fpBlank(''); });
+  if (nw) nw.addEventListener('click', () => { _fpVia = null; fpHint(''); fpBlank(''); });
 
   const save = $('fp-btn-save');
   if (save) save.addEventListener('click', fpSave);
