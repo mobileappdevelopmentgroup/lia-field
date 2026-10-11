@@ -1,7 +1,7 @@
 # Vehicle inventory — plan
 
-Status: **proposal, nothing built.** Written 2026-10-10 for review before any
-migration is drafted.
+Status: **planned, nothing built.** Written 2026-10-10; the four open
+decisions were answered the same day (below).
 
 ## What it is for
 
@@ -93,23 +93,25 @@ anything ships.
   server has it — the same wording as every other upload.
 - Below-par lines highlighted, so a tech can see he is short before he leaves.
 
-## Decisions I need from you
+## Decisions (answered 2026-10-10)
 
-1. **Should parts on a ladder record come off the truck automatically?** It is the
-   biggest time saver, and the riskiest: an edited ladder is re-sent
-   (`record_inspection` supersedes), so the deduction must follow the
-   *difference* between versions, keyed to the inspection — or a corrected
-   ladder deducts its parts twice. My recommendation: yes, but phase 2, after
-   manual moves have been used for a while.
-2. **Is there a warehouse/shop stock to track**, or only trucks?
-3. **Par levels per truck, or per load-out with per-truck overrides?** I would do
-   load-outs with overrides — fewer numbers to keep up to date.
-4. **Who may change a truck from the phone** — anybody assigned, or only its lead?
+1. **Ladder parts come off the truck automatically — in phase 2**, after manual
+   moves have been in use and the counts are trusted. The deduction follows the
+   *difference* between versions of a ladder record, keyed to the inspection,
+   so a corrected ladder never deducts twice.
+2. **Trucks and several warehouses** (e.g. a shop per subcontractor).
+   `stock_locations.kind = 'warehouse'` is a first-class location, many per
+   account; loading a truck is a `transfer` from a named warehouse, both legs in
+   one transaction.
+3. **Par comes from load-outs, with per-truck overrides.** `stock_levels.par`
+   is NULL unless overridden; the effective par is the override, else the
+   truck's load-out line.
+4. **Anyone assigned to a truck may change it from the phone** — use, load and
+   count. Every move records who made it.
 
 ## Phases
 
 1. Schema, RPCs, SQL tests (offline counts, umbrella visibility both ways,
    idempotent retries). Office: vehicles, assignments, par levels, transfers.
 2. Field: My truck, use / load / count, offline queue.
-3. Load-outs, the restock report, and (if you say yes to 1) automatic
-   deduction from ladder parts.
+3. Load-outs, the restock report, and automatic deduction from ladder parts.
