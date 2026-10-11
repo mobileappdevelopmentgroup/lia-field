@@ -284,6 +284,7 @@ setupAutocomplete('fi-type',  'ac-type-list',  TYPE_OPTIONS);
 // ── Part buttons ──────────────────────────────────────────────────────────────
 function renderPartButtons() {
   renderPartSetBar();
+  markPickingField();
   if (_detailStep) { renderDetailPicker(); return; }
   const grid = $('parts-grid');
   grid.innerHTML = '';
@@ -326,6 +327,19 @@ function lengthOptions(type) {
   return /extension|straight|hook/i.test(type || '')
     ? ['8', '10', '12', '14', '16', '20', '24', '28', '32', '36', '40']
     : ['2', '3', '4', '5', '6', '7', '8', '10', '12', '14', '16', '20'];
+}
+
+// Rings the field the picker is filling and points its placeholder at the
+// buttons, so the tech can see which box the next tap lands in.
+function markPickingField() {
+  DETAIL_STEPS.forEach(s => {
+    const el = $(s.field);
+    if (!el) return;
+    const on = s.key === _detailStep;
+    el.classList.toggle('picking', on);
+    if (el.dataset.ph === undefined) el.dataset.ph = el.placeholder;
+    el.placeholder = on ? 'Pick below ↓' : el.dataset.ph;
+  });
 }
 
 function startDetailPicker() {
@@ -740,6 +754,8 @@ function applyScopeToDetail(job) {
   } else if (typeof fpReset === 'function') {
     fpReset();
     if (inProgress && typeof fpRecover === 'function') fpRecover(inProgress);
+    // Items passed with details missing: try their sheets again.
+    if (typeof fpMineAll === 'function') fpMineAll();
   }
   const share = $('btn-share-csv');
   // The ladder CSV shape does not describe a fall protection item.

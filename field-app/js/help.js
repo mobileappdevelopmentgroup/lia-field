@@ -250,15 +250,16 @@
         shot('fp-batch', 'A tap-through run. The last tap is recorded as passed; Fail is there if it should not have been.'),
         warn('A tap is a pass with your name on it. Look the item over ' +
              '<em>before</em> you tap it.'),
-        p('<strong>Something wrong?</strong> Press <strong>Fail</strong> straight ' +
+        p('<strong>Something wrong?</strong> Press <strong>Fail last</strong> straight ' +
           'after tapping it. The pass is taken back out and the reader stops, so ' +
           'nothing else can land. Tap every check that failed, then take the photo. ' +
           'The run carries on after.'),
-        p('<strong>Item we do not know?</strong> It stays on screen with ' +
-          '<strong>Add info</strong> beside Fail. Pick the equipment type and type ' +
-          'the serial, press Done, and it is recorded as passed. Tap on without it ' +
-          'and that one is <em>not</em> recorded — it is counted as skipped, and its ' +
-          'tag link is kept so it comes up next time.'),
+        p('<strong>Item we do not know?</strong> It passes like any other and the ' +
+          'reader stays on. If its tag links to a Google Sheet, the app reads the ' +
+          'sheet in the background for the type, tag number, maker and model, and ' +
+          'finishes the record by itself. If it cannot — no signal, or a type it ' +
+          'does not recognise — the item waits on the job as ' +
+          '<strong>Needs details</strong>. Tap it there later, pick the type, and save.'),
         p('<strong>Edit info</strong> on the item you just tapped corrects what we ' +
           'have; Done records it again with your changes.'),
         p('<strong>Undo last pass</strong> takes the last pass back off the record ' +
@@ -482,8 +483,8 @@
         'Start the job, then tap <strong>Tap through</strong>.',
         'Tap the first item. Look it over while it is on screen.',
         'Good? Tap the next item — that records the first as passed.',
-        'Defect? Press <strong>Fail</strong>, tap what failed, take the photo.',
-        'Not on file? <strong>Add info</strong>, or tap on and it is skipped.',
+        'Defect? Press <strong>Fail last</strong>, tap what failed, take the photo.',
+        'Not on file? It passes anyway; finish any marked <strong>Needs details</strong> later.',
         'After the last item, press <strong>Pass &amp; finish</strong>.',
       ],
     },

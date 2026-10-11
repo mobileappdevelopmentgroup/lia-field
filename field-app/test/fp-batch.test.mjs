@@ -193,26 +193,22 @@ ok('counting it', await p.$eval('#fp-batch-count', e => e.textContent), '1 passe
 ok('Fail is not offered on an item already failed',
    await p.evaluate(() => $('fp-batch-cur').style.display), 'none');
 
-// ── Too little to pass: Add info, or it is skipped ──────────────────────────
+// ── Too little to record: passed all the same, held for details ─────────────
 await p.evaluate(() => { _fpBatch.lastAt = {}; window.__tap({ serial:'H-3' }); });   // on file, no type
 await p.waitForTimeout(300);
-ok('an item with no type is not recorded — it stays on screen with Add info', await p.evaluate(() => ({
-     serial: _fpItem && _fpItem.serial_raw, live: window.__liveListeners(), edit: $('fp-btn-batch-edit').textContent })),
-   { serial:'H-3', live:1, edit:'Add info' });
-ok('nothing recorded for it yet', (await items()).length, 2);
-await p.evaluate(() => window.__tap({ serial:'H-4' }));
-await p.waitForTimeout(300);
-ok('tapping on without it skips it, and passes the next', await items(), [['H-1', true], ['H-2', false], ['H-4', true]]);
-ok('and says so', await p.$eval('#fp-batch-hint', e => /H-4 passed/.test(e.textContent)), true);
-ok('counting the skip', await p.$eval('#fp-batch-count', e => e.textContent), '2 passed · 1 failed · 1 skipped');
+ok('an item with no type passes all the same', await items(), [['H-1', true], ['H-2', false], ['H-3', true]]);
+ok('held as needs-details, with no checks', await p.evaluate(() => {
+     const it = _job.items.find(i => i.serial_num === 'H-3'); return [it.needs_details, it.checks.length]; }), [true, 0]);
+ok('and never queued — it is not a record yet', await queued(), ['H-1', 'H-2']);
+ok('the reader stays on, nothing left on screen', await p.evaluate(() => [window.__liveListeners(), !!_fpItem]), [1, false]);
+ok('counting it', await p.$eval('#fp-batch-count', e => e.textContent), '2 passed · 1 failed · 1 need details');
+ok('Fail is offered as Fail last', await p.$eval('#fp-btn-batch-fail', e => e.textContent), 'Fail last');
 
-// Fail on an item that cannot be recorded must not reach back to the pass before it.
-await p.evaluate(() => { _fpBatch.lastAt = {}; window.__tap({ serial:'H-3' }); });
-await p.waitForTimeout(300);
+// Fail last on it takes it out, and asks for the type — it decides the checks.
 await p.click('#fp-btn-batch-fail'); await p.waitForTimeout(150);
-ok('Fail on an untyped item asks for its type, and leaves H-4 passed', await p.evaluate(() => [
-     _fpItem.serial_raw, $('fp-edit-form').style.display !== 'none', _job.items.some(i => i.serial_num === 'H-4')]),
-   ['H-3', true, true]);
+ok('Fail last on a needs-details item takes it out and asks for its type', await p.evaluate(() => [
+     _fpItem.serial_raw, $('fp-edit-form').style.display !== 'none', _job.items.some(i => i.serial_num === 'H-3')]),
+   ['H-3', true, false]);
 await p.selectOption('#fpf-equipment_type', await p.evaluate(() => LiaFpTypes.all()[0].slug));
 await p.fill('#fpf-manufacturer', 'Guardian');
 await p.click('#fp-btn-done-edit'); await p.waitForTimeout(250);
@@ -233,22 +229,72 @@ const h3b = await p.evaluate(() => _job.items.filter(i => i.serial_num === 'H-3'
 ok('a tap mid-edit records it once, with the correction',
    h3b.map(i => [i.overall_pass, i.manufacturer]), [[true, 'Guardian Fall']]);
 
-// ── An unknown tag: on screen, blank, with its link kept ─────────────────────
+// ── An unknown tag: passed, blank serial, its link kept ─────────────────────
 ok('a foreign tag does not stop the run or open the link sheet', await p.evaluate(() => ({
      sheet: !$('fp-link-sheet').classList.contains('hidden'), live: window.__liveListeners() })),
    { sheet:false, live:1 });
-ok('it is on screen with the serial box EMPTY, never the hardware id',
-   await p.evaluate(() => _fpItem.serial_raw), '');
-ok('carrying the link and the tag id', await p.evaluate(() => [_fpItem.tag_url, _fpItem.nfc_tag_uid]),
+const foreign = await p.evaluate(() => _job.items.find(i => i.tag_url === 'https://acme.example/tag/FP158354'));
+ok('it is passed with the serial EMPTY, never the hardware id',
+   foreign && [foreign.overall_pass, foreign.needs_details, foreign.serial_num], [true, true, '']);
+ok('carrying the link and the tag id', [foreign.tag_url, foreign.nfc_tag_serial],
    ['https://acme.example/tag/FP158354', 'ABCDEF01']);
-ok('and offering Add info', await p.$eval('#fp-btn-batch-edit', e => e.textContent), 'Add info');
-const beforeLink = (await items()).length;
+await p.waitForTimeout(200);
+ok('a host nobody trusted is never fetched, and it says so', await p.evaluate(() =>
+     /not a trusted source/.test(_job.items.find(i => i.tag_url === 'https://acme.example/tag/FP158354').needs_why)), true);
+
+// A supplier's Google Sheet: read in the background, and it completes the item.
+const sheetCsv = fs.readFileSync(path.join(ROOT, 'field-app/test/fixtures/tag-sheet-v1.csv'), 'utf8');
+await p.evaluate(csv => {
+  window.__fetched = [];
+  LiaTagLink.fetch = url => { window.__fetched.push(url);
+    return new Promise(r => setTimeout(() => r(Object.assign({ ok: true, url }, LiaTagLink.interpret(csv, 'text/csv'))), 150)); };
+}, sheetCsv);
+const SHEET = 'https://docs.google.com/spreadsheets/d/1Gd0q0TEST/edit?usp=drivesdk';
+await p.evaluate(u => window.__tap({ url: u, uid:'04:5D:E2:22:1F:1D:91' }), SHEET);
+await p.waitForTimeout(60);
+ok('a sheet tag passes at once, before its sheet is back', await p.evaluate(u => {
+     const it = _job.items.find(i => i.tag_url === u); return it && [it.overall_pass, it.needs_details, _fpBatch.last.sub]; }, SHEET),
+   [true, true, 'Passed · reading its sheet…']);
+ok('without stopping the reader', await p.evaluate(() => window.__liveListeners()), 1);
+await p.waitForTimeout(400);
+const mined = await p.evaluate(u => _job.items.find(i => i.tag_url === u), SHEET);
+ok('the sheet completes it — type, tag number as serial, maker, model',
+   [mined.needs_details, mined.equipment_type, mined.serial_num, mined.tag_label, mined.manufacturer, mined.model],
+   [undefined, 'crane_lift_sling', 'FP158354', 'FP158354', 'BUCKINGHAM', 'U69P98Q2']);
+ok('as a tap-through pass with every check at passing', [mined.source, mined.overall_pass, mined.checks.length > 0],
+   ['field_batch', true, true]);
+ok('its sheet kept beside it as a claim, not merged in', [mined.external && mined.external.source_url, !!mined.external.claimed],
+   [SHEET, true]);
+ok('and now queued, under the id it passed with, with the claim behind it', await p.evaluate(id => {
+     const q = JSON.parse(localStorage.getItem('lia-upload-queue'));
+     return [q.some(e => e.clientId === id && e.kind === 'fall_protection'), q.some(e => e.clientId === id + ':ext')]; }, mined.id),
+   [true, true]);
+ok('the panel says where the details came from', await p.$eval('#fp-batch-last', e => /from its sheet/.test(e.textContent)), true);
+
+// A sheet whose type we do not know stays for the tech, saying what it said.
+await p.evaluate(csv => {
+  LiaTagLink.fetch = url => Promise.resolve(Object.assign({ ok: true, url },
+    LiaTagLink.interpret(csv.replace('CRANE LIFTING SLING', 'MYSTERY WIDGET'), 'text/csv')));
+}, sheetCsv);
+await p.evaluate(() => window.__tap({ url: 'https://docs.google.com/spreadsheets/d/OTHER/edit', uid:'04:66:3F:5A:F3:1E:90' }));
+await p.waitForTimeout(300);
+const odd = await p.evaluate(() => _job.items.find(i => i.tag_url === 'https://docs.google.com/spreadsheets/d/OTHER/edit'));
+ok('an unknown type is never guessed — it waits, with the sheet\'s word for it',
+   [odd.needs_details, odd.equipment_type, odd.serial_num, /MYSTERY WIDGET/.test(odd.needs_why)], [true, '', 'FP158354', true]);
+
+const pend = await p.evaluate(() => _job.items.filter(i => i.needs_details).length);
 await p.click('#fp-btn-batch-stop'); await p.waitForTimeout(300);
-ok('finishing on it records no inspection', (await items()).length, beforeLink);
-ok('but keeps the link, so the next tap on it resolves',
-   await p.evaluate(() => JSON.parse(localStorage.getItem('lia-upload-queue')).pop().kind), 'fp_tag_link');
-ok('and the run is over', await p.evaluate(() => ({ batch: !!_fpBatch, live: window.__liveListeners() })),
+ok('the run is over', await p.evaluate(() => ({ batch: !!_fpBatch, live: window.__liveListeners() })),
    { batch:false, live:0 });
+ok('the waiting items are on the list, to be finished by hand',
+   await p.$$eval('#fp-items-list .fp-item.pend', c => c.length), pend);
+await p.click('#fp-items-list .fp-item.pend'); await p.waitForTimeout(200);
+await p.selectOption('#fpf-equipment_type', 'lanyard');
+await p.click('#fp-btn-done-edit'); await p.waitForTimeout(150);
+await p.click('#fp-btn-save'); await p.waitForTimeout(300);
+ok('finishing one by hand replaces it with the real record, under the same id',
+   await p.evaluate(id => _job.items.filter(i => i.id === id).map(i => [!!i.needs_details, i.equipment_type]), odd.id),
+   [[false, 'lanyard']]);
 
 // ── Typed or scanned, the same as a tap ─────────────────────────────────────
 await p.evaluate(() => { _job.items = []; fpRenderAll(); });

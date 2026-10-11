@@ -1,4 +1,4 @@
-const CACHE = 'lia-field-v46';
+const CACHE = 'lia-field-v47';
 const ASSETS = [
   './',
   './index.html',

@@ -188,6 +188,10 @@
     input.field-input:focus { border-color: var(--accent); }
     input.field-input.serial-warn,
     input.field-input.serial-warn:focus { border-color: var(--err); box-shadow: 0 0 0 2px rgba(var(--err-rgb), .25); }
+    /* The field the brand/type/length buttons below are filling right now —
+       same ring as serial-warn, in accent rather than error colour, so it
+       reads as "fill me from below" and not as something wrong. */
+    input.field-input.picking { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .28); }
     input.field-input::placeholder { color: var(--muted); }
     .field-clear-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
                      background: none; border: none; color: var(--muted); font-size: 18px;
@@ -553,6 +557,7 @@
                      display: flex; flex-direction: column; justify-content: center; gap: 2px; }
     .fp-batch-last.ok { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
     .fp-batch-last.flag { border-color: var(--bad); background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-last.pend { border-color: var(--accent); background: rgba(var(--accent-rgb),.08); }
     .fp-batch-last .sn { font-family: var(--mono); font-size: 14px; font-weight: 700; }
     .fp-batch-last .sub { font-size: 11.5px; color: var(--muted); }
     .fp-batch-last .lnk { font-size: 10.5px; color: var(--muted); word-break: break-all;
@@ -762,6 +767,8 @@
     .fp-item-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
     .fp-item-badge.pass { color: var(--ok-fg); }
     .fp-item-badge.fail { color: var(--bad-fg); }
+    .fp-item.pend { border-color: rgba(var(--accent-rgb),.45); border-style: dashed; cursor: pointer; }
+    .fp-item-badge.pend { color: var(--accent-fg); }
     .fp-photo-add { width: 104px; height: 104px; border-radius: 9px; border: 1px dashed var(--border);
                     background: var(--surf); color: var(--muted); display: flex; flex-direction: column;
                     align-items: center; justify-content: center; gap: 6px; cursor: pointer;
@@ -1173,7 +1180,7 @@
     <div class="fp-batch-acts">
       <button class="fp-batch-act" id="fp-btn-batch-arm" style="display:none;">Keep tapping</button>
       <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last pass</button>
-      <button class="fp-batch-act done" id="fp-btn-batch-stop">Finish</button>
+      <button class="fp-batch-act done big" id="fp-btn-batch-stop">Finish</button>
     </div>
     <div class="fp-hint" id="fp-batch-hint"></div>
   </div>
