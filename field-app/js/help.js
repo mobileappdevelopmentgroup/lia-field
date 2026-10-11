@@ -175,9 +175,9 @@
         p('Before you can inspect something the app has to know which item it is. ' +
           'There are four ways in, and you use whichever is easiest with the item ' +
           'in your hand:'),
-        shot('fp-input', 'Tap, Scan, Type, or New — pick whichever suits the item.'),
+        shot('fp-input', 'Tap & pass, Scan, Type, or New — pick whichever suits the item.'),
         steps([
-          '<strong>Tap</strong> — starts tap-through: every tag you tap is recorded as ' +
+          '<strong>Tap &amp; pass</strong> — starts tap-through: every tag you tap is recorded as ' +
           'passed on the spot. Fastest by far — see <em>Tap-through</em>.',
           '<strong>Scan</strong> — point the camera at a barcode.',
           '<strong>Type</strong> — key the serial in by hand.',
@@ -244,7 +244,7 @@
       title: 'Tap-through: working a whole rack',
       blurb: 'Look it over, tap it, it is passed. Only a defect costs a press.',
       body: [
-        p('Press <strong>Tap</strong> and the reader stays on. Look an item over, ' +
+        p('Press <strong>Tap &amp; pass</strong> and the reader stays on. Look an item over, ' +
           'then tap its tag: it is <strong>recorded as passed right there</strong>, ' +
           'every check at pass, and the reader is ready for the next one.'),
         shot('fp-batch', 'A tap-through run. The last tap is recorded as passed; Fail is there if it should not have been.'),

@@ -30,7 +30,7 @@ const vis = () => p.evaluate(()=>({
 }));
 ok('an FP job shows the FP input bar, not the ladder form', await vis(),
    {input:true, record:false, checks:false, items:true, ladder:false});
-ok('four ways in', await p.$$eval('.fp-way', e=>e.map(x=>x.textContent.trim())), ['Tap','Scan','Type','New']);
+ok('four ways in', await p.$$eval('.fp-way', e=>e.map(x=>x.textContent.trim())), ['Tap & pass','Scan','Type','New']);
 
 // New → straight into the fields
 await p.click('#fp-btn-new'); await p.waitForTimeout(200);

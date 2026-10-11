@@ -103,7 +103,7 @@ const failCheck = async (pg) => pg.evaluate(() => { const b = document.querySele
 
 // ── Tap starts the run ──────────────────────────────────────────────────────
 ok('the four ways are unchanged',
-   await p.$$eval('.fp-way', e => e.map(x => x.textContent.trim())), ['Tap','Scan','Type','New']);
+   await p.$$eval('.fp-way', e => e.map(x => x.textContent.trim())), ['Tap & pass','Scan','Type','New']);
 ok('there is no separate tap-through button — Tap is it', await p.$('#fp-btn-batch'), null);
 await p.click('#fp-btn-tap'); await p.waitForTimeout(150);
 ok('Tap starts a run, taking over the input bar', await p.evaluate(() => ({
