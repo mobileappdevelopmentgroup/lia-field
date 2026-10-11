@@ -229,7 +229,10 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
-**1.15.2 — 2026-10-11.** Android **versionCode 17**, iOS **build 18**, and Lia Office 1.15.2:
+**1.15.2 — 2026-10-11.** Android **versionCode 17** (Play internal), iOS
+**build 18** (TestFlight internal, in beta testing), Lia Office 1.15.2 (mac
+DMGs arm64 + x64, signed not notarized; Windows from CI, unsigned and not yet
+run on a real machine). Bundles in `lia-deliverables/1.15.2/`.
 - **Vehicle inventory, all three phases.** Migration 34 (applied
   2026-10-11; anon refused on everything new, verified from outside), Lia Office → Inventory
   (trucks, warehouses, assignees, load-outs, per-truck par, counts and
