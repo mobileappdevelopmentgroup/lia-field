@@ -528,6 +528,32 @@
                       background: var(--surf); color: var(--fg); font-family: inherit;
                       font-size: 12.5px; }
     .cat-msg { font-size: 12.5px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+    .inv-auto { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .inv-tbl td input { width: 64px; font: inherit; font-size: 12px; padding: 3px 5px; background: var(--surf2);
+                        border: 1px solid var(--border); border-radius: 5px; color: var(--text); }
+    .inv-tbl .short { color: var(--warn); font-weight: 700; }
+    .inv-tbl .neg { color: var(--err); font-weight: 700; }
+    .inv-tbl .num { text-align: right; padding-right: 14px; font-variant-numeric: tabular-nums; }
+    .inv-badge { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 9px; margin-left: 6px; }
+    .inv-badge.short { background: rgba(245,158,11,.15); color: var(--warn); }
+    .inv-badge.neg { background: rgba(239,68,68,.15); color: var(--err); }
+    .inv-people { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; font-size: 12.5px; }
+    .inv-people label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .inv-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+    .inv-act input, .inv-act select { font: inherit; font-size: 12.5px; padding: 5px 8px; background: var(--surf2);
+                                      border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+    .inv-act input.part { width: 120px; } .inv-act input.qty { width: 70px; } .inv-act input.note { flex: 1; min-width: 140px; }
+    .inv-sel { font: inherit; font-size: 13px; padding: 7px 9px; background: var(--surf2); border: 1px solid var(--border);
+               border-radius: 7px; color: var(--text); }
+    .inv-group { font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .05em; padding: 12px 16px 4px; }
+    .inv-ro { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+    @media print {
+      body * { visibility: hidden; }
+      #inv-detail, #inv-detail * { visibility: visible; }
+      #inv-detail { position: absolute; left: 0; top: 0; width: 100%; }
+      .inv-noprint { display: none !important; }
+    }
     .cat-msg.err { color: var(--err); }
 
     /* A real grid: the columns are computed from the width available, so the
@@ -858,6 +884,11 @@
         <div class="mode-icon">🏷️</div>
         <div class="mode-name">Tags</div>
         <div class="mode-desc">Every fall-protection tag you hold: which are still blank, and what the rest are on.</div>
+      </div>
+      <div class="mode-card" id="home-inventory">
+        <div class="mode-icon">🚚</div>
+        <div class="mode-name">Inventory</div>
+        <div class="mode-desc">What is on every truck and in every warehouse, what each should carry, and what to load.</div>
       </div>
       <div class="mode-card" id="home-jobs">
         <div class="mode-icon">🗓️</div>
@@ -1343,6 +1374,44 @@
         <div class="cat-msg" id="tags-msg"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: INVENTORY ═══════════════ -->
+<!-- Trucks and warehouses (34). The ledger on the server is the truth; this
+     screen never computes a quantity, it shows what stock_location_detail()
+     returns. The phone changes only the trucks a tech is assigned to. -->
+<div id="screen-inventory" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-inv-home">← Home</button>
+      <div class="cat-title">Inventory</div>
+      <div class="sup-filters">
+        <button class="cat-tab on" data-inv-tab="places">Trucks &amp; warehouses</button>
+        <button class="cat-tab" data-inv-tab="loadouts">Load-outs</button>
+        <button class="cat-tab" data-inv-tab="restock">Restock list</button>
+      </div>
+      <label class="inv-auto" title="Off until the counts are trusted">
+        <input type="checkbox" id="inv-auto"> Take ladder parts off the tech's truck automatically
+      </label>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" id="inv-list-pane">
+        <div class="cat-list-hdr">
+          <span id="inv-list-label">Trucks &amp; warehouses</span>
+          <span>
+            <button class="btn-mini" id="btn-inv-new-truck">+ Truck</button>
+            <button class="btn-mini" id="btn-inv-new-wh">+ Warehouse</button>
+            <button class="btn-mini" id="btn-inv-new-lo" style="display:none;">+ Load-out</button>
+          </span>
+        </div>
+        <div id="inv-list"></div>
+      </div>
+      <div class="cat-detail" id="inv-detail">
+        <div class="cat-empty">Pick a truck or warehouse, or add one.</div>
+      </div>
+    </div>
+    <div class="cat-msg" id="inv-msg" style="padding:0 26px 12px;"></div>
   </div>
 </div>
 
@@ -1972,6 +2041,7 @@ function goToDestination(dest) {
   else if (dest === 'support') { showScreen('support'); loadSupport(); }
   else if (dest === 'views')   { showScreen('views');   loadViews(); }
   else if (dest === 'tags')    { showScreen('tags');    loadTags(); }
+  else if (dest === 'inventory') { showScreen('inventory'); loadInventory(); }
   else if (dest === 'fpr')     { showScreen('fpr');     loadFpr(); }
   else if (dest === 'jobs')    { showScreen('jobs');    loadJobBoard(); }
   else if (dest === 'team')    { showScreen('team');    loadTeam(); }
@@ -3837,6 +3907,334 @@ document.querySelectorAll('[data-tags-filter]').forEach(b => b.addEventListener(
 }));
 $('btn-tags-home').addEventListener('click', () => showScreen('home'));
 
+// ── Inventory ────────────────────────────────────────────────────────────────
+// Trucks and warehouses, load-outs, and the restock list. Every number on this
+// screen comes from the server; nothing here adds up stock itself.
+let _inv = { tab: 'places', overview: null, sel: null, detail: null, team: null, lo: null, missing: false };
+const e0 = v => esc(v ?? '');
+
+function invMsg(text, err) { $('inv-msg').textContent = text || ''; $('inv-msg').className = 'cat-msg' + (err ? ' err' : ''); }
+function invFail(res) {
+  if (res && res.missing) { _inv.missing = true; invMsg('Inventory needs a database update (migration 34).', true); }
+  else invMsg((res && res.error) || 'Could not load.', true);
+}
+
+async function loadInventory() {
+  invMsg('Loading…');
+  const res = await window.api.stockOverview();
+  if (!res.ok) { invFail(res); _inv.overview = { locations: [], loadouts: [] }; renderInventory(); return; }
+  _inv.missing = false;
+  _inv.overview = res.data;
+  invMsg('');
+  $('inv-auto').checked = !!res.data.auto_deduct;
+  if (!_inv.team) {
+    const t = await window.api.teamMembers();
+    _inv.team = t && t.ok ? (t.team || []).filter(m => !m.removed_at) : [];
+  }
+  renderInventory();
+  if (_inv.tab === 'places' && _inv.sel) invOpen(_inv.sel);
+}
+
+function renderInventory() {
+  const o = _inv.overview || { locations: [], loadouts: [] };
+  const tab = _inv.tab;
+  document.querySelectorAll('[data-inv-tab]').forEach(b => b.classList.toggle('on', b.dataset.invTab === tab));
+  $('inv-list-pane').style.display = tab === 'restock' ? 'none' : '';
+  $('btn-inv-new-truck').style.display = tab === 'places' ? '' : 'none';
+  $('btn-inv-new-wh').style.display = tab === 'places' ? '' : 'none';
+  $('btn-inv-new-lo').style.display = tab === 'loadouts' ? '' : 'none';
+  $('inv-list-label').textContent = tab === 'loadouts' ? 'Load-outs' : 'Trucks & warehouses';
+
+  if (tab === 'places') {
+    const groups = [];
+    o.locations.forEach(l => {
+      const g = l.mine ? 'Yours' : l.account_name;
+      let grp = groups.find(x => x.name === g);
+      if (!grp) groups.push(grp = { name: g, items: [] });
+      grp.items.push(l);
+    });
+    $('inv-list').innerHTML = groups.length ? groups.map(g => `
+      ${groups.length > 1 ? `<div class="inv-group">${e0(g.name)}</div>` : ''}
+      ${g.items.map(l => `<div class="cat-item${_inv.sel === l.id ? ' sel' : ''}" data-inv-loc="${escA(l.id)}">
+        <div class="cat-item-name">${l.kind === 'warehouse' ? '🏬' : '🚚'} ${e0(l.name)}${l.active ? '' : ' <span style="color:var(--muted)">(retired)</span>'}
+          ${l.short ? `<span class="inv-badge short">${l.short} short</span>` : ''}
+          ${l.negative ? `<span class="inv-badge neg">${l.negative} below zero</span>` : ''}</div>
+        <div class="cat-item-sub">${e0([l.unit, l.loadout, (l.assignees || []).map(a => a.name).join(', ')].filter(Boolean).join(' · ') || (l.kind === 'warehouse' ? 'Warehouse' : 'Nobody assigned'))}</div>
+      </div>`).join('')}`).join('')
+      : `<div class="cat-empty" style="padding:16px;">${_inv.missing ? '' : 'No trucks or warehouses yet.'}</div>`;
+    if (!_inv.sel) $('inv-detail').innerHTML = '<div class="cat-empty">Pick a truck or warehouse, or add one.</div>';
+  } else if (tab === 'loadouts') {
+    $('inv-list').innerHTML = o.loadouts.length ? o.loadouts.map(x => `
+      <div class="cat-item${_inv.lo && _inv.lo.id === x.id ? ' sel' : ''}" data-inv-lo="${escA(x.id)}">
+        <div class="cat-item-name">${e0(x.name)}</div>
+        <div class="cat-item-sub">${(x.lines || []).length} part${(x.lines || []).length === 1 ? '' : 's'} · on
+          ${o.locations.filter(l => l.loadout_id === x.id).length} truck(s)</div></div>`).join('')
+      : '<div class="cat-empty" style="padding:16px;">No load-outs yet. A load-out is what a kind of truck should carry.</div>';
+    renderLoadout();
+  } else {
+    invRestock();
+  }
+}
+
+// ── A truck or warehouse ─────────────────────────────────────────────────────
+async function invOpen(id) {
+  _inv.sel = id;
+  renderInventory();
+  const res = await window.api.stockDetail(id);
+  if (!res.ok) return invFail(res);
+  _inv.detail = res.data;
+  renderLocation();
+}
+
+function invNew(kind) {
+  _inv.sel = null;
+  _inv.detail = { id: null, kind, name: '', unit: '', active: true, mine: true, loadout_id: null, lines: [], moves: [] };
+  renderInventory();
+  renderLocation();
+  const n = $('inv-name'); if (n) n.focus();
+}
+
+function renderLocation() {
+  const d = _inv.detail;
+  if (!d) return;
+  const o = _inv.overview || { locations: [], loadouts: [] };
+  const loc = o.locations.find(l => l.id === d.id) || {};
+  const assigned = new Set((loc.assignees || []).map(a => a.user_id));
+  const isTruck = d.kind === 'vehicle';
+  const ro = !d.mine;
+  const others = o.locations.filter(l => l.mine && l.id !== d.id && l.active);
+  const reasons = { use: 'Used', load: 'Loaded', count: 'Counted', transfer_in: 'In', transfer_out: 'Out', adjust: 'Corrected', ladder: 'On a ladder' };
+
+  $('inv-detail').innerHTML = `
+    ${ro ? `<div class="inv-ro">${e0(loc.account_name)}'s ${isTruck ? 'truck' : 'warehouse'} — shown read-only. Act as them to change it.</div>` : ''}
+    <div class="cat-row inv-noprint">
+      <div class="cat-field"><label>${isTruck ? 'Truck' : 'Warehouse'} name</label>
+        <input id="inv-name" value="${escA(d.name || '')}" maxlength="60" ${ro ? 'disabled' : ''} placeholder="${isTruck ? 'Truck 14' : 'Main shop'}"></div>
+      <div class="cat-field"><label>${isTruck ? 'Plate or unit #' : 'Where'}</label>
+        <input id="inv-unit" value="${escA(d.unit || '')}" maxlength="40" ${ro ? 'disabled' : ''}></div>
+      ${isTruck ? `<div class="cat-field"><label>Load-out</label>
+        <select id="inv-lo" class="inv-sel" ${ro ? 'disabled' : ''}><option value="">None</option>
+          ${o.loadouts.map(x => `<option value="${escA(x.id)}" ${x.id === d.loadout_id ? 'selected' : ''}>${e0(x.name)}</option>`).join('')}
+        </select></div>` : ''}
+    </div>
+    ${isTruck && !ro ? `<div class="cat-field inv-noprint"><label>Who can change it from their phone</label>
+      <div class="inv-people">${(_inv.team || []).map(m => `<label><input type="checkbox" data-inv-person="${escA(m.user_id)}"
+        ${assigned.has(m.user_id) ? 'checked' : ''}>${e0(m.name || m.email)}</label>`).join('') || '<span style="color:var(--muted)">Nobody on the crew yet.</span>'}</div></div>` : ''}
+    ${!ro ? `<div class="cat-actions inv-noprint" style="margin-top:14px;">
+      <button class="btn btn-p" id="btn-inv-save">${d.id ? 'Save' : (isTruck ? 'Add truck' : 'Add warehouse')}</button>
+      ${d.id ? `<button class="btn btn-g" id="btn-inv-retire">${d.active ? 'Retire' : 'Bring back'}</button>` : ''}
+      ${d.id ? `<button class="btn btn-g" id="btn-inv-print">Print stock sheet</button>` : ''}
+    </div>` : ''}
+    ${d.id ? `
+    <div class="cat-checks-hdr" style="margin-top:22px;"><span>${e0(d.name)} — stock</span>
+      <span class="cat-ver">${d.lines.filter(x => x.need > 0).length} short</span></div>
+    <table class="vw-tbl inv-tbl">
+      <tr><th>Part</th><th class="num">On hand</th><th class="num">Par</th><th class="num">Short</th>${ro ? '' : '<th class="inv-noprint">Own par</th>'}</tr>
+      ${d.lines.length ? d.lines.map(x => `<tr>
+        <td class="vw-mono">${e0(x.part_number)}</td>
+        <td class="num ${x.qty < 0 ? 'neg' : ''}">${x.qty}</td>
+        <td class="num">${x.par ?? '—'}</td>
+        <td class="num ${x.need > 0 ? 'short' : ''}">${x.need > 0 ? x.need : ''}</td>
+        ${ro ? '' : `<td class="inv-noprint"><input type="number" min="0" data-inv-par="${escA(x.part_number)}"
+          value="${x.par_override ?? ''}" placeholder="${isTruck ? 'load-out' : '—'}"></td>`}
+      </tr>`).join('') : '<tr><td colspan="5" class="cat-empty">Nothing recorded here yet.</td></tr>'}
+    </table>
+    ${ro ? '' : `
+    <div class="cat-checks-hdr inv-noprint" style="margin-top:18px;"><span>Record a change</span></div>
+    <div class="inv-act inv-noprint">
+      <input class="part" id="inv-part" placeholder="Part #" maxlength="60">
+      <select id="inv-reason"><option value="load">Loaded</option><option value="use">Used</option>
+        <option value="count">Counted — there are</option><option value="adjust">Correct by ±</option></select>
+      <input class="qty" id="inv-qty" type="number" placeholder="Qty">
+      <input class="note" id="inv-note" placeholder="Note (needed for a correction)" maxlength="500">
+      <button class="btn btn-p" id="btn-inv-adjust">Record</button>
+    </div>
+    ${others.length ? `<div class="inv-act inv-noprint">
+      <span style="font-size:12.5px;color:var(--muted)">Move</span>
+      <input class="part" id="inv-xpart" placeholder="Part #" maxlength="60">
+      <input class="qty" id="inv-xqty" type="number" min="1" placeholder="Qty">
+      <span style="font-size:12.5px;color:var(--muted)">to</span>
+      <select id="inv-xto">${others.map(l => `<option value="${escA(l.id)}">${l.kind === 'warehouse' ? '🏬' : '🚚'} ${e0(l.name)}</option>`).join('')}</select>
+      <button class="btn btn-g" id="btn-inv-transfer">Move</button>
+    </div>` : ''}`}
+    <div class="cat-checks-hdr inv-noprint" style="margin-top:18px;"><span>History</span><span class="cat-ver">latest first</span></div>
+    <table class="vw-tbl inv-noprint">
+      <tr><th>When</th><th>Part</th><th class="num">Change</th><th>What</th><th>Who</th><th>Note</th></tr>
+      ${d.moves.length ? d.moves.map(m => `<tr>
+        <td>${e0(new Date(m.captured_at).toLocaleString())}</td>
+        <td class="vw-mono">${e0(m.part_number)}</td>
+        <td class="num">${m.reason === 'count' ? '= ' + m.counted_qty : (m.delta > 0 ? '+' : '') + m.delta}</td>
+        <td>${e0(reasons[m.reason] || m.reason)}${m.wo_key ? ' · WO ' + e0(m.wo_key) : ''}</td>
+        <td>${e0(m.who || '')}</td><td>${e0(m.note || '')}</td></tr>`).join('')
+        : '<tr><td colspan="6" class="cat-empty">No changes yet.</td></tr>'}
+    </table>` : ''}`;
+
+  if (ro) return;
+  $('btn-inv-save').addEventListener('click', invSave);
+  if ($('btn-inv-retire')) $('btn-inv-retire').addEventListener('click', () => invSave(!d.active));
+  if ($('btn-inv-print')) $('btn-inv-print').addEventListener('click', () => window.print());
+  if ($('btn-inv-adjust')) $('btn-inv-adjust').addEventListener('click', invAdjust);
+  if ($('btn-inv-transfer')) $('btn-inv-transfer').addEventListener('click', invTransfer);
+  document.querySelectorAll('[data-inv-par]').forEach(i => i.addEventListener('change', async () => {
+    const res = await window.api.stockSetPar(d.id, i.dataset.invPar, i.value === '' ? null : Number(i.value));
+    if (!res.ok) return invFail(res);
+    invMsg(`Par for ${i.dataset.invPar} saved.`);
+    invRefresh();
+  }));
+}
+
+async function invRefresh() {
+  const id = _inv.sel;
+  const [o, d] = await Promise.all([window.api.stockOverview(), id ? window.api.stockDetail(id) : null]);
+  if (o && o.ok) _inv.overview = o.data;
+  if (d && d.ok) _inv.detail = d.data;
+  renderInventory();
+  if (id) renderLocation();
+}
+
+async function invSave(active) {
+  const d = _inv.detail;
+  const payload = { id: d.id, kind: d.kind, name: $('inv-name').value.trim(), unit: $('inv-unit').value.trim(),
+    loadout_id: $('inv-lo') ? ($('inv-lo').value || null) : null,
+    active: typeof active === 'boolean' ? active : d.active };
+  if (!payload.name) return invMsg('Give it a name.', true);
+  const res = await window.api.stockSaveLocation(payload);
+  if (!res.ok) return invFail(res);
+  const id = res.data.id;
+  if (d.kind === 'vehicle') {
+    const users = [...document.querySelectorAll('[data-inv-person]')].filter(c => c.checked).map(c => c.dataset.invPerson);
+    const a = await window.api.stockAssign(id, users);
+    if (!a.ok) return invFail(a);
+  }
+  _inv.sel = id;
+  invMsg(d.id ? 'Saved.' : `${payload.name} added.`);
+  await invRefresh();
+}
+
+async function invAdjust() {
+  const d = _inv.detail;
+  const part = $('inv-part').value.trim(), reason = $('inv-reason').value, qty = Number($('inv-qty').value);
+  if (!part) return invMsg('Which part?', true);
+  if (!Number.isFinite(qty) || $('inv-qty').value === '') return invMsg('How many?', true);
+  const res = await window.api.stockAdjust({ location_id: d.id, part_number: part, reason, qty, note: $('inv-note').value.trim() });
+  if (!res.ok) return invFail(res);
+  invMsg(`${part.toUpperCase()}: ${res.data.qty} on hand now.`);
+  await invRefresh();
+}
+
+async function invTransfer() {
+  const d = _inv.detail;
+  const part = $('inv-xpart').value.trim(), qty = Number($('inv-xqty').value), to = $('inv-xto').value;
+  if (!part || !(qty > 0)) return invMsg('Which part, and how many?', true);
+  const res = await window.api.stockTransfer({ from_location_id: d.id, to_location_id: to, lines: [{ part_number: part, qty }] });
+  if (!res.ok) return invFail(res);
+  invMsg(`Moved ${qty} × ${part.toUpperCase()}.`);
+  await invRefresh();
+}
+
+// ── Load-outs ────────────────────────────────────────────────────────────────
+function renderLoadout() {
+  const lo = _inv.lo;
+  if (!lo) { $('inv-detail').innerHTML = '<div class="cat-empty">Pick a load-out, or add one — for example "Standard ladder truck".</div>'; return; }
+  $('inv-detail').innerHTML = `
+    <div class="cat-row"><div class="cat-field"><label>Load-out name</label>
+      <input id="inv-lo-name" value="${escA(lo.name || '')}" maxlength="60" placeholder="Standard ladder truck"></div></div>
+    <div class="cat-note">Each part and how many a truck with this load-out should carry. A truck can set its own number for any part on its own page.</div>
+    <table class="vw-tbl inv-tbl" style="margin-top:10px;">
+      <tr><th>Part</th><th>Par</th><th></th></tr>
+      ${(lo.lines || []).map((x, i) => `<tr>
+        <td><input style="width:120px" data-lo-part="${i}" value="${escA(x.part_number || '')}" maxlength="60"></td>
+        <td><input type="number" min="0" data-lo-par="${i}" value="${x.par ?? ''}"></td>
+        <td><button class="btn-mini" data-lo-del="${i}">Remove</button></td></tr>`).join('')}
+    </table>
+    <button class="btn-mini" id="btn-lo-add" style="margin-top:8px;">+ Part</button>
+    <div class="cat-actions">
+      <button class="btn btn-p" id="btn-lo-save">${lo.id ? 'Save' : 'Add load-out'}</button>
+      ${lo.id ? '<button class="btn btn-g" id="btn-lo-delete">Delete</button>' : ''}
+    </div>`;
+  const read = () => {
+    lo.name = $('inv-lo-name').value;
+    lo.lines = (lo.lines || []).map((x, i) => {
+      const pn = document.querySelector(`[data-lo-part="${i}"]`), par = document.querySelector(`[data-lo-par="${i}"]`);
+      return { part_number: pn ? pn.value : x.part_number, par: par ? Number(par.value || 0) : x.par };
+    });
+  };
+  $('btn-lo-add').addEventListener('click', () => { read(); lo.lines.push({ part_number: '', par: 1 }); renderLoadout();
+    const last = document.querySelector(`[data-lo-part="${lo.lines.length - 1}"]`); if (last) last.focus(); });
+  document.querySelectorAll('[data-lo-del]').forEach(b => b.addEventListener('click', () => {
+    read(); lo.lines.splice(Number(b.dataset.loDel), 1); renderLoadout(); }));
+  $('btn-lo-save').addEventListener('click', async () => {
+    read();
+    if (!lo.name.trim()) return invMsg('Give the load-out a name.', true);
+    const res = await window.api.stockSaveLoadout({ id: lo.id, name: lo.name.trim(),
+      lines: lo.lines.filter(x => String(x.part_number || '').trim()) });
+    if (!res.ok) return invFail(res);
+    invMsg('Load-out saved.');
+    const o = await window.api.stockOverview();
+    if (o.ok) _inv.overview = o.data;
+    _inv.lo = (_inv.overview.loadouts || []).find(x => x.id === res.data.id) || lo;
+    renderInventory();
+  });
+  if ($('btn-lo-delete')) $('btn-lo-delete').addEventListener('click', async () => {
+    if (!confirm(`Delete the load-out "${lo.name}"? Trucks using it keep their own par numbers.`)) return;
+    const res = await window.api.stockDeleteLoadout(lo.id);
+    if (!res.ok) return invFail(res);
+    _inv.lo = null;
+    invMsg('Load-out deleted.');
+    const o = await window.api.stockOverview();
+    if (o.ok) _inv.overview = o.data;
+    renderInventory();
+  });
+}
+
+// ── Restock list ─────────────────────────────────────────────────────────────
+async function invRestock() {
+  $('inv-detail').innerHTML = '<div class="cat-empty">Loading…</div>';
+  const res = await window.api.stockRestock();
+  if (!res.ok) { $('inv-detail').innerHTML = ''; return invFail(res); }
+  const trucks = res.data || [];
+  $('inv-detail').innerHTML = `
+    <div class="cat-actions inv-noprint" style="margin:0 0 14px;"><button class="btn btn-g" id="btn-inv-print-all">Print</button></div>
+    ${trucks.length ? trucks.map(t => `
+      <div class="cat-checks-hdr" style="margin-top:14px;"><span>🚚 ${e0(t.name)}${t.unit ? ' · ' + e0(t.unit) : ''}</span>
+        <span class="cat-ver">${t.lines.length} part${t.lines.length === 1 ? '' : 's'} to load</span></div>
+      <table class="vw-tbl inv-tbl"><tr><th>Part</th><th class="num">On hand</th><th class="num">Par</th><th class="num">Load</th><th>✓</th></tr>
+        ${t.lines.map(x => `<tr><td class="vw-mono">${e0(x.part_number)}</td><td class="num">${x.qty}</td>
+          <td class="num">${x.par}</td><td class="num short">${x.need}</td><td>☐</td></tr>`).join('')}</table>`).join('')
+      : '<div class="cat-empty">Every truck is at par. Nothing to load.</div>'}`;
+  $('btn-inv-print-all').addEventListener('click', () => window.print());
+}
+
+// ── Wiring ───────────────────────────────────────────────────────────────────
+$('inv-list').addEventListener('click', e => {
+  const l = e.target.closest('[data-inv-loc]');
+  if (l) return invOpen(l.dataset.invLoc);
+  const lo = e.target.closest('[data-inv-lo]');
+  if (lo) {
+    const x = (_inv.overview.loadouts || []).find(y => y.id === lo.dataset.invLo);
+    _inv.lo = x ? JSON.parse(JSON.stringify(x)) : null;
+    renderInventory();
+  }
+});
+document.querySelectorAll('[data-inv-tab]').forEach(b => b.addEventListener('click', () => {
+  _inv.tab = b.dataset.invTab;
+  invMsg('');
+  renderInventory();
+  if (_inv.tab === 'places' && _inv.sel) invOpen(_inv.sel);
+}));
+$('btn-inv-new-truck').addEventListener('click', () => invNew('vehicle'));
+$('btn-inv-new-wh').addEventListener('click', () => invNew('warehouse'));
+$('btn-inv-new-lo').addEventListener('click', () => { _inv.lo = { id: null, name: '', lines: [{ part_number: '', par: 1 }] }; renderInventory(); });
+$('inv-auto').addEventListener('change', async () => {
+  const on = $('inv-auto').checked;
+  if (on && !confirm('From now on, the parts a tech records on a ladder come off the truck they have marked as theirs. ' +
+                     'Turn this on once the truck counts are right. Continue?')) { $('inv-auto').checked = false; return; }
+  const res = await window.api.stockSettings({ auto_deduct: on });
+  if (!res.ok) { $('inv-auto').checked = !on; return invFail(res); }
+  invMsg(on ? 'Ladder parts now come off the tech\'s truck.' : 'Ladder parts no longer come off trucks.');
+});
+$('btn-inv-home').addEventListener('click', () => showScreen('home'));
+
 let _viewDays = 30;
 
 const VIEWER_LABEL = {
@@ -4549,6 +4947,7 @@ $('home-catalog').addEventListener('click', () => requireAuth('catalog'));
 $('home-support').addEventListener('click', () => requireAuth('support'));
 $('home-jobs').addEventListener('click', () => requireAuth('jobs'));
 $('home-tags').addEventListener('click', () => requireAuth('tags'));
+$('home-inventory').addEventListener('click', () => requireAuth('inventory'));
 // Advanced is a menu, not a feature: the sign-in happens on the way into
 // whichever of its screens is picked, the same as from home.
 $('home-advanced').addEventListener('click', () => showScreen('advanced'));

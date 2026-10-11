@@ -43,6 +43,7 @@ let _showArchived = false;
 
 function renderJobList() {
   if (typeof renderJobsUpload === 'function') renderJobsUpload();
+  if (typeof renderTruckCard === 'function') renderTruckCard();
   const all    = loadJobs();
   const every  = Object.values(all);
   // Everybody's work is shown, and whose it is said on the card. Hiding it

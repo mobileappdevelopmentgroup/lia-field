@@ -32,6 +32,11 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**34 is written and rehearsed but NOT applied** (2026-10-11) — vehicle
+inventory (see *Vehicle inventory* below). Rehearsed against a
+production-shaped database (`run-apply-34.sh`, two passes, no existing row
+changed); paste `supabase/dist/apply-34.sql`. Until it is applied, Lia Office's
+Inventory screen says "needs a database update" and phones show no truck.
 **33 was applied 2026-10-11** — published part sets (`account_part_sets`,
 `save_account_part_sets()`, `account_part_sets_catalog()`), and it re-emits
 `consolidate_to_one_account()` so sets move with an account. Verified from
@@ -144,6 +149,8 @@ npm run schema:check       # Fail if that snapshot is stale
 ./supabase/test/run-apply-33.sh      # Rehearse 33 the same way, prove no
                                      # existing row changes, and write
                                      # supabase/dist/apply-33.sql to paste
+./supabase/test/run-apply-34.sh      # Same for 34 (vehicle inventory) →
+                                     # supabase/dist/apply-34.sql
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -452,6 +459,32 @@ company holds — blank ones as number ranges, the rest with what they are on an
 how it last fared. It sees across subcontractors (`can_see`); the phone's
 `my_tag_stock()` deliberately does not. Links open only through main's
 `open:link`, which allows https to our certificate site and `docs.google.com`.
+
+### Vehicle inventory
+
+`supabase/migrations/34_vehicle_inventory.sql`; design and decisions in
+`docs/VEHICLE-INVENTORY-PLAN.md`. Trucks and warehouses (`stock_locations`),
+load-outs, and an **append-only ledger** (`stock_moves`) that is the only way a
+quantity changes — `stock_levels.qty` is derived by `stock_recompute()` and
+nothing else writes it. Rules that are load-bearing:
+
+- **A count is as of when it was taken**: quantity = latest count by
+  `captured_at` + every other move captured after it. An offline count arriving
+  late neither wipes a later load nor lets an earlier use come off twice.
+  `field-app/test/truck.test.mjs` and `test/28_vehicle_inventory_test.sql` assert both.
+- **Phone writes** (`record_stock_move`) are idempotent on `client_id`, allowed
+  only on a truck the user is assigned to, and queued as `stock_move` —
+  *deferrable* (never dropped, never holding up an inspection).
+- **Reads follow `can_see`** (Batavia sees subcontractors' trucks, read-only
+  from its own account); writes follow `require_lead_account()`, so they work
+  while acting as a subcontractor.
+- **Ladder parts off the truck** is a deferred constraint trigger on
+  `inspections`, **off per account** until the office ticks it on the Inventory
+  screen. Keyed to (asset, inspection date), it follows whichever version is
+  current — a correction moves only the difference, a deletion puts the parts
+  back — and it can never stop a ladder being recorded. The truck is whichever
+  one that record already took from, else the collector's "my truck today".
+- No prices anywhere in it.
 
 ### Consolidating accounts
 

@@ -360,6 +360,29 @@
 
     // ── Everything else ─────────────────────────────────────────────────────
     {
+      id: 'truck',
+      group: 'Day to day',
+      title: 'My truck: parts on board',
+      blurb: 'What is on your truck, and keeping it right — used, loaded, counted.',
+      body: [
+        p('If the office has put you on a truck, <strong>My truck</strong> shows on the ' +
+          'jobs screen. Open it to see every part on board, what the truck should ' +
+          'carry, and what it is short.'),
+        steps([
+          '<strong>−1</strong> — you used one off the truck.',
+          '<strong>+</strong> — you loaded some. Say how many, and which warehouse they came out of if it was one.',
+          '<strong>Count</strong> — you counted the shelf. Type how many are there <em>now</em>.',
+        ]),
+        p('A part that is not listed yet: type its number at the bottom and load it.'),
+        note('Every change works with no signal. It shows straight away and uploads ' +
+             'when it can — a count is kept with the time you took it, so a count made ' +
+             'in a basement this morning does not wipe out what the office loaded at noon.'),
+        p('On more than one truck? Pick the one you are in and press <strong>Make this ' +
+          'my truck today</strong>. If the office has switched it on, the parts you put ' +
+          'on ladders come off that truck by themselves.'),
+      ],
+    },
+    {
       id: 'offline',
       group: 'Day to day',
       title: 'Working with no signal',

@@ -862,6 +862,38 @@
                border-radius: 9px; padding: 10px 16px; font-size: 14px; font-weight: 700; }
     .ju-btn:disabled { opacity: .6; }
 
+    /* ── My truck ── */
+    .truck-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+                  margin: 0 0 10px; padding: 11px 13px; border-radius: 11px; background: var(--surf);
+                  border: 1px solid var(--border); color: var(--text); font-size: 14px; white-space: normal; }
+    .truck-card .tc-sub { display: block; color: var(--muted); font-size: 11.5px; font-weight: 500; margin-top: 2px; }
+    .truck-card .tc-short { margin-left: auto; color: var(--warn, #b45309); font-size: 12.5px; font-weight: 700; }
+    #truck-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 14px;
+                  padding-bottom: calc(14px + var(--safe-b)); display: flex; flex-direction: column; gap: 8px; }
+    .truck-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .truck-asof { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+    .truck-tools, .truck-add { display: flex; gap: 8px; align-items: center; }
+    .truck-tools input, .truck-add input { flex: 1; min-width: 0; }
+    .truck-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px;
+                 background: var(--surf); border: 1px solid var(--border); }
+    .truck-row.short { border-color: rgba(245,158,11,.55); }
+    .truck-row .tr-pn { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+    .truck-row .tr-sub { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .truck-row .tr-main { flex: 1; min-width: 0; }
+    .truck-row .tr-qty { font-size: 20px; font-weight: 800; min-width: 38px; text-align: right;
+                         font-variant-numeric: tabular-nums; }
+    .truck-row .tr-qty.neg { color: var(--bad-fg, #dc2626); }
+    .truck-row button { padding: 8px 10px; font-size: 13px; border-radius: 8px; }
+    .tr-use { background: rgba(var(--bad-rgb),.12); color: var(--bad-fg); }
+    .tr-load { background: rgba(var(--ok-rgb),.14); color: var(--ok-fg); }
+    .tr-count { background: var(--surf2); color: var(--text); border: 1px solid var(--border); }
+    .truck-sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 60; }
+    .truck-sheet.hidden { display: none; }
+    .truck-sheet-in { width: 100%; background: var(--surf); border-radius: 14px 14px 0 0; padding: 16px 14px;
+                      padding-bottom: calc(16px + var(--safe-b)); display: flex; flex-direction: column; gap: 10px; }
+    .truck-sheet-title { font-weight: 700; font-size: 15px; }
+    .truck-sheet-acts { display: flex; gap: 8px; justify-content: flex-end; }
+
     /* What is still owed, named rather than counted. */
     #waiting-list { margin: 8px 0 4px; max-height: 210px; overflow-y: auto;
                     border: 1px solid var(--border); border-radius: 8px; }
@@ -969,6 +1001,8 @@
       <button class="ju-btn" id="btn-upload-all">Upload now</button>
     </div>
     <div id="jobs-filters" class="jobs-filters" style="display:none;"></div>
+    <!-- My truck: shown only to someone assigned to one in Lia Office. -->
+    <button id="truck-card" class="truck-card" style="display:none;"></button>
     <div id="assigned-body"></div>
     <div class="job-empty" id="jobs-empty" style="display:none;">
       No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.
@@ -1226,6 +1260,43 @@
      reading a topic and then asking about it does not lose your place, and
      so Back means one obvious thing.
 ══════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: MY TRUCK — what is on it, and use / load / count
+══════════════════════════════════════════════════════ -->
+<div id="screen-truck" class="screen">
+  <div class="topbar">
+    <button class="back-btn" id="btn-truck-back">← Jobs</button>
+    <span class="topbar-title" id="truck-title">My truck</span>
+  </div>
+  <div id="truck-body">
+    <div id="truck-picker" class="truck-picker"></div>
+    <div class="truck-asof" id="truck-asof"></div>
+    <div class="truck-tools">
+      <input type="search" id="truck-q" class="field-input" placeholder="Find a part…" autocomplete="off"
+             autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="jf-btn" id="truck-short">Short only</button>
+    </div>
+    <div id="truck-list"></div>
+    <div class="truck-add">
+      <input type="text" id="truck-new-part" class="field-input" placeholder="Part not listed? Part number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-g" id="truck-new-go">Add</button>
+    </div>
+  </div>
+  <!-- Load or count one line: a small sheet so the number pad has room. -->
+  <div id="truck-sheet" class="truck-sheet hidden">
+    <div class="truck-sheet-in">
+      <div class="truck-sheet-title" id="truck-sheet-title"></div>
+      <input type="number" inputmode="numeric" min="0" id="truck-sheet-qty" class="field-input">
+      <select id="truck-sheet-from" class="field-input"></select>
+      <div class="truck-sheet-acts">
+        <button class="btn-g" id="truck-sheet-cancel">Cancel</button>
+        <button class="btn-p" id="truck-sheet-ok">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="screen-help" class="screen">
   <div class="topbar">
     <button class="back-btn" id="help-back">← Back</button>
@@ -1478,6 +1549,7 @@
 <script src="./js/photos.js"></script>
 <script src="./js/sync.js"></script>
 <script src="./js/sync-state.js"></script>
+<script src="./js/truck.js"></script>
 <script src="./js/fp-types.js"></script>
 <script src="./js/fp.js"></script>
 <script src="./js/help.js"></script>

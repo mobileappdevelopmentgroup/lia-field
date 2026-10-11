@@ -1,7 +1,19 @@
 # Vehicle inventory — plan
 
-Status: **planned, nothing built.** Written 2026-10-10; the four open
+Status: **built 2026-10-11, all three phases** — migration
+`supabase/migrations/34_vehicle_inventory.sql` (written and rehearsed, **not yet applied**), Lia
+Office → Inventory, Lia Field → My truck. Written 2026-10-10; the four
 decisions were answered the same day (below).
+
+What differs from the plan as built: tables are `stock_locations`,
+`stock_assignees` (was `vehicle_assignees`), `stock_loadouts` (lines held as
+jsonb on the load-out), `stock_levels`, `stock_moves`, `stock_settings`. A
+count's quantity is computed as *latest count by captured_at + every other move
+captured after it* — so a late use from before a count does not come off
+twice, which the plan's "difference at that time" alone would have done.
+Automatic ladder deduction is a deferred constraint trigger on `inspections`,
+off per account until the office ticks it, keyed to (asset, inspection date),
+and it can never stop an inspection being recorded.
 
 ## What it is for
 

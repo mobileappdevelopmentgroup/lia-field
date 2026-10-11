@@ -32,7 +32,7 @@ function goScreen(name) {
   if (name !== 'detail' && $('screen-detail') && $('screen-detail').classList.contains('active')
       && typeof fpBlockLeave === 'function' && fpBlockLeave(name)) return;
   if (name !== 'detail' && typeof fpBatchLeave === 'function') fpBatchLeave();
-  ['auth','sync','jobs','detail','help'].forEach(s => {
+  ['auth','sync','jobs','detail','help','truck'].forEach(s => {
     const el = $(`screen-${s}`);
     if (el) el.classList.toggle('active', s === name);
   });

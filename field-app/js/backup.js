@@ -41,6 +41,7 @@
   var KEYS = [
     'lia-field-jobs',        // jobs, ladders and items — the CSVs
     'lia-upload-queue',      // records not yet on the server
+    'lia-truck-pending',     // truck changes not yet on the server, as shown
     'lia-sent-records',      // which of those the server already has
     'lia-support-tickets',
     'lia-parts-library',

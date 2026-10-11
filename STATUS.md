@@ -229,6 +229,19 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**Unreleased — 2026-10-11.** Built, tested, committed; not shipped:
+- **Vehicle inventory, all three phases.** Migration 34 (rehearsed, *not
+  applied* — paste `supabase/dist/apply-34.sql`), Lia Office → Inventory
+  (trucks, warehouses, assignees, load-outs, per-truck par, counts and
+  corrections, transfers, history, printable restock list, the automatic-
+  deduction switch), Lia Field → My truck (use / load / count offline, which
+  truck is mine today). See `docs/VEHICLE-INVENTORY-PLAN.md`.
+- **Fall protection: a tap is the pass.** Tap is now *Tap & pass* and starts
+  tap-through; each tap records a pass at once. Fail or Edit info straight
+  after withdraws it first. *View a tag — no inspection* reads a tag without
+  recording anything.
+- **Failure photos are backed up** to files beside the jobs backup.
+
 **1.15.1 — 2026-10-10.** Android **versionCode 16** (Play internal), iOS **build
 17** (TestFlight internal, in beta testing). Testers lost every job on an iOS
 update: the web view's storage was cleared under the app. `field-app/js/backup.js`

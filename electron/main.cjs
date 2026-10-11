@@ -590,6 +590,35 @@ ipcMain.handle('tags:list', async () => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── Inventory: trucks, warehouses, load-outs ───────────────────────────────
+// See supabase/migrations/34_vehicle_inventory.sql. Every check is server-side;
+// these only pass arguments through. A database without 34 answers "function
+// does not exist", which the screen turns into "needs a database update".
+const json = (d) => typeof d === 'string' ? JSON.parse(d) : d;
+async function stockCall(rpc, args) {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc(rpc, args);
+    if (error) return { ok: false, error: error.message, missing: /does not exist|Could not find the function/i.test(error.message || '') };
+    return { ok: true, data: json(data) };
+  } catch (err) { return { ok: false, error: String(err) }; }
+}
+const obj = (p) => (p && typeof p === 'object' && !Array.isArray(p)) ? p : {};
+ipcMain.handle('stock:overview', () => stockCall('stock_overview'));
+ipcMain.handle('stock:detail', (_e, id) => stockCall('stock_location_detail', { p_location: String(id || '') }));
+ipcMain.handle('stock:saveLocation', (_e, p) => stockCall('save_stock_location', { p: obj(p) }));
+ipcMain.handle('stock:assign', (_e, id, users) => stockCall('set_stock_assignees', {
+  p_location: String(id || ''), p_users: (Array.isArray(users) ? users : []).map(String) }));
+ipcMain.handle('stock:saveLoadout', (_e, p) => stockCall('save_stock_loadout', { p: obj(p) }));
+ipcMain.handle('stock:deleteLoadout', (_e, id) => stockCall('delete_stock_loadout', { p_id: String(id || '') }));
+ipcMain.handle('stock:setPar', (_e, id, part, par) => stockCall('set_stock_par', {
+  p_location: String(id || ''), p_part: String(part || ''),
+  p_par: par === null || par === '' || par === undefined ? null : Number(par) }));
+ipcMain.handle('stock:adjust', (_e, p) => stockCall('adjust_stock', { p: obj(p) }));
+ipcMain.handle('stock:transfer', (_e, p) => stockCall('transfer_stock', { p: obj(p) }));
+ipcMain.handle('stock:restock', () => stockCall('stock_restock_report'));
+ipcMain.handle('stock:settings', (_e, p) => stockCall('save_stock_settings', { p: obj(p) }));
+
 // Opens a link in the system browser. Only https, and only the two places a
 // tag's links point: our certificate site and the Google Sheets a lead's tags
 // were programmed with. The renderer never navigates or opens windows itself,

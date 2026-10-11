@@ -18,6 +18,7 @@ const ASSETS = [
   './js/photos.js',
   './js/sync.js',
   './js/sync-state.js',
+  './js/truck.js',
   './js/fp-types.js',
   './js/fp.js',
   './js/help.js',

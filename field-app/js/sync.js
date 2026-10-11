@@ -91,6 +91,8 @@
     // So is the list of blank tags: one company's tags must not be recognised
     // as "ours" by whoever signs in next.
     if (root.LiaTagStock) root.LiaTagStock.clear();
+    // And the trucks: one company's vans are not the next sign-in's.
+    if (root.LiaTruck) root.LiaTruck.clear();
     return client().then(function (sb) {
       if (!sb) return null;
       // The catalogue is account data too, for the same reason.
@@ -128,6 +130,9 @@
         // The account's blank tags, so a tap on one is recognised as ours
         // rather than as somebody else's link. Never fatal, like the parts.
         return root.LiaTagStock ? root.LiaTagStock.pull(sb) : false;
+      }).then(function () {
+        // The trucks this tech is on (34). Never fatal either.
+        return root.LiaTruck ? root.LiaTruck.pull(sb) : false;
       }).then(function () {
         return root.LiaCache.sync(sb, opts || {});
       });
@@ -333,6 +338,14 @@
     if (entry.kind === 'support_reply') {
       return sb.rpc('reply_support_ticket', { p: entry.payload });
     }
+    // Truck stock (34): a use, load or count, idempotent on its client_id;
+    // and which truck is the tech's today.
+    if (entry.kind === 'stock_move') {
+      return sb.rpc('record_stock_move', { p: entry.payload });
+    }
+    if (entry.kind === 'stock_truck') {
+      return sb.rpc('set_my_truck', { p_location: entry.payload.location_id });
+    }
     return Promise.resolve({ error: { message: 'Unknown record type: ' + entry.kind } });
   }
 
@@ -357,7 +370,9 @@
   // A photo is deferrable too: it is large, so it is the likeliest thing to
   // fail on a weak signal, and it must never hold up a day of inspections — but
   // it is the evidence for a removal from service, so it is never dropped.
-  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply', 'fp_photo'];
+  // Truck stock too: a count that has not gone up yet must never hold up a
+  // day of inspections, and must never be thrown away either.
+  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply', 'fp_photo', 'stock_move', 'stock_truck'];
   var OPTIONAL_ATTEMPTS = 3;
 
   function isOptional(entry) {
@@ -566,6 +581,10 @@
       // Only redrawn on a real answer — a failed pull must not flicker the
       // list or reset the "as of" line to now.
       if (r && r.ok && typeof root.renderAssignedList === 'function') root.renderAssignedList();
+    });
+    // The trucks, on the same rate limit: they change when somebody loads one.
+    if (root.LiaTruck) root.LiaTruck.refresh().then(function (ok) {
+      if (ok && typeof root.renderTruckCard === 'function') root.renderTruckCard();
     });
   }
 

@@ -96,6 +96,19 @@ contextBridge.exposeInMainWorld('api', {
 
   // Tags the company holds, blank or on equipment; and opening a certificate
   // or a tag's sheet in the browser (https, two known hosts — see main.cjs).
+  // Inventory: trucks and warehouses, load-outs, restocking (34).
+  stockOverview:     ()               => ipcRenderer.invoke('stock:overview'),
+  stockDetail:       (id)             => ipcRenderer.invoke('stock:detail', id),
+  stockSaveLocation: (p)              => ipcRenderer.invoke('stock:saveLocation', p),
+  stockAssign:       (id, users)      => ipcRenderer.invoke('stock:assign', id, users),
+  stockSaveLoadout:  (p)              => ipcRenderer.invoke('stock:saveLoadout', p),
+  stockDeleteLoadout:(id)             => ipcRenderer.invoke('stock:deleteLoadout', id),
+  stockSetPar:       (id, part, par)  => ipcRenderer.invoke('stock:setPar', id, part, par),
+  stockAdjust:       (p)              => ipcRenderer.invoke('stock:adjust', p),
+  stockTransfer:     (p)              => ipcRenderer.invoke('stock:transfer', p),
+  stockRestock:      ()               => ipcRenderer.invoke('stock:restock'),
+  stockSettings:     (p)              => ipcRenderer.invoke('stock:settings', p),
+
   tagsList: ()    => ipcRenderer.invoke('tags:list'),
   openLink: (url) => ipcRenderer.invoke('open:link', url),
 

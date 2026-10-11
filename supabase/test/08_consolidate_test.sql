@@ -9,6 +9,8 @@
 \ir ../migrations/30_consolidate_fold_first.sql
 -- 33 re-emits consolidate_to_one_account() to move published part sets.
 \ir ../migrations/33_published_part_sets.sql
+-- 34 re-emits it again to move vehicle inventory.
+\ir ../migrations/34_vehicle_inventory.sql
 
 -- ── Refuses while companies sit under an umbrella (30) ──────────────────────
 -- 16_umbrella_test left accounts arranged under Batavia. Merging them would
@@ -76,11 +78,19 @@ BEGIN
   INSERT INTO account_part_sets (account_id, name, parts) VALUES
     (a1, 'Cons A', '["G13"]'), (a2, 'Cons B', '["W44"]'),
     (a1, 'Cons Same', '["G13"]'), (a2, 'Cons Same', '["W44"]');
+
+  -- Vehicle inventory (34): a van of the same name in both, with stock.
+  INSERT INTO stock_locations (account_id, kind, name) VALUES (a1, 'vehicle', 'Cons Van'), (a2, 'vehicle', 'Cons Van');
+  INSERT INTO stock_moves (account_id, location_id, part_key, part_number, delta, reason)
+  SELECT account_id, id, 'G13', 'G13', 3, 'load' FROM stock_locations WHERE name = 'Cons Van';
+  INSERT INTO stock_settings (account_id, auto_deduct) VALUES (a2, true);
 END $$;
 
 DO $$
-DECLARE v_before_accounts int; v_before_insp int; v_res json;
+DECLARE v_before_accounts int; v_before_insp int; v_res json; v_moves int; v_places int;
 BEGIN
+  SELECT count(*)::int INTO v_moves FROM stock_moves;
+  SELECT count(*)::int INTO v_places FROM stock_locations;
   SELECT count(*)::int INTO v_before_accounts FROM accounts;
   SELECT count(*)::int INTO v_before_insp FROM inspections;
   PERFORM pg_temp.want('more than one account before consolidating', v_before_accounts > 1, true);
@@ -153,6 +163,14 @@ BEGIN
       WHERE name LIKE 'Cons %' AND NOT is_deleted), 'Cons A,Cons B,Cons Same');
   PERFORM pg_temp.want('and a name in both keeps one live set, the other kept as deleted',
     (SELECT count(*)::int FROM account_part_sets WHERE name = 'Cons Same'), 2);
+  PERFORM pg_temp.want('every truck and warehouse survives the merge',
+    (SELECT count(*)::int FROM stock_locations), v_places);
+  PERFORM pg_temp.want('and the whole ledger with them',
+    (SELECT count(*)::int FROM stock_moves), v_moves);
+  PERFORM pg_temp.want('all in the one account',
+    (SELECT count(DISTINCT account_id)::int FROM stock_moves), 1);
+  PERFORM pg_temp.want('two vans of the same name are both kept, one marked with its old company',
+    (SELECT count(*)::int FROM stock_locations WHERE name LIKE 'Cons Van%'), 2);
 END $$;
 
 -- Two accounts may each hold the same work order number — that namespacing is

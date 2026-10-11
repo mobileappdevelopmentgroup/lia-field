@@ -168,6 +168,11 @@ echo "Running part set assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/27_part_sets_test.sql"
 
+echo
+echo "Running vehicle inventory assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/28_vehicle_inventory_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"
