@@ -229,6 +229,20 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.1 — 2026-10-10.** Android **versionCode 16** (Play internal), iOS **build
+17** (TestFlight internal, in beta testing). Testers lost every job on an iOS
+update: the web view's storage was cleared under the app. `field-app/js/backup.js`
+now mirrors jobs, the upload queue, the parts library and settings into two
+alternating files in the app's Library, and restores any key that comes up
+missing at start-up. It protects updates **after** this build is installed —
+jobs already lost are gone — and not a delete-and-reinstall, which removes the
+files too. Failure photos (IndexedDB) are not covered. Bundles in
+`lia-deliverables/1.15.1/`.
+
+**Lia Office 1.15.0** built the same day — mac DMGs (arm64, x64) and the Windows
+installer from CI, in `lia-deliverables/1.15.0/`. It carries the part-set
+publishing screen, which needs migration 33.
+
 **1.15.0 — 2026-10-10.** Android **versionCode 15** (Play internal), iOS **build
 16** (TestFlight internal, in beta testing). Phone only: **Lia Office was not
 rebuilt**, so the screen that publishes part sets is in the source but not yet in
