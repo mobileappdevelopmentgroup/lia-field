@@ -335,6 +335,39 @@ ok('ends the run and releases the reader',
 ok('and puts the batch panel away',
    await p.evaluate(() => $('fp-batch-panel').style.display), 'none');
 
+// ── Viewing a tag without inspecting it ─────────────────────────────────────
+await p.evaluate(id => openJob(id), await p.evaluate(() => _job.id)); await p.waitForTimeout(300);
+const viewTag = async (res) => {
+  await p.evaluate(r => { window.LiaNfc.read = () => Promise.resolve(r); }, res);
+  await p.click('#fp-btn-view'); await p.waitForTimeout(300);
+};
+ok('there is a way to view a tag', await p.$eval('#fp-btn-view', e => e.style.display !== 'none'), true);
+const beforeView = await p.evaluate(() => [_job.items.length, LiaSync.queueLength()]);
+await viewTag({ serial:'H-1', uid:'04A1B2C3', url:'https://lia.test/fp/?t=REF0000001' });
+ok('viewing shows the item on file', await p.$eval('#fp-view-panel', e => [
+     e.style.display !== 'none', /On file/.test(e.textContent), /H-1/.test(e.textContent), /Body harness/.test(e.textContent)]),
+   [true, true, true, true]);
+ok('and what is on the tag itself', await p.$eval('#fp-view-panel', e =>
+     /On the tag[\s\S]*H-1[\s\S]*04A1B2C3[\s\S]*REF0000001/.test(e.textContent)), true);
+ok('records nothing and queues nothing', await p.evaluate(() => [_job.items.length, LiaSync.queueLength()]), beforeView);
+ok('starts no run and opens no checks', await p.evaluate(() => [!!_fpBatch, !!_fpItem,
+     $('fp-checks-panel').style.display !== 'none', window.__liveListeners()]), [false, false, false, 0]);
+await p.click('#fp-btn-view-close'); await p.waitForTimeout(150);
+ok('Close puts the job back as it was', await p.evaluate(() => [$('fp-view-panel').style.display,
+     $('fp-items-panel').style.display !== 'none']), ['none', true]);
+
+await viewTag({ serial:'ZZ-404' });
+ok('a tag we do not know says so, still recording nothing', await p.$eval('#fp-view-panel', e =>
+     /Not on file/.test(e.textContent) && /ZZ-404/.test(e.textContent)), true);
+await p.click('#fp-btn-view-close'); await p.waitForTimeout(150);
+
+await viewTag({ serial:'H-4' });
+await p.click('#fp-btn-view-inspect'); await p.waitForTimeout(200);
+ok('Inspect it brings the item up to inspect, one at a time', await p.evaluate(() => [
+     _fpItem && _fpItem.serial_raw, !!_fpBatch, $('fp-btn-save').textContent.trim(), $('fp-view-panel').style.display]),
+   ['H-4', false, 'Pass & Next Item', 'none']);
+await p.evaluate(() => fpReset());
+
 // ── iOS: same flow, but Apple's sheet sits over the app ─────────────────────
 const q = await b.newPage();
 q.on('pageerror', e => errs.push('ios: ' + e.message));

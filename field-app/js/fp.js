@@ -40,6 +40,9 @@ let _fpEditing = false;
 // A tap-through run, or null. See the batch section at the bottom of this file.
 let _fpBatch = null;
 
+// A tag being viewed without inspecting it, or null. See fpViewRead.
+let _fpView = null;   // { tag, hit, blank, foreign }
+
 // Which job the item on screen belongs to. Opening another job must never write
 // this one's item into it.
 let _fpItemJob = null;
@@ -72,7 +75,8 @@ function fpRenderAll() {
   const rec = $('fp-record');
   if (rec) rec.style.display = has && !_fpEditing ? '' : 'none';
   const items = $('fp-items-panel');
-  if (items) items.style.display = has ? 'none' : '';
+  if (items) items.style.display = has || _fpView ? 'none' : '';
+  fpRenderView();
 
   const inp = $('fp-input-panel');
   if (inp) inp.style.display = batch ? 'none' : '';
@@ -439,6 +443,7 @@ function fpHint(msg, warn) {
 }
 
 function fpAdopt(rec, matched) {
+  _fpView = null;
   _fpItem = Object.assign({}, rec, { matched: !!matched });
   _fpItemJob = _job ? _job.id : null;
   _fpEditing = false;
@@ -1354,6 +1359,99 @@ function fpScanRead() {
   startScan();
 }
 
+// ── Viewing a tag without inspecting ────────────────────────────────────────
+// Tap is a pass now, so reading a tag just to see what it is — which item, when
+// it was last inspected and how it fared, what the tag itself carries — needs a
+// way of its own that records nothing. From there the tech can still choose to
+// inspect it.
+
+function fpViewRead() {
+  if (!window.LiaNfc || !window.LiaNfc.isAvailable()) return;
+  fpHint('Hold the phone against the tag — nothing will be recorded…');
+  window.LiaNfc.read().then(res => {
+    const candidates = [res.serial, res.uid, res.ref, res.url]
+      .map(v => String(v || '').trim())
+      .filter((v, i, a) => v && a.indexOf(v) === i);
+    if (!candidates.length && !res.url) {
+      fpHint('That tag carries nothing we can identify an item by.', true);
+      return;
+    }
+    const step = i => i >= candidates.length
+      ? Promise.resolve(null)
+      : window.LiaCache.find(candidates[i], 'fall_protection').then(h => h || step(i + 1));
+    return step(0)
+      .then(hit => hit || fpLookupOnline(res))
+      .catch(() => null)
+      .then(hit => {
+        _fpView = { tag: res, hit: hit || null,
+                    blank: hit ? null : fpStockFor(candidates, res),
+                    foreign: !hit && fpTagIsForeign(res) };
+        fpHint('');
+        fpRenderAll();
+      });
+  }).catch(err => fpHint(err.message || 'No tag read.', true));
+}
+
+function fpViewClose() { _fpView = null; fpRenderAll(); }
+
+// Inspect what is on screen: exactly what a lookup would have done with it.
+function fpViewInspect() {
+  const v = _fpView;
+  if (!v) return;
+  _fpView = null;
+  if (v.hit) { fpAdopt(v.hit, true); fpAttachTag(v.tag); return; }
+  if (v.blank) return fpStartFromStock(v.blank, v.tag);
+  if (v.foreign) return fpUnmatchedLink(v.tag);
+  fpBlank(fpSerialCandidate([v.tag.serial], v.tag));
+  fpAttachTag(v.tag);
+}
+
+function fpRenderView() {
+  const el = $('fp-view-panel');
+  if (!el) return;
+  const v = _fpView;
+  el.style.display = v ? '' : 'none';
+  if (!v) { el.innerHTML = ''; return; }
+  const h = v.hit, t = v.tag || {};
+  const serial = h ? h.serial_raw : (t.serial || '');
+  // This job's own record of it today, which the catalogue will not have yet.
+  const here = serial && _job && (_job.items || []).find(i =>
+    String(i.serial_num || '').toUpperCase() === String(serial).toUpperCase());
+  const result = h && h.last_inspected
+    ? (h.overall_pass === false ? 'Failed' : h.overall_pass === true ? 'Passed' : (h.status || '')) : '';
+  const head = h ? 'On file' : v.blank ? 'One of your blank tags' : v.foreign ? 'Somebody else\'s tag' : 'Not on file';
+  el.innerHTML = `
+    <div class="fp-view-hdr"><span class="fp-view-tag">${esc(head)}</span>
+      <span class="fp-view-note">Nothing recorded</span></div>
+    <div class="fp-rec-body">
+      ${serial ? `<div style="margin-bottom:4px;"><span class="fp-rec-sn">${esc(serial)}</span>
+        <span class="fp-rec-sub">${esc(h ? [h.manufacturer, h.model].filter(Boolean).join(' ') : '')}</span></div>` : ''}
+      ${h ? fpRow('Equipment type', h.item_type) : ''}
+      ${h ? fpRow('Description', h.description) : ''}
+      ${h ? fpRow('Lot #', h.lot_number) : ''}
+      ${h ? fpRow('Manufactured', fpMfg(h.mfg_month, h.mfg_year)) : ''}
+      ${h ? fpRow('Last inspected', h.last_inspected ? [h.last_inspected, result].filter(Boolean).join(' · ') : 'Never') : ''}
+      ${h ? fpRow('Next due', h.next_due) : ''}
+      ${h ? fpRow('Inspected by', h.tech_name) : ''}
+      ${h ? fpRow('Certificate', h.public_ref) : ''}
+      ${here ? fpRow('In this job', (here.overall_pass ? 'Passed' : 'Failed') + ' · ' + (here.inspection_date || '')) : ''}
+      ${v.blank ? fpRow('Tag label', v.blank.tag_label) : fpRow('Tag label', h && h.tag_label)}
+      <div class="fp-view-sub">On the tag</div>
+      ${fpRow('Text', t.serial) || ''}
+      ${fpRow('Chip id', t.uid)}
+      ${t.url ? `<div class="fp-kv"><span class="k">Link</span><span class="v fp-rec-link">${esc(t.url)}</span></div>` : ''}
+      ${!t.serial && !t.uid && !t.url ? '<div class="fp-kv"><span class="v">Nothing readable</span></div>' : ''}
+    </div>
+    <div class="fp-batch-acts">
+      <button class="fp-batch-act" id="fp-btn-view-close">Close</button>
+      <button class="fp-batch-act" id="fp-btn-view-again">View another</button>
+      <button class="fp-batch-act done" id="fp-btn-view-inspect">${v.foreign ? 'Look at its link' : 'Inspect it'}</button>
+    </div>`;
+  $('fp-btn-view-close').addEventListener('click', fpViewClose);
+  $('fp-btn-view-again').addEventListener('click', () => { _fpView = null; fpRenderAll(); fpViewRead(); });
+  $('fp-btn-view-inspect').addEventListener('click', fpViewInspect);
+}
+
 // After an item is recorded one at a time: straight back to the camera if
 // that is where it came from.
 function fpReadNext() {
@@ -1369,8 +1467,12 @@ function fpReadNext() {
   } else if (tap) {
     // Tap starts a run: every tap records a pass and the reader stays on. A
     // rack is tapped through, not looked up one item at a time.
-    tap.addEventListener('click', fpBatchStart);
+    tap.addEventListener('click', () => { _fpView = null; fpBatchStart(); });
   }
+
+  const view = $('fp-btn-view');
+  if (view && window.LiaNfc && window.LiaNfc.isAvailable()) view.style.display = '';
+  if (view) view.addEventListener('click', fpViewRead);
 
   const scan = $('fp-btn-scan');
   if (scan) scan.addEventListener('click', fpScanRead);

@@ -183,6 +183,11 @@
           '<strong>Type</strong> — key the serial in by hand.',
           '<strong>New</strong> — an item with nothing on it at all.',
         ]),
+        p('<strong>Just want to see what a tag is?</strong> Use <strong>View a tag — ' +
+          'no inspection</strong> under the four buttons. It shows the item on file, ' +
+          'when it was last inspected and how it fared, and what the tag itself ' +
+          'carries — and records nothing. <strong>Inspect it</strong> from there if ' +
+          'you want to.'),
         p('If the app recognises the item it shows you what it already knows: ' +
           'manufacturer, model, when it was last inspected. Check it against what ' +
           'is in your hand, and if something is wrong tap <strong>Edit</strong>.'),

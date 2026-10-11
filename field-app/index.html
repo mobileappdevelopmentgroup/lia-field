@@ -517,6 +517,16 @@
                       border-color: rgba(var(--accent-rgb),.35); color: var(--accent-fg); }
     .fp-way.new { background: rgba(var(--ok-rgb),.14); border-color: rgba(var(--ok-rgb),.32); color: var(--ok-fg); }
     .fp-way:active { opacity: .7; }
+    .fp-view-btn { width: 100%; margin-top: 6px; min-height: 36px; border-radius: 8px; background: none;
+                   border: 1px dashed var(--border); color: var(--muted); font-size: 13px; font-weight: 600; }
+    .fp-view-btn:active { opacity: .7; }
+    #fp-view-panel { padding: 10px 12px; }
+    #fp-view-panel .fp-batch-acts { margin-top: 10px; }
+    .fp-view-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .fp-view-tag { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-fg); }
+    .fp-view-note { margin-left: auto; font-size: 11px; color: var(--muted); }
+    .fp-view-sub { margin: 8px 0 2px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+                   text-transform: uppercase; color: var(--muted); }
     .fp-typed { display: flex; gap: 6px; align-items: center; }
     .fp-typed .field-input { flex: 1; min-width: 0; padding-right: 9px; }
     .fp-hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
@@ -1089,6 +1099,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
       </button>
     </div>
+    <!-- Tap is a pass. This reads a tag and shows what it is without recording
+         anything; Inspect it from there if wanted. -->
+    <button class="fp-view-btn" id="fp-btn-view" style="display:none;">View a tag — no inspection</button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
              autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
@@ -1134,6 +1147,7 @@
   <!-- The record, from the device's own copy of last year's inspection.
        Read-only by DEFAULT, not permanently: a stray touch must not rewrite last
        year's data on a part the tech is only confirming, but Edit unlocks it. -->
+  <div id="fp-view-panel" style="display:none;"></div>
   <div id="fp-record" style="display:none;"></div>
   <div id="fp-edit-form" style="display:none;"></div>
 
