@@ -523,13 +523,9 @@
     .fp-hint.warn { color: var(--bad-fg); font-weight: 600; }
 
     /* Tap-through */
-    .fp-batch-start { width: 100%; min-height: 38px; border-radius: 8px;
-                      background: var(--surf2); border: 1px dashed var(--border);
                       color: var(--muted); font-size: 12px; font-weight: 700;
                       font-family: var(--font); cursor: pointer;
                       display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .fp-batch-start svg { width: 15px; height: 15px; flex-shrink: 0; }
-    .fp-batch-start:active { opacity: .7; }
     #fp-batch-panel { flex-shrink: 0; background: var(--surf); padding: 9px 12px;
                       border-bottom: 1px solid var(--border);
                       display: flex; flex-direction: column; gap: 7px; }
@@ -1093,13 +1089,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
       </button>
     </div>
-    <!-- Tapping through a rack: the reader stays on, each tap brings up the item
-         being inspected, and the next tap passes it. Offered alongside single
-         tap, never instead of it: some techs work item by item. -->
-    <button class="fp-batch-start" id="fp-btn-batch" style="display:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M9 17h6M12 14v6"/></svg>
-      Tap through — the next tap passes the last
-    </button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
              autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
@@ -1108,10 +1097,11 @@
     <div class="fp-hint" id="fp-hint"></div>
   </div>
 
-  <!-- Tap-through. Replaces the four ways while it is running. A tap puts the
-       item on screen as the one being inspected, every check at passing; the
-       NEXT tap records it as passed. Fail is the only thing he presses for a
-       defect, and Add info the only thing for an item we know too little about. -->
+  <!-- Tap-through, started by Tap. Replaces the four ways while it is running.
+       A tap records the item as passed there and then, every check at passing,
+       and the reader stays on. Fail (which takes that pass back out) is the only
+       thing pressed for a defect, and Add info the only thing for an item we
+       know too little about. -->
   <div id="fp-batch-panel" style="display:none;">
     <div class="fp-batch-hdr">
       <span class="fp-batch-live"><span class="fp-batch-dot" id="fp-batch-dot"></span><span id="fp-batch-live-txt">Listening</span></span>

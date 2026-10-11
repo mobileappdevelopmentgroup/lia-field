@@ -143,7 +143,7 @@ ok('a number that is on an item still finds the item, not stock',
 await p.evaluate(() => { _fpItem = null; _fpChecks = []; fpRenderAll(); });
 
 // ── Tap-through ─────────────────────────────────────────────────────────────
-await p.click('#fp-btn-batch'); await p.waitForTimeout(200);
+await p.click('#fp-btn-tap'); await p.waitForTimeout(200);
 await p.evaluate((u) => window.__tap({ url: u, uid: 'AA:BB:CC:DD' }), LINK('C'));
 await p.waitForTimeout(500);
 ok('in a run, a blank tag is put on screen and nothing is passed',

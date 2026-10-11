@@ -177,7 +177,8 @@
           'in your hand:'),
         shot('fp-input', 'Tap, Scan, Type, or New — pick whichever suits the item.'),
         steps([
-          '<strong>Tap</strong> — hold the phone against the item\'s tag. Fastest by far.',
+          '<strong>Tap</strong> — starts tap-through: every tag you tap is recorded as ' +
+          'passed on the spot. Fastest by far — see <em>Tap-through</em>.',
           '<strong>Scan</strong> — point the camera at a barcode.',
           '<strong>Type</strong> — key the serial in by hand.',
           '<strong>New</strong> — an item with nothing on it at all.',
@@ -236,41 +237,36 @@
       id: 'fp-batch',
       group: 'Fall protection',
       title: 'Tap-through: working a whole rack',
-      blurb: 'Tap an item, look it over, tap the next. Only a defect costs a press.',
+      blurb: 'Look it over, tap it, it is passed. Only a defect costs a press.',
       body: [
-        p('Start a run and the reader stays on. Tap an item and it comes up on ' +
-          'screen with every check already at pass — you are inspecting it now. ' +
-          'Look it over in your hands.'),
-        shot('fp-batch', 'A tap-through run. The item you tapped is on screen; Fail is the only button you need.'),
-        p('<strong>Good item?</strong> Do nothing. Tap the next one: that tap ' +
-          'records the one before as passed.'),
-        p('<strong>Something wrong?</strong> Press <strong>Fail</strong>. The reader ' +
-          'stops, so the next tap cannot pass it by mistake. Tap every check that ' +
-          'failed, then take the photo. The run carries on after.'),
-        warn('Every tap on to the next item puts a passing inspection on record ' +
-             'with your name on it. If you have not looked at it, press Fail or ' +
-             'Undo — do not tap on.'),
-        p('<strong>Item we do not know?</strong> It still comes up, with ' +
+        p('Press <strong>Tap</strong> and the reader stays on. Look an item over, ' +
+          'then tap its tag: it is <strong>recorded as passed right there</strong>, ' +
+          'every check at pass, and the reader is ready for the next one.'),
+        shot('fp-batch', 'A tap-through run. The last tap is recorded as passed; Fail is there if it should not have been.'),
+        warn('A tap is a pass with your name on it. Look the item over ' +
+             '<em>before</em> you tap it.'),
+        p('<strong>Something wrong?</strong> Press <strong>Fail</strong> straight ' +
+          'after tapping it. The pass is taken back out and the reader stops, so ' +
+          'nothing else can land. Tap every check that failed, then take the photo. ' +
+          'The run carries on after.'),
+        p('<strong>Item we do not know?</strong> It stays on screen with ' +
           '<strong>Add info</strong> beside Fail. Pick the equipment type and type ' +
-          'the serial, and it is recorded like any other when you tap on. Skip it ' +
-          'and tap on anyway, and that one is <em>not</em> recorded — it is counted ' +
-          'as skipped, and its tag link is kept so it comes up next time.'),
-        p('<strong>Edit info</strong> is there on known items too, for when what ' +
-          'we have is wrong.'),
+          'the serial, press Done, and it is recorded as passed. Tap on without it ' +
+          'and that one is <em>not</em> recorded — it is counted as skipped, and its ' +
+          'tag link is kept so it comes up next time.'),
+        p('<strong>Edit info</strong> on the item you just tapped corrects what we ' +
+          'have; Done records it again with your changes.'),
         p('<strong>Undo last pass</strong> takes the last pass back off the record ' +
           '— out of the upload queue too — and puts that item back on screen to ' +
           'fail or correct.'),
-        p('The last item has no next tap. <strong>Pass &amp; finish</strong> ' +
-          'records it and ends the run — and so does leaving the screen: the item ' +
-          'you were looking at is recorded as passed, not lost. Every tap is saved ' +
-          'as it happens, so even if the phone dies, reopening the job picks up ' +
-          'where you were.'),
+        p('<strong>Finish</strong> ends the run. Leaving the screen does the same, ' +
+          'and nothing you tapped is lost — each pass is saved the moment you tap.'),
         warn('A failed item with no photo is <strong>not recorded</strong> — on ' +
              'paper it stays in service. So the app will not let you leave one ' +
              'behind without saying so: it stops you and asks for the photo.'),
         p('<strong>No tag, or it will not read?</strong> <strong>Scan instead</strong> ' +
-          'or <strong>Type instead</strong>. It works exactly like a tap, including ' +
-          'passing the item before it.'),
+          'or <strong>Type instead</strong>. It works exactly like a tap: the item ' +
+          'is passed as soon as it is found.'),
         note('On iPhone, Apple\'s reader sheet sits over the app. Close it to ' +
              'reach Fail or Add info, and press <strong>Keep tapping</strong> to open ' +
              'it again. Neither phone reads tags with the screen off.'),

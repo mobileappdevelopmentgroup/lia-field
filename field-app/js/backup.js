@@ -16,6 +16,11 @@
 // missing from localStorage but present in the file is put back, and the page
 // reloads once so every module reads the restored state.
 //
+// Failure photos are kept the same way, one file each beside the backup (see
+// the photo section below): they live in IndexedDB, which is in the same
+// WebKit store, and a failed item uploads its photo after it — a photo lost
+// before it went up is a removal from service with no evidence.
+//
 // Only what a tech made and cannot get back from the server is kept. Not the
 // sign-in session (a refresh token has no business in a plain file, or in the
 // phone's iCloud backup — signing in again is the cost), and not the caches
@@ -184,6 +189,64 @@
     _ready = true;
   }
 
+  // ── Photos ──────────────────────────────────────────────────────────────
+  // One file per photo, the JPEG as base64 inside JSON with what photos.js
+  // keeps beside it. Written when a photo is stored, read only when IndexedDB
+  // no longer has it, deleted once the server has it.
+  var PHOTO_DIR = 'lia-photos';
+  var SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+  function photoPath(id) { return SAFE_ID.test(String(id || '')) ? PHOTO_DIR + '/' + id + '.json' : null; }
+
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result).replace(/^data:[^,]*,/, '')); };
+      r.onerror = function () { reject(r.error || new Error('Could not read the photo.')); };
+      r.readAsDataURL(blob);
+    });
+  }
+
+  function base64ToBlob(b64, type) {
+    var bin = root.atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: type || 'image/jpeg' });
+  }
+
+  function savePhoto(rec) {
+    var F = fs(), path = rec && photoPath(rec.id);
+    if (!F || !path || !rec.blob) return Promise.resolve(false);
+    return blobToBase64(rec.blob).then(function (b64) {
+      var meta = {};
+      Object.keys(rec).forEach(function (k) { if (k !== 'blob') meta[k] = rec[k]; });
+      return F.writeFile({ path: path, directory: DIR, encoding: 'utf8', recursive: true,
+                           data: JSON.stringify({ v: 1, meta: meta, type: rec.blob.type, b64: b64 }) });
+    }).then(function () { return true; }).catch(function () { return false; });
+  }
+
+  // The photo as photos.js stores it, or null.
+  function loadPhoto(id) {
+    var F = fs(), path = photoPath(id);
+    if (!F || !path) return Promise.resolve(null);
+    return Promise.resolve()
+      .then(function () { return F.readFile({ path: path, directory: DIR, encoding: 'utf8' }); })
+      .then(function (r) {
+        var f = JSON.parse(r && r.data);
+        if (!f || f.v !== 1 || typeof f.b64 !== 'string') return null;
+        return Object.assign({}, f.meta, { id: id, blob: base64ToBlob(f.b64, f.type) });
+      })
+      .catch(function () { return null; });
+  }
+
+  function removePhoto(id) {
+    var F = fs(), path = photoPath(id);
+    if (!F || !path || typeof F.deleteFile !== 'function') return Promise.resolve(false);
+    return Promise.resolve()
+      .then(function () { return F.deleteFile({ path: path, directory: DIR }); })
+      .then(function () { return true; }).catch(function () { return false; });
+  }
+
   // How many jobs came back, for the notice boot.js shows. Read once.
   function takeRestoredNotice() {
     try {
@@ -198,5 +261,8 @@
     flush: flush,
     restore: restore,
     takeRestoredNotice: takeRestoredNotice,
+    savePhoto: savePhoto,
+    loadPhoto: loadPhoto,
+    removePhoto: removePhoto,
   };
 })(window);

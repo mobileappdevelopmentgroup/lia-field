@@ -196,22 +196,18 @@ await page.click('#fp-btn-cancel-condemn'); await page.waitForTimeout(200);
 
 // ── Tap-through ──────────────────────────────────────────────────────────────
 // NFC does not exist in headless Chromium, so the run is set up directly: seven
-// passed, the last one shown, and the item just tapped on screen with its
-// checks at passing. Fail is what is ringed — it is the only thing to press.
+// passed, the last tap just recorded. Fail is what is ringed — it is the only
+// thing to press.
 await page.evaluate(() => {
-  _fpChecks = [];
   _fpBatch = {
     recorded: Array.from({ length: 7 }, (_, i) => ({ key: 'k' + i, id: 'i' + i, serial: 'FP15835' + i, pass: true })),
-    skipped: 0, lastAt: {}, failing: false, currentKey: 'a:x',
+    skipped: 0, lastAt: {}, failing: false, currentKey: null, amend: true,
     stream: { needsArming: false, stop() {}, arm() {} },
-    last: { serial: 'FP158361', sub: 'Passed · Crane lift sling · BUCKINGHAM', flagged: false },
-    hint: 'Inspecting. Tap the next item to pass it, or press Fail.', warn: false,
+    last: { serial: 'FP158362', sub: 'Passed · Crane lift sling · BUCKINGHAM', flagged: false },
+    hint: 'FP158362 passed. Tap the next item — or press Fail if it should not have.', warn: false,
   };
-  fpAdopt({
-    serial_raw: 'FP158362', manufacturer: 'BUCKINGHAM', model: 'U69P98Q2',
-    equipment_type: 'crane_lift_sling', item_type: 'Crane lift sling',
-    description: 'Yellow web sling, 6 ft', last_inspected: '2025-08-22',
-  }, true);
+  _fpItem = null; _fpChecks = [];
+  fpRenderAll();
 });
 await page.waitForTimeout(250);
 await shot('fp-batch', '#fp-btn-batch-fail');

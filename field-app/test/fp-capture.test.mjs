@@ -175,11 +175,9 @@ ok('and small enough to be cheap to keep', stored && stored.bytes <= 200 * 1024,
 ok('and the optional note kept', rec.discard_note, 'Tagged, pulled from truck 14');
 ok('the client sends no discard_reason — the database composes it',
    rec.discard_reason===undefined, true);
-// One at a time, an item reached by a tap goes straight back to the reader
+// One at a time, an item reached by a scan goes straight back to the camera
 // for the next one; a typed one does not.
-await p.evaluate(()=>{ window.__reads=0;
-  window.LiaNfc = Object.assign({}, window.LiaNfc, { isAvailable: ()=>true,
-    read: ()=>{ window.__reads++; return new Promise(()=>{}); } }); });
+await p.evaluate(()=>{ window.__scans=0; window.startScan = ()=>{ window.__scans++; }; });
 const passOne = async (serial, via) => {
   await p.click('#fp-btn-new'); await p.waitForTimeout(150);
   await p.fill('#fpf-serial', serial);
@@ -188,11 +186,10 @@ const passOne = async (serial, via) => {
   await p.evaluate(v=>{ _fpVia = v; }, via);
   await p.click('#fp-btn-save'); await p.waitForTimeout(250);
 };
-await passOne('H-9101', 'tap');
-ok('Pass & Next Item on a tapped item reopens the reader', await p.evaluate(()=>window.__reads), 1);
-ok('with the hint asking for the next tag', await p.$eval('#fp-hint', e=>/Hold the phone/.test(e.textContent)), true);
+await passOne('H-9101', 'scan');
+ok('Pass & Next Item on a scanned item reopens the camera', await p.evaluate(()=>window.__scans), 1);
 await passOne('H-9102', null);
-ok('a typed item does not open the reader', await p.evaluate(()=>window.__reads), 1);
+ok('a typed item does not open the camera', await p.evaluate(()=>window.__scans), 1);
 
 ok('the job list counts items, not ladders',
    await p.evaluate(()=>{goScreen('jobs');renderJobList();

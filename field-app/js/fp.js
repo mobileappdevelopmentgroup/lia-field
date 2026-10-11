@@ -289,8 +289,8 @@ function fpRenderEditForm() {
     // Back to listening, if the form is what stopped it (iOS).
     if (_fpBatch && !_fpBatch.failing) {
       const why = fpBatchMissing(_fpItem);
-      fpBatchHint(why ? `Still ${why} — this one will be skipped unless you add it.`
-                      : 'Inspecting. Tap the next item to pass it, or press Fail.', !!why);
+      if (!why) return fpBatchPassNow();
+      fpBatchHint(`Still ${why} — this one will be skipped unless you add it.`, true);
       return fpBatchResume();
     }
     fpRenderAll();
@@ -1342,22 +1342,10 @@ function fpCloseAlert() {
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 
-// How the item on screen was reached, one item at a time: 'tap', 'scan', or
-// null for typed. Pass & Next Item reopens the same way for the next one —
-// a tech tapping a rack should not have to press Tap again between items.
+// How the item on screen was reached, one item at a time: 'scan', or null for
+// typed. Pass & Next Item reopens the camera for the next one. (Tap does not
+// come through here: it starts a tap-through run, where each tap is a pass.)
 let _fpVia = null;
-
-function fpTapRead() {
-  _fpVia = 'tap';
-  fpHint('Hold the phone against the tag…');
-  window.LiaNfc.read().then(res => {
-    // A tag may carry the serial, or only its own hardware id, or only a
-    // URL — the catalogue indexes all four ways in, so any of them resolves
-    // the item. The whole read is passed along so the link is recorded even
-    // when something else is what matched.
-    fpLookup(res.serial, [res.uid, res.ref, res.url], res);
-  }).catch(err => fpHint(err.message || 'No tag read.', true));
-}
 
 function fpScanRead() {
   _fpVia = 'scan';
@@ -1366,11 +1354,10 @@ function fpScanRead() {
   startScan();
 }
 
-// After an item is recorded one at a time: straight back to the reader or the
-// camera it came from.
+// After an item is recorded one at a time: straight back to the camera if
+// that is where it came from.
 function fpReadNext() {
-  if (_fpVia === 'tap' && window.LiaNfc && window.LiaNfc.isAvailable()) fpTapRead();
-  else if (_fpVia === 'scan') fpScanRead();
+  if (_fpVia === 'scan') fpScanRead();
 }
 
 (function fpWire() {
@@ -1380,7 +1367,9 @@ function fpReadNext() {
   if (tap && (!window.LiaNfc || !window.LiaNfc.isAvailable())) {
     tap.style.display = 'none';
   } else if (tap) {
-    tap.addEventListener('click', fpTapRead);
+    // Tap starts a run: every tap records a pass and the reader stays on. A
+    // rack is tapped through, not looked up one item at a time.
+    tap.addEventListener('click', fpBatchStart);
   }
 
   const scan = $('fp-btn-scan');
@@ -1665,7 +1654,7 @@ function fpBatchTag(res) {
       _fpBatch.lastAt[key] = now;
 
       if (key === _fpBatch.currentKey) {
-        fpBatchHint(`Still on ${(_fpItem && _fpItem.serial_raw) || 'this item'} — tap the next one to pass it.`);
+        fpBatchHint(`Still on ${(_fpItem && _fpItem.serial_raw) || 'this item'} — Add info to record it, or tap the next one.`);
         return;
       }
       if (_fpBatch.recorded.some(r => r.key === key)) {
@@ -1719,6 +1708,7 @@ function fpBatchSettle() {
 // Puts a freshly tapped item on screen as the one being inspected.
 function fpBatchOpen(res, hit, candidates, key, settled) {
   _fpBatch.currentKey = key;
+  _fpBatch.amend = false;
   if (hit) {
     fpAdopt(hit, true);
   } else {
@@ -1748,12 +1738,30 @@ function fpBatchOpen(res, hit, candidates, key, settled) {
       ? `${_fpItem.tag_label} is one of your blank tags.`
       : hit ? `On file, but ${why}.` : 'Not on file.';
     fpBatchHint(`${what} Add info to record it — tap on without it and this one is skipped.`, true);
+    fpRenderAll();
   } else {
-    // The first tap of a run has nothing before it to sound for.
-    if (!settled) playSound('ladder');
-    fpBatchHint('Inspecting. Tap the next item to pass it, or press Fail.');
+    fpBatchPassNow();
   }
+}
+
+// The tap is the pass: recorded the moment it is made, and the reader stays
+// on for the next item. A tech who then sees something wrong presses Fail (or
+// Edit info), which takes the pass back out first — see fpBatchAmendable.
+function fpBatchPassNow() {
+  const serial = _fpItem && _fpItem.serial_raw;
+  if (fpBatchSettle() !== 'pass') return fpRenderAll();
+  _fpBatch.amend = true;
+  fpBatchHint(`${serial} passed. Tap the next item — or press Fail if it should not have.`);
   fpRenderAll();
+}
+
+// The last item tapped passed and nothing has been tapped since: Fail and
+// Edit info act on it. Null otherwise — after a skipped tag, Fail must not
+// reach back to an item two taps ago.
+function fpBatchAmendable() {
+  if (!_fpBatch || !_fpBatch.amend || _fpItem || _fpBatch.failing) return null;
+  const last = _fpBatch.recorded[_fpBatch.recorded.length - 1];
+  return last && last.pass ? last : null;
 }
 
 // What the server knows, for an item this device has never synced — a rack
@@ -1807,9 +1815,12 @@ function fpLookupOnline(res) {
   }).catch(() => null);
 }
 
-// Fail: the reader stops — the next tap must not pass this item — and the checks
-// open for him to mark what failed. Save then asks for the photo.
+// Fail: the reader stops — no tap may land while it is being failed — and the
+// checks open for the tech to mark what failed. Save then asks for the photo.
+// On an item the tap already passed, the pass is taken back out first, so the
+// failure is the only record of it.
 function fpBatchFail() {
+  if (fpBatchAmendable()) fpBatchUndo();
   if (!_fpBatch || !_fpItem || _fpBatch.failing) return;
   if (!fpCurrentType()) {
     _fpEditing = true;
@@ -1827,15 +1838,21 @@ function fpBatchFail() {
   fpRenderAll();
 }
 
-// Changed his mind: the item is back to passing and the reader back on.
+// Changed their mind: the item passes after all, as the tap said, and the
+// reader is back on.
 function fpBatchCancelFail() {
   if (!_fpBatch || !_fpBatch.failing) return;
   fpBuildChecks();
-  fpBatchHint('Back to passing. Tap the next item to pass this one.');
+  _fpBatch.failing = false;
+  if (!fpBatchMissing(_fpItem)) return fpBatchPassNow();
+  fpBatchHint('Back to passing.');
   fpBatchResume();
 }
 
+// Edit info on an item already passed takes the pass back out; Done records it
+// again with what was changed.
 function fpBatchEdit() {
+  if (fpBatchAmendable()) fpBatchUndo();
   if (!_fpBatch || !_fpItem || _fpBatch.failing) return;
   _fpEditing = true;
   fpBatchQuietForForm();
@@ -1856,6 +1873,7 @@ function fpBatchUndo() {
   if (!last || !last.pass) return;
   const item = fpBatchWithdraw(last);
   if (!item) return;
+  _fpBatch.amend = false;
   const dropped = _fpItem && (_fpItem.serial_raw || _fpItem.tag_label);
   if (_fpBatch.currentKey) delete _fpBatch.lastAt[_fpBatch.currentKey];
   _fpBatch.currentKey = last.key;
@@ -1869,7 +1887,7 @@ function fpBatchUndo() {
     external: item.external,
   }, true);
   _fpBatch.last = null;
-  fpBatchHint(`${item.serial_num} is back — not recorded. Fail it, or tap the next item to pass it.` +
+  fpBatchHint(`${item.serial_num} is back — not recorded. Fail it, or tap the next item and it is skipped.` +
               (dropped ? ` Tap ${dropped} again when you get to it.` : ''));
   fpRenderAll();
 }
@@ -1941,7 +1959,7 @@ function fpRenderBatch() {
   const busy = b.failing || _fpEditing;
   const missing = has && fpBatchMissing(_fpItem);
   const cur = $('fp-batch-cur');
-  if (cur) cur.style.display = has && !busy ? '' : 'none';
+  if (cur) cur.style.display = (has || fpBatchAmendable()) && !busy ? '' : 'none';
   const ways = $('fp-batch-ways');
   if (ways) ways.style.display = busy ? 'none' : '';
   const typed = $('fp-batch-typed');
@@ -1969,11 +1987,6 @@ function fpRenderBatch() {
 }
 
 (function fpBatchWire() {
-  const start = $('fp-btn-batch');
-  // Same rule as the Tap button: no dead affordance where NFC does not exist.
-  if (start && window.LiaNfc && window.LiaNfc.isAvailable()) start.style.display = '';
-  if (start) start.addEventListener('click', fpBatchStart);
-
   const stop = $('fp-btn-batch-stop');
   if (stop) stop.addEventListener('click', fpBatchFinish);
 

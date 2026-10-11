@@ -32,7 +32,8 @@ const ok = (l, g, w) => { const good = JSON.stringify(g) === JSON.stringify(w); 
 // The "phone's" files: path → contents. Kept here, outside every page.
 const files = new Map();
 let writes = 0;
-const newest = () => [...files.values()].map(s => JSON.parse(s)).sort((a, b) => b.seq - a.seq)[0];
+const newest = () => [...files.entries()].filter(([k]) => k.startsWith('lia-backup-'))
+  .map(([, s]) => JSON.parse(s)).sort((a, b) => b.seq - a.seq)[0];
 
 const b = await chromium.launch();
 
@@ -42,6 +43,7 @@ async function phone({ native = true } = {}) {
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.exposeFunction('__fsWrite', (k, v) => { files.set(k, v); writes++; });
   await p.exposeFunction('__fsRead', (k) => files.has(k) ? files.get(k) : null);
+  await p.exposeFunction('__fsDelete', (k) => { files.delete(k); });
   await p.addInitScript((native) => {
     if (!native) return;
     window.Capacitor = {
@@ -50,6 +52,7 @@ async function phone({ native = true } = {}) {
         writeFile: (o) => { if (o.directory !== 'LIBRARY') throw new Error('wrong directory');
           return window.__fsWrite(o.path, o.data).then(() => ({ uri: 'file:///' + o.path })); },
         readFile: (o) => window.__fsRead(o.path).then(d => { if (d === null) throw new Error('missing'); return { data: d }; }),
+        deleteFile: (o) => window.__fsDelete(o.path).then(() => ({})),
       } },
     };
   }, native);
@@ -123,6 +126,39 @@ files.set(order[0][0], order[0][1].slice(0, 40));   // newest is half-written
 await p.waitForTimeout(1500);
 ok('a half-written backup is passed over for the whole one before it',
    await p.evaluate(() => [!!loadJobs().j2, !!loadJobs().j3]), [true, false]);
+ok('no page errors', errs, []);
+await ctx.close();
+
+// ── Failure photos ──────────────────────────────────────────────────────────
+const PHOTO = 'a1b2c3d4-0000-4000-8000-000000000001';
+({ ctx, p, errs } = await phone());
+await p.evaluate((id) => LiaPhotos.put({ id, blob: new Blob([new Uint8Array([0xff,0xd8,1,2,3,0xff,0xd9])], { type: 'image/jpeg' }),
+  bytes: 7, width: 640, height: 480, capturedAt: '2026-10-10T12:00:00Z' }), PHOTO);
+ok('a failure photo is copied to a file as it is stored', files.has('lia-photos/' + PHOTO + '.json'), true);
+await ctx.close();
+
+// IndexedDB wiped with the rest of the web view's storage.
+({ ctx, p, errs } = await phone());
+await p.waitForTimeout(1200);
+const back = await p.evaluate(async (id) => {
+  const r = await LiaPhotos.get(id);
+  return r && { bytes: Array.from(new Uint8Array(await r.blob.arrayBuffer())), type: r.blob.type,
+                w: r.width, h: r.height, at: r.capturedAt };
+}, PHOTO);
+ok('a photo IndexedDB lost comes back from its file, byte for byte', back,
+   { bytes: [0xff,0xd8,1,2,3,0xff,0xd9], type: 'image/jpeg', w: 640, h: 480, at: '2026-10-10T12:00:00Z' });
+ok('and is put back into IndexedDB', await p.evaluate((id) => new Promise(res => {
+     const q = indexedDB.open('lia-photos'); q.onsuccess = () => {
+       const g = q.result.transaction('photos').objectStore('photos').get(id);
+       g.onsuccess = () => res(!!(g.result && g.result.blob)); }; }), PHOTO), true);
+ok('so its upload still has something to send', await p.evaluate(async (id) => {
+     const sb = { rpc: async (fn) => ({ data: fn === 'my_account_id' ? 'acct' : { ok: true }, error: null }),
+                  storage: { from: () => ({ upload: async () => ({ error: null }) }) } };
+     const r = await LiaPhotos.upload(sb, { photo_id: id, serial_num: 'H-1', captured_at: '2026-10-10T12:00:00Z' });
+     return !r.error && !!r.data; }, PHOTO), true);
+ok('and once the server has it, the file goes too', files.has('lia-photos/' + PHOTO + '.json'), false);
+ok('a photo id that is not a plain id is never used as a path',
+   await p.evaluate(() => LiaBackup.loadPhoto('../lia-backup-a')), null);
 ok('no page errors', errs, []);
 await ctx.close();
 
