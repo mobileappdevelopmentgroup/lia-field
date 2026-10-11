@@ -279,11 +279,22 @@ function createJob(scope) {
 }
 
 
+// Set when backup.js had to put the jobs back — the web view's storage was
+// cleared under the app. Said once per launch, so the tech knows why they
+// were signed out and that nothing was lost.
+const _restoredJobs = (() => {
+  const put = window.LiaBackup ? window.LiaBackup.takeRestoredNotice() : null;
+  return Array.isArray(put) && put.includes('lia-field-jobs');
+})();
+
 // The line above the list: archived jobs.
 function renderJobsFilters(archivedCount, otherCount) {
   const bar = document.getElementById('jobs-filters');
   if (!bar) return;
   const bits = [];
+  if (_restoredJobs) {
+    bits.push('<span class="jf-note" id="jf-restored">The phone cleared the app\'s storage, so your jobs were put back from its backup. Nothing was lost.</span>');
+  }
   if (archivedCount) {
     bits.push(`<button class="jf-btn${_showArchived ? ' on' : ''}" id="jf-archived">` +
               `${_showArchived ? 'Back to active jobs' : `Archived (${archivedCount})`}</button>`);
