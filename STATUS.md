@@ -247,9 +247,10 @@ publishing screen, which needs migration 33.
 16** (TestFlight internal, in beta testing). Phone only: **Lia Office was not
 rebuilt**, so the screen that publishes part sets is in the source but not yet in
 anybody's hands. Bundles in `lia-deliverables/1.15.0/`.
-⚠️ **Migration 33 is NOT applied yet** — rehearsed (`supabase/test/run-apply-33.sh`),
-bundle at `supabase/dist/apply-33.sql`. Until it lands, phones keep only their
-own part sets; nothing else depends on it.
+**Migration 33 was applied 2026-10-11.** Checked from outside with the
+publishable key: `account_part_sets_catalog` exists and answers anon with its
+own "Not authenticated", and an anon read of `account_part_sets` returns no
+rows. That is Supabase's default anon grant, not a leak — 34 revokes it.
 
 **Ladders.** Add & Scan Next reopens the camera on a phone (the add raised the
 keyboard in the same tap, and a failed `play()` left the camera held). **Add &

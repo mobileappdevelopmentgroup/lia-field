@@ -32,13 +32,12 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**33 is written and tested but NOT applied** (2026-10-10) — published part
-sets (`account_part_sets`, `save_account_part_sets()`,
-`account_part_sets_catalog()`), and it re-emits `consolidate_to_one_account()`
-so sets move with an account. Until it is applied, Lia Office's set picker says
-"needs a database update" and phones keep only their own sets. Rehearsed
-2026-10-10 against a production-shaped database (`run-apply-33.sh`, two passes,
-no existing row changed); paste `supabase/dist/apply-33.sql`.
+**33 was applied 2026-10-11** — published part sets (`account_part_sets`,
+`save_account_part_sets()`, `account_part_sets_catalog()`), and it re-emits
+`consolidate_to_one_account()` so sets move with an account. Verified from
+outside: the catalogue answers anon "Not authenticated" (Supabase's default anon
+EXECUTE grant — the function refuses itself; 34 revokes anon explicitly) and an
+anon read of the table returns no rows.
 **32 was applied 2026-09-29** — the private `fp-photos` bucket, its storage
 policies and `record_fp_photo()`, so failure photos from 1.14.0 upload. Verified
 from outside with the publishable key: `record_fp_photo` answers 401 `42501`
