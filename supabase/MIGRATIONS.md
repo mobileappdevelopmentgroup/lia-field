@@ -58,7 +58,7 @@ suite and the only path to rebuilding the database from nothing.
 | `31_tag_stock_office` | `tag_stock_list()` for Lia Office's Tags screen |
 | `32_fp_photos` | failure photos actually upload: private `fp-photos` bucket (JPEG, ≤ 1 MB), account-folder storage policies, `record_fp_photo()` files one against its inspection — applied 2026-09-29 |
 | `33_published_part_sets` | named part sets the office publishes to the field: `account_part_sets`, `save_account_part_sets()`, `account_part_sets_catalog()`; re-emits `consolidate_to_one_account()` so sets move with an account — **applied 2026-10-11** |
-| `34_vehicle_inventory` | trucks and warehouses: `stock_locations`, `stock_assignees`, `stock_loadouts`, `stock_levels`, append-only `stock_moves`, `stock_settings`; the phone's `my_vehicles()` / `record_stock_move()` / `set_my_truck()`; the office's overview, detail, load-outs, par, adjust, transfer, restock report; ladder parts off the truck (deferred trigger, off by default); revokes anon from 33; re-emits `consolidate_to_one_account()` — **not yet applied** |
+| `34_vehicle_inventory` | trucks and warehouses: `stock_locations`, `stock_assignees`, `stock_loadouts`, `stock_levels`, append-only `stock_moves`, `stock_settings`; the phone's `my_vehicles()` / `record_stock_move()` / `set_my_truck()`; the office's overview, detail, load-outs, par, adjust, transfer, restock report; ladder parts off the truck (deferred trigger, off by default); revokes anon from 33; re-emits `consolidate_to_one_account()` — **applied 2026-10-11** |
 
 ## Where things are
 

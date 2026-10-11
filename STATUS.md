@@ -229,9 +229,9 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
-**Unreleased — 2026-10-11.** Built, tested, committed; not shipped:
-- **Vehicle inventory, all three phases.** Migration 34 (rehearsed, *not
-  applied* — paste `supabase/dist/apply-34.sql`), Lia Office → Inventory
+**1.15.2 — 2026-10-11.** Android **versionCode 17**, iOS **build 18**, and Lia Office 1.15.2:
+- **Vehicle inventory, all three phases.** Migration 34 (applied
+  2026-10-11; anon refused on everything new, verified from outside), Lia Office → Inventory
   (trucks, warehouses, assignees, load-outs, per-truck par, counts and
   corrections, transfers, history, printable restock list, the automatic-
   deduction switch), Lia Field → My truck (use / load / count offline, which

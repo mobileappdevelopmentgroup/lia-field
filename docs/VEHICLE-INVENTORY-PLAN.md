@@ -1,7 +1,7 @@
 # Vehicle inventory — plan
 
 Status: **built 2026-10-11, all three phases** — migration
-`supabase/migrations/34_vehicle_inventory.sql` (written and rehearsed, **not yet applied**), Lia
+`supabase/migrations/34_vehicle_inventory.sql` (applied 2026-10-11), Lia
 Office → Inventory, Lia Field → My truck. Written 2026-10-10; the four
 decisions were answered the same day (below).
 

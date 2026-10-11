@@ -32,11 +32,11 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
-**34 is written and rehearsed but NOT applied** (2026-10-11) — vehicle
-inventory (see *Vehicle inventory* below). Rehearsed against a
-production-shaped database (`run-apply-34.sh`, two passes, no existing row
-changed); paste `supabase/dist/apply-34.sql`. Until it is applied, Lia Office's
-Inventory screen says "needs a database update" and phones show no truck.
+**34 was applied 2026-10-11** — vehicle inventory (see *Vehicle inventory*
+below). Verified from outside with the publishable key: `my_vehicles`,
+`stock_overview` and 33's `account_part_sets_catalog` answer 401 `42501`, and
+`stock_moves` / `account_part_sets` refuse anon; the public certificate view
+still serves.
 **33 was applied 2026-10-11** — published part sets (`account_part_sets`,
 `save_account_part_sets()`, `account_part_sets_catalog()`), and it re-emits
 `consolidate_to_one_account()` so sets move with an account. Verified from
