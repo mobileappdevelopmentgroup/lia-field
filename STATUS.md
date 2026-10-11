@@ -229,6 +229,28 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.3 — 2026-10-11.** Android **versionCode 18** (Play internal), iOS
+**build 19** (TestFlight internal, in beta testing), Lia Office 1.15.3 (mac
+DMGs arm64 + x64, signed not notarized; Windows from CI run `38150815338`,
+unsigned). Bundles in `lia-deliverables/1.15.3/`. Phone-only changes; no migration.
+- **Tap-through passes tags not on file.** Instead of being skipped, an unknown
+  item passes and is held on the job as *passed — needs details* (counted, not
+  queued: no type means no checklist). Its tag's Google Sheet is read in the
+  background — type by exact name only, tag number as serial when the sheet has
+  none, maker, model, lot — and the record is completed and queued. Retried on
+  reconnect and on opening the job; anything left shows as **Needs details** on
+  the list and opens to be finished by hand. This reverses the 2026-09-24
+  "links are not followed" decision at the user's request.
+- **Fail last** works on whatever was tapped last, including a needs-details item.
+- **Ladders:** the brand/type/length field being picked is ringed in accent.
+- ⚠️ **Not done: sheet history as real certificates.** The user chose to import
+  a sheet's past inspection as a certificate. That needs migration 35 (the write
+  path records the caller as the inspector) and was deliberately not applied
+  unattended. Until then a sheet's history uploads as an unverified
+  `fp_external` claim, as before.
+- ⚠️ Not yet diagnosed: the iOS "Website NFC Tag — open docs.google.com" banner
+  seen mid-run means the reader session was briefly not live. Needs device logs.
+
 **1.15.2 — 2026-10-11.** Android **versionCode 17** (Play internal), iOS
 **build 18** (TestFlight internal, in beta testing), Lia Office 1.15.2 (mac
 DMGs arm64 + x64, signed not notarized; Windows from CI, unsigned and not yet
