@@ -109,6 +109,26 @@ altool as such.
 
 Confirm afterwards with the script in step 1; the build should read VALID.
 
+**Then send it to the external group.** The `Internal` group gets every build
+automatically, but it can only hold people with an App Store Connect login.
+Nate (`nathandobbs@me.com`) has none, so he is in the external **`Devs`** group
+(`43e53f3a-9d46-4236-b72e-4140b903a428`), which receives a build only when it is
+added by hand *and* passes Beta App Review. It was not done for builds 4–18, and
+Nate sat on build 3 for months without anyone noticing. Once the build is VALID:
+
+```
+POST /v1/betaGroups/43e53f3a-9d46-4236-b72e-4140b903a428/relationships/builds
+     {"data":[{"type":"builds","id":"<build id>"}]}
+POST /v1/betaAppReviewSubmissions
+     {"data":{"type":"betaAppReviewSubmissions",
+              "relationships":{"build":{"data":{"type":"builds","id":"<build id>"}}}}}
+```
+
+`buildBetaDetail.externalBuildState` then reads `WAITING_FOR_BETA_REVIEW`. The
+first build of a new marketing version takes hours to a day. Later builds of the
+same version are often approved automatically. Testers are notified when it
+clears.
+
 ## 5. Android → Play internal testing
 
 ```bash
