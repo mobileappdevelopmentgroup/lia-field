@@ -201,11 +201,27 @@ function placeAcList(input, list) {
 // Re-place an open list whenever anything moves under it: the keyboard, the
 // visual viewport panning, or a panel scrolling (capture catches every
 // scrolling element, not just the window). Returns the re-placer.
+//
+// `reflow.settle()` keeps re-placing every frame for a short while. The
+// keyboard slides in over ~300 ms and neither platform promises an event at
+// the END of it, so a single measurement taken part way through can find no
+// room, hide the list — and nothing moves it again until the tech drags the
+// screen, which is exactly the "pull down to make the parts list appear"
+// report from the field.
+const AC_SETTLE_MS = 1000;
+
 function watchAcList(input, list) {
   const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
-  window.visualViewport?.addEventListener('resize', reflow);
+  let until = 0;
+  const tick = () => { reflow(); if (performance.now() < until) requestAnimationFrame(tick); };
+  reflow.settle = () => {
+    const idle = performance.now() >= until;
+    until = performance.now() + AC_SETTLE_MS;
+    if (idle) requestAnimationFrame(tick);
+  };
+  window.visualViewport?.addEventListener('resize', reflow.settle);
   window.visualViewport?.addEventListener('scroll', reflow);
-  window.addEventListener('resize', reflow);
+  window.addEventListener('resize', reflow.settle);
   document.addEventListener('scroll', reflow, true);
   return reflow;
 }
@@ -253,8 +269,9 @@ function setupAutocomplete(inputId, listId, options) {
   input.addEventListener('focus',  () => {
     input.select();
     showList(input.value);
+    reflow.settle();
     // Late enough for the keyboard to have started coming up.
-    setTimeout(() => { keepInputVisible(input); reflow(); }, 300);
+    setTimeout(() => { keepInputVisible(input); reflow.settle(); }, 300);
   });
   input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
   input.addEventListener('keydown', e => {

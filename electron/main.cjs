@@ -1537,6 +1537,82 @@ ipcMain.handle('inspections:upload', async (_event, records) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── Fall-protection history (35) ────────────────────────────────────────────
+// Parsing is electron/fp-history.cjs, pure and tested; the server re-checks
+// every row. Rows go up in chunks under one batch name, which is what undo
+// removes.
+const fpHistory = require('./fp-history.cjs');
+
+ipcMain.handle('fphist:save-sample', async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Fall Protection History Template',
+    defaultPath: 'fall-protection-history-template.csv',
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  fs.writeFileSync(result.filePath, fpHistory.SAMPLE, 'utf-8');
+  return result.filePath;
+});
+
+ipcMain.handle('fphist:parse', (_event, filePath) => {
+  const Papa = require('papaparse');
+  const checked = resolveCsvPath(filePath);
+  if (checked.error) return { error: checked.error };
+  let content;
+  try { content = fs.readFileSync(checked.path, 'utf-8'); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
+  // Excel's "CSV UTF-8" starts with a byte-order mark, which would otherwise
+  // become part of the first header and stop it matching.
+  content = content.replace(/^﻿/, '');
+  const parsed = Papa.parse(content, { header: true, skipEmptyLines: true });
+  const fatal = parsed.errors.find(e => e.type === 'Delimiter' || e.type === 'Quotes');
+  if (fatal) return { error: `CSV parse error: ${fatal.message}` };
+  return fpHistory.parseFpHistory(parsed.data, parsed.meta.fields || []);
+});
+
+ipcMain.handle('fphist:import', async (_event, { batch, rows }) => {
+  try {
+    if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'Nothing to import.' };
+    const sb = await getSupabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return { ok: false, error: 'Not signed in.' };
+    const out = { ok: true, batch, imported: 0, skipped: [], errors: [] };
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const { data, error } = await sb.rpc('import_fp_history', { p: { batch, rows: chunk } });
+      if (error) {
+        // A whole chunk refused (not signed in as a lead, the migration not
+        // applied…): say which rows did not go, and stop — the rest would fail
+        // the same way.
+        out.errors.push(`Rows ${chunk[0].row}–${chunk[chunk.length - 1].row}: ${error.message}`);
+        break;
+      }
+      const res = typeof data === 'string' ? JSON.parse(data) : data;
+      out.imported += res.imported || 0;
+      out.skipped.push(...(res.skipped || []));
+    }
+    return out;
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fphist:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_history_imports');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, batches: data || [] };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fphist:undo', async (_event, batch) => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('undo_fp_history_import', { p_batch: batch });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 ipcMain.handle('history:load', async () => {
   try {
     const sb = await getSupabase();

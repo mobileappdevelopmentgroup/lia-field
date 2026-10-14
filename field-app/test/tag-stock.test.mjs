@@ -146,15 +146,23 @@ await p.evaluate(() => { _fpItem = null; _fpChecks = []; fpRenderAll(); });
 await p.click('#fp-btn-tap'); await p.waitForTimeout(200);
 await p.evaluate((u) => window.__tap({ url: u, uid: 'AA:BB:CC:DD' }), LINK('C'));
 await p.waitForTimeout(500);
-ok('in a run, a blank tag is put on screen and nothing is passed',
+// Since 1.15.3 a tag nobody has on file passes in a run like any other tap,
+// and a blank tag of ours is no exception: it is held on the job as passed,
+// needs details — counted, never queued — with the tag on it.
+ok('in a run, a blank tag passes like any other tap',
    await p.evaluate(() => ({ batch: $('fp-batch-panel').style.display !== 'none', items: _job.items.length })),
-   { batch: true, items: 1 });
-ok('without reading its sheet or asking about a supplier',
+   { batch: true, items: 2 });
+ok('without asking about a supplier',
    await p.evaluate(() => $('fp-link-sheet').classList.contains('hidden')), true);
-ok('as a new item with the tag on it, offering Add info',
-   await p.evaluate(() => [_fpItem.tag_label, _fpItem.tag_url, $('fp-btn-batch-edit').textContent]),
-   ['FP161342', LINK('C'), 'Add info']);
-ok('still no request to Google', googleHits, 0);
+ok('held as needs details, with the tag on it',
+   await p.evaluate(() => { const i = _job.items[0]; return [i.needs_details, i.tag_label, i.tag_url]; }),
+   [true, 'FP161342', LINK('C')]);
+ok('and not queued until it has a type and a serial',
+   await p.evaluate((id) => JSON.parse(localStorage.getItem('lia-upload-queue') || '[]')
+     .some(e => e.clientId === id), await p.evaluate(() => _job.items[0].id)), false);
+// …and, since the same release, its sheet is read in the background to fill
+// in what it is (the 2026-10-11 reversal). The supplier sheet is still never offered.
+ok('its own sheet is read to fill in the details', googleHits, 1);
 await p.evaluate(() => { fpBatchStop(false); _fpItem = null; _fpChecks = []; _fpLink = null; fpRenderAll(); });
 await p.waitForTimeout(150);
 

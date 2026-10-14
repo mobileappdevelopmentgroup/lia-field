@@ -205,7 +205,8 @@ $('fi-part-qty').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
   input.addEventListener('focus',  () => {
     input.select();
     showList(input.value.trim());
-    setTimeout(() => { keepInputVisible(input); reflow(); }, 300);
+    reflow.settle();
+    setTimeout(() => { keepInputVisible(input); reflow.settle(); }, 300);
   });
   input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
   input.addEventListener('keydown', e => {

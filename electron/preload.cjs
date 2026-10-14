@@ -160,6 +160,11 @@ contextBridge.exposeInMainWorld('api', {
   saveInspectionSample: ()           => ipcRenderer.invoke('inspections:save-sample'),
   parseInspectionCsv:   (filePath)   => ipcRenderer.invoke('inspections:parse-csv', filePath),
   uploadInspections:    (records)    => ipcRenderer.invoke('inspections:upload', records),
+  fpHistorySample:      ()           => ipcRenderer.invoke('fphist:save-sample'),
+  fpHistoryParse:       (filePath)   => ipcRenderer.invoke('fphist:parse', filePath),
+  fpHistoryImport:      (payload)    => ipcRenderer.invoke('fphist:import', payload),
+  fpHistoryList:        ()           => ipcRenderer.invoke('fphist:list'),
+  fpHistoryUndo:        (batch)      => ipcRenderer.invoke('fphist:undo', batch),
 
   // ── Work History ─────────────────────────────────────────────────────────
   loadHistory: () => ipcRenderer.invoke('history:load'),

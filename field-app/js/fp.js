@@ -1213,7 +1213,13 @@ function fpRenderItems() {
         </div>
         <div class="fp-item-meta">${esc(_fpMining.has(it.id) ? 'Reading its sheet…'
           : 'Passed · ' + (it.needs_why || 'pick its type') + ' — tap to finish')}</div>`;
-      card.addEventListener('click', () => fpOpenPending(it.id));
+      card.insertAdjacentHTML('beforeend',
+        '<div class="fp-item-actions"><button class="fp-item-del">Delete</button></div>');
+      card.addEventListener('click', e => {
+        if (e.target.closest('.fp-item-actions')) return;
+        fpOpenPending(it.id);
+      });
+      fpWireDelete(card, it.id);
       list.appendChild(card);
       return;
     }
@@ -1227,9 +1233,112 @@ function fpRenderItems() {
       </div>
       <div class="fp-item-meta">${esc(it.overall_pass
         ? `Due ${it.next_due_date}`
-        : fpFailedPrompts(it.checks).join('; '))}</div>`;
+        : fpFailedPrompts(it.checks).join('; '))}</div>
+      <div class="fp-item-actions"><button class="fp-item-del">Delete</button></div>`;
+    // Tap a line to show its Delete, as the ladder list does.
+    card.addEventListener('click', e => {
+      if (e.target.closest('.fp-item-actions')) return;
+      const opening = !card.classList.contains('expanded');
+      list.querySelectorAll('.fp-item.expanded').forEach(c => c.classList.remove('expanded'));
+      if (opening) card.classList.add('expanded');
+    });
+    fpWireDelete(card, it.id);
     list.appendChild(card);
   });
+}
+
+// ── Deleting a line ─────────────────────────────────────────────────────────
+// Field report: "I accidentally input one twice and it seems like I can't
+// delete it." What deleting can honestly do depends on where the record is:
+//
+//   not uploaded   it never reaches the server — off the list, out of the
+//                  queue, its photo out of the phone's store.
+//   uploaded, and  the same item on the same day is on this job again. The
+//   a duplicate    server versions per (item, date), so it already holds ONE
+//                  current record; the extra line just goes. If the two copies
+//                  disagree and the one deleted is the one that landed last,
+//                  the kept copy is sent again so it becomes the current one.
+//   uploaded, and  a certificate exists. A tech cannot withdraw it from the
+//   unique         phone — deleting a record is a lead's call, with a reason,
+//                  in Lia Office — so the line stays and the phone says so,
+//                  rather than hiding a certificate that is still live.
+//
+// Two taps, no dialog: the app raises no modal alerts.
+function fpWireDelete(card, id) {
+  const btn = card.querySelector('.fp-item-del');
+  if (!btn) return;
+  let armed = null;
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!armed) {
+      btn.textContent = 'Tap again to delete';
+      btn.classList.add('armed');
+      armed = setTimeout(() => { armed = null; btn.textContent = 'Delete'; btn.classList.remove('armed'); }, 3000);
+      return;
+    }
+    clearTimeout(armed); armed = null;
+    fpDeleteItem(id);
+  });
+}
+
+function fpSerialKey(s) {
+  return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// What a certificate would show differently between two copies of one item.
+function fpSameOutcome(a, b) {
+  const ans = it => (it.checks || []).map(c => (c.code || c.prompt) + '=' + c.answer).join('|');
+  return !!a.overall_pass === !!b.overall_pass && ans(a) === ans(b) &&
+         (a.next_due_date || '') === (b.next_due_date || '');
+}
+
+function fpDeleteItem(id) {
+  const items = (_job && _job.items) || [];
+  const idx = items.findIndex(i => i.id === id);
+  if (idx < 0) return 'missing';
+  const item = items[idx];
+  const S = window.LiaSyncState;
+  const sync = root_LiaSync();
+  const state = item.needs_details ? 'local' : (S ? S.stateOf(item.id) : 'local');
+
+  if (state === 'uploaded') {
+    const key = fpSerialKey(item.serial_num);
+    const twin = items.find(i => i.id !== id && !i.needs_details &&
+                                 fpSerialKey(i.serial_num) === key &&
+                                 i.inspection_date === item.inspection_date);
+    if (!twin) {
+      fpHint(`${item.serial_num} is already on the server and has a certificate. ` +
+             'Ask the office to delete it in Lia Office (Fall protection records) — it needs a reason there.', true);
+      return 'uploaded';
+    }
+    items.splice(idx, 1);
+    // The server's current record is whichever copy landed last. Only if that
+    // was the one being deleted, and it says something different, does the
+    // kept copy need to go up again. (A photo already attached stays with the
+    // version it was sent with.)
+    const twinAt = S && S.sentAt(twin.id);
+    const goneAt = S && S.sentAt(item.id);
+    if (twinAt && goneAt && goneAt > twinAt && !fpSameOutcome(item, twin) && sync) {
+      S.markUnsent(twin.id);
+      sync.enqueue({ clientId: twin.id, kind: 'fall_protection', payload: fpToPayload(twin) });
+    }
+  } else {
+    items.splice(idx, 1);
+    if (sync && sync.dequeue) { sync.dequeue(id); sync.dequeue(id + ':ext'); sync.dequeue(id + ':photo'); }
+    if (item.photo && item.photo.id && window.LiaPhotos && window.LiaPhotos.del) {
+      window.LiaPhotos.del(item.photo.id).catch(() => {});
+    }
+  }
+
+  if (_fpBatch && _fpBatch.recorded) {
+    _fpBatch.recorded = _fpBatch.recorded.filter(r => r.id !== id);
+    if (_fpBatch.last && _fpBatch.last.serial === item.serial_num) _fpBatch.last = null;
+  }
+  saveNow();
+  fpRenderPending();
+  fpRenderAll();
+  fpHint(`${item.serial_num || item.tag_label || 'That line'} deleted.`);
+  return state === 'uploaded' ? 'duplicate' : 'removed';
 }
 
 // ── The item in hand survives the app ───────────────────────────────────────
@@ -1555,13 +1664,32 @@ function fpOpenCondemn(item) {
   }
   const note = $('fp-condemn-note'); if (note) note.value = '';
   fpRenderPhoto();
-  $('fp-condemn-sheet').classList.remove('hidden');
+  const sheet = $('fp-condemn-sheet');
+  sheet.classList.remove('hidden');
+  sheet.scrollTop = 0;
   $('sheet-backdrop').classList.remove('hidden');
+  fpFitSheet();
 }
 
 function fpCloseCondemn() {
   $('fp-condemn-sheet').classList.add('hidden');
   $('sheet-backdrop').classList.add('hidden');
+}
+
+// Keep the removal sheet inside what is actually visible. With the keyboard up
+// (typing the note) the visual viewport is shorter than the layout viewport the
+// sheet is pinned to, and Confirm sat behind the keys. See `.scroll-all`.
+function fpFitSheet() {
+  const sheet = $('fp-condemn-sheet');
+  const vv = window.visualViewport;
+  if (!sheet || !vv) return;
+  const inset = Math.max(0, window.innerHeight - (vv.offsetTop + vv.height));
+  sheet.style.setProperty('--kb-inset', inset + 'px');
+  sheet.style.setProperty('--vv-h', vv.height + 'px');
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', fpFitSheet);
+  window.visualViewport.addEventListener('scroll', fpFitSheet);
 }
 
 function fpRenderPhoto() {
@@ -1599,6 +1727,13 @@ function fpRenderPhoto() {
                                     previewUrl: URL.createObjectURL(r.blob) });
       fpRenderPhoto();
     }).catch(() => fpHint('Could not read that photo.', true));
+  });
+
+  // The note is the one thing typed here; once the keyboard is up, bring it
+  // into view inside the sheet.
+  const noteIn = $('fp-condemn-note');
+  if (noteIn) noteIn.addEventListener('focus', () => {
+    setTimeout(() => { fpFitSheet(); noteIn.scrollIntoView({ block: 'nearest' }); }, 350);
   });
 
   const cancel = $('fp-btn-cancel-condemn');

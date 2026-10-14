@@ -151,6 +151,8 @@ npm run schema:check       # Fail if that snapshot is stale
                                      # supabase/dist/apply-33.sql to paste
 ./supabase/test/run-apply-34.sh      # Same for 34 (vehicle inventory) →
                                      # supabase/dist/apply-34.sql
+./supabase/test/run-apply-35.sh      # Same for 35 (FP history import) →
+                                     # supabase/dist/apply-35.sql
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -485,6 +487,30 @@ nothing else writes it. Rules that are load-bearing:
   back — and it can never stop a ladder being recorded. The truck is whichever
   one that record already took from, else the collector's "my truck today".
 - No prices anywhere in it.
+
+### Importing fall-protection history
+
+`supabase/migrations/35_fp_history_import.sql`, Lia Office → Advanced → *Fall
+Protection History*, parser in `electron/fp-history.cjs`. A spreadsheet of past
+inspections goes in so the phones know those items the first time they are
+tapped or typed. Load-bearing:
+
+- **The serial is the assigned number** (Batavia's decision, 2026-10-14); the
+  manufacturer's serial is kept in `fp_inspections.mfr_serial` and never matched.
+- **It lands in the account being acted as**, and the phone's catalogue is per
+  account — a subcontractor's history imported from Batavia's own account is
+  invisible to that subcontractor's phones. The screen says which account.
+- **History never displaces field work**: a row for an item that already has a
+  record that day is skipped and reported, not superseded.
+- Credited to the file's inspector (else "Imported history"), never to whoever
+  clicked Import; no checks are invented; due date is the date + 1 year.
+- Pass/fail is never assumed. A file with no result column imports only after
+  the office ticks "every inspection in it passed". Dates are ISO on the wire;
+  the parser reads a/b/yyyy the way the rest of the file says, refuses a file
+  that writes them both ways, and says which reading it used.
+- Each import is a batch (`source = 'import:history:<batch>'`) with an Undo that
+  refuses once a record has been corrected or billed, and cannot reach Nate's
+  2026-09-28 sheet import (a different prefix).
 
 ### Consolidating accounts
 

@@ -1163,6 +1163,11 @@
           <div class="mode-name">Log Inspections</div>
           <div class="mode-desc">Upload historical inspection records to the database.</div>
         </div>
+        <div class="mode-card" id="adv-fphist">
+          <div class="mode-icon">🦺</div>
+          <div class="mode-name">Fall Protection History</div>
+          <div class="mode-desc">Import past fall-protection inspections, so the phones know those items.</div>
+        </div>
       </div>
       <!-- The certificate site is public and is a link, not an install, so it
            stays a QR: somebody points a phone at the screen. -->
@@ -1714,6 +1719,71 @@
   </div>
 </div>
 
+<!-- ═══════════════ SCREEN: FALL PROTECTION HISTORY ═══════════════
+     A spreadsheet of past FP inspections → import_fp_history() (35). The serial
+     is the assigned number. Nothing is sent until the office has seen how the
+     columns were read, which rows will not go and why, and which account it is
+     going into — the phones only see history in their own account. -->
+<div id="screen-fphist" class="screen">
+  <div class="field-topbar">
+    <button class="back-btn" id="btn-fphist-home">← Home</button>
+    <span class="field-title">Fall Protection History</span>
+    <button class="btn-g" id="btn-fphist-template" style="font-size:12px;padding:6px 14px;">↓ CSV Template</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-ttl">Select a spreadsheet (CSV)</div>
+      <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.55;">
+        One row per inspection. Needed: the item's <strong style="color:var(--text);">assigned serial number</strong>
+        and the <strong style="color:var(--text);">inspection date</strong>, and pass or fail.
+        Also read when present: type, manufacturer, model, manufacturer's serial, lot, date of manufacture,
+        tag number, inspector, work order, failure reason, notes. Column names are matched loosely —
+        you will see how each was read before anything is sent.
+      </p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55;">
+        The next inspection is due a year after each date. A row for an item that already has a record on that
+        date is skipped — history never replaces work recorded in the field. In Excel: File → Save As → CSV.
+      </p>
+      <div id="fphist-account" style="font-size:12.5px;margin-bottom:12px;"></div>
+      <div class="row">
+        <button class="btn-p" id="btn-fphist-pick">Choose CSV File…</button>
+        <span class="file-lbl" id="fphist-file-lbl">No file selected</span>
+      </div>
+    </div>
+
+    <div class="card" id="fphist-preview" style="display:none;">
+      <div class="card-ttl">Preview</div>
+      <div id="fphist-stat" style="font-size:12.5px;margin-bottom:10px;"></div>
+      <div id="fphist-notes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <label id="fphist-confirm-row" style="display:none;font-size:12.5px;margin-bottom:12px;gap:8px;align-items:flex-start;">
+        <input type="checkbox" id="fphist-all-passed" style="margin-top:2px;">
+        <span>This file has no pass/fail column. <strong>Every inspection in it passed.</strong>
+          (Leave unticked and nothing is imported — a failed item must not go on record as passed.)</span>
+      </label>
+      <div class="tbl-wrap" style="max-height:280px;">
+        <table>
+          <thead><tr><th>Row</th><th>Serial #</th><th>Date</th><th>Result</th><th>Type</th><th>Make / model</th><th>Mfr serial</th><th>Tag</th><th>Inspector</th></tr></thead>
+          <tbody id="fphist-body"></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn-ok" id="btn-fphist-import">Import</button>
+        <button class="btn-g" id="btn-fphist-change">← Change File</button>
+      </div>
+    </div>
+
+    <div class="card" id="fphist-result" style="display:none;">
+      <div class="card-ttl" id="fphist-result-ttl">Import complete</div>
+      <div id="fphist-result-body" style="font-size:13px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-ttl">Imported so far</div>
+      <div id="fphist-batches" style="font-size:12.5px;color:var(--muted);">—</div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ SCREEN: WORK HISTORY ═══════════════ -->
 <div id="screen-history" class="screen">
   <div class="field-topbar">
@@ -2030,6 +2100,7 @@ async function requireAuth(destination) {
 function goToDestination(dest) {
   if (dest === 'office')  { showScreen('office');  officeReset(); }
   else if (dest === 'inspect') { showScreen('inspect'); inspectReset(); }
+  else if (dest === 'fphist')  { showScreen('fphist');  fpHistReset(); }
   // Work History is Field Work's archived half — the same screen, the same
   // records, read-only, with the one action that sends a work order back.
   else if (dest === 'history') { showScreen('field'); loadFieldWork(true); }
@@ -4953,6 +5024,7 @@ $('home-inventory').addEventListener('click', () => requireAuth('inventory'));
 $('home-advanced').addEventListener('click', () => showScreen('advanced'));
 $('btn-adv-home').addEventListener('click',  () => showScreen('home'));
 $('adv-inspect').addEventListener('click', () => requireAuth('inspect'));
+$('adv-fphist').addEventListener('click',  () => requireAuth('fphist'));
 $('adv-views').addEventListener('click',   () => requireAuth('views'));
 $('home-team').addEventListener('click', () => requireAuth('team'));
 // No sign-in needed to read how the thing works.
@@ -5627,6 +5699,179 @@ window.api.onExited(code => {
   }
   _automationErrored = false;
 });
+
+// ════════════════════════════════════════════════════════════════
+// Fall Protection History (35)
+// ════════════════════════════════════════════════════════════════
+
+let _fph = null;   // the parsed file: { rows, skipped, map, unmapped, ... , name }
+
+const FPH_FIELD_NAMES = {
+  serial: 'Serial (assigned number)', inspection_date: 'Inspection date', result: 'Pass / fail',
+  equipment_type: 'Type', manufacturer: 'Manufacturer', model: 'Model', mfr_serial: 'Manufacturer serial',
+  lot_number: 'Lot', mfg_date: 'Date of manufacture', tag_label: 'Tag #', inspector: 'Inspector',
+  work_order_id: 'Work order', reason: 'Failure reason', description: 'Description', notes: 'Notes',
+};
+
+function fpHistReset() {
+  _fph = null;
+  $('fphist-file-lbl').textContent = 'No file selected';
+  $('fphist-file-lbl').classList.remove('has-file');
+  $('fphist-preview').style.display = 'none';
+  $('fphist-result').style.display = 'none';
+  $('fphist-all-passed').checked = false;
+  // Which account this lands in decides which phones see it. Say so, loudly
+  // when acting as somebody.
+  const name = (_ctx && _ctx.account_name) || 'your company';
+  $('fphist-account').innerHTML = (_ctx && _ctx.impersonating)
+    ? `Importing into <strong style="color:var(--warn);">${esc(name)}</strong> — the account you are acting as. Their phones will know these items.`
+    : `Importing into <strong>${esc(name)}</strong>. Only phones signed in to this account will know these items — ` +
+      `to import a subcontractor's history, act as them first from the home screen.`;
+  fpHistLoadBatches();
+}
+
+async function fpHistLoadBatches() {
+  const box = $('fphist-batches');
+  const res = await window.api.fpHistoryList();
+  if (!res.ok) { box.textContent = res.error; return; }
+  if (!res.batches.length) { box.textContent = 'Nothing imported into this account yet.'; return; }
+  box.innerHTML = '';
+  res.batches.forEach(b => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);';
+    row.innerHTML =
+      `<span style="flex:1;color:var(--text);"><strong>${esc(b.batch)}</strong> — ${b.records} record${b.records !== 1 ? 's' : ''},` +
+      ` ${esc(b.first_date)} to ${esc(b.last_date)}</span>` +
+      `<button class="btn-g" style="font-size:11.5px;padding:4px 10px;">Undo</button>`;
+    row.querySelector('button').addEventListener('click', async () => {
+      if (!confirm(`Remove all ${b.records} records imported as "${b.batch}"?\n\n` +
+                   'Items that exist only because of this import are removed too. ' +
+                   'Refused if any of them has been corrected or billed since.')) return;
+      const r = await window.api.fpHistoryUndo(b.batch);
+      if (!r.ok) { alert('Undo refused: ' + r.error); return; }
+      alert(`Removed ${r.result.records_removed} records and ${r.result.items_removed} items.`);
+      fpHistLoadBatches();
+    });
+    box.appendChild(row);
+  });
+}
+
+async function fpHistPick() {
+  const p = await window.api.openCsv();
+  if (!p) return;
+  const res = await window.api.fpHistoryParse(p);
+  $('fphist-result').style.display = 'none';
+  if (res.error) { alert(res.error); return; }
+  _fph = Object.assign(res, { name: p.split('/').pop() });
+  $('fphist-file-lbl').textContent = _fph.name;
+  $('fphist-file-lbl').classList.add('has-file');
+  $('fphist-all-passed').checked = false;
+  fpHistRenderPreview();
+}
+
+function fpHistNote(html, tone) {
+  const c = tone === 'warn'
+    ? 'background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);color:var(--text);'
+    : 'background:var(--surf2, rgba(127,127,127,.06));border:1px solid var(--border);color:var(--muted);';
+  return `<div style="${c}border-radius:6px;padding:9px 13px;font-size:12px;line-height:1.5;">${html}</div>`;
+}
+
+function fpHistRenderPreview() {
+  const f = _fph;
+  const fails = f.rows.filter(r => r.result === 'fail').length;
+  $('fphist-stat').innerHTML =
+    `<strong>${f.rows.length}</strong> inspection${f.rows.length !== 1 ? 's' : ''} ready` +
+    (f.needsResultConfirm ? '' : ` — ${f.rows.length - fails} passed, ${fails} failed`) +
+    (f.skipped.length ? ` · <span style="color:var(--warn);">${f.skipped.length} row${f.skipped.length !== 1 ? 's' : ''} will not import</span>` : '');
+
+  const notes = [];
+  notes.push(fpHistNote('<strong>Columns read as:</strong> ' +
+    Object.entries(f.map).map(([k, h]) => `${esc(h)} → ${esc(FPH_FIELD_NAMES[k] || k)}`).join(' · ') +
+    (f.unmapped.length ? `<br><strong>Not used:</strong> ${f.unmapped.map(esc).join(', ')}` : '')));
+  const order = f.dateOrder === 'dmy' ? 'day/month/year' : 'month/day/year';
+  if (f.rows.length) {
+    notes.push(fpHistNote(`Dates written with slashes are read as <strong>${order}</strong>` +
+      (f.dateOrder ? ' (the file settles it).' : ' — nothing in the file says otherwise. If that is wrong, save the dates as YYYY-MM-DD and choose the file again.')));
+  }
+  if (f.unknownTypes.length) {
+    notes.push(fpHistNote('<strong>Types Lia may not know:</strong> ' +
+      f.unknownTypes.map(t => `${esc(t.text)} (${t.count})`).join(', ') +
+      '. These import in the file\'s words. If the type is not one of the account\'s own, ' +
+      'the item has no checklist yet and a tech is asked to pick its type the first time it is opened.', 'warn'));
+  }
+  if (f.skipped.length) {
+    notes.push(fpHistNote('<strong>Will not import:</strong><br>' +
+      f.skipped.slice(0, 50).map(s => `Row ${s.row}${s.serial ? ` (${esc(s.serial)})` : ''} — ${esc(s.reason)}`).join('<br>') +
+      (f.skipped.length > 50 ? `<br>…and ${f.skipped.length - 50} more` : ''), 'warn'));
+  }
+  $('fphist-notes').innerHTML = notes.join('');
+  $('fphist-confirm-row').style.display = f.needsResultConfirm ? 'flex' : 'none';
+
+  const tbody = $('fphist-body');
+  tbody.innerHTML = '';
+  f.rows.slice(0, 500).forEach(r => {
+    const tr = document.createElement('tr');
+    const res = r.result === 'fail' ? '<span style="color:var(--err);font-weight:700;">FAIL</span>'
+              : r.result === 'pass' ? '<span style="color:var(--ok);">pass</span>' : '—';
+    tr.innerHTML =
+      `<td class="meta">${r.row}</td><td class="sn">${esc(r.serial)}</td>` +
+      `<td class="meta">${esc(r.inspection_date)}</td><td class="meta">${res}</td>` +
+      `<td class="meta">${esc(r.equipment_type || '—')}</td>` +
+      `<td class="meta">${esc([r.manufacturer, r.model].filter(Boolean).join(' ') || '—')}</td>` +
+      `<td class="meta">${esc(r.mfr_serial || '—')}</td><td class="meta">${esc(r.tag_label || '—')}</td>` +
+      `<td class="meta">${esc(r.inspector || '—')}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('btn-fphist-import').disabled = !f.rows.length;
+  $('fphist-preview').style.display = '';
+}
+
+async function fpHistImport() {
+  if (!_fph || !_fph.rows.length) return;
+  if (_fph.needsResultConfirm && !$('fphist-all-passed').checked) {
+    $('fphist-confirm-row').style.outline = '2px solid var(--err)';
+    setTimeout(() => { $('fphist-confirm-row').style.outline = ''; }, 2000);
+    return;
+  }
+  const rows = _fph.rows.map(r => Object.assign({}, r, { result: r.result || 'pass' }));
+  // The batch name is what undo removes: the file and the minute it went in.
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const base = _fph.name.replace(/\.csv$/i, '').replace(/[^A-Za-z0-9 ._:-]+/g, ' ').trim().slice(0, 50) || 'file';
+  const batch = `${stamp} ${base}`;
+
+  const btn = $('btn-fphist-import');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  const res = await window.api.fpHistoryImport({ batch, rows });
+  btn.disabled = false; btn.textContent = 'Import';
+
+  $('fphist-preview').style.display = 'none';
+  $('fphist-result').style.display = '';
+  if (!res.ok) {
+    $('fphist-result-ttl').textContent = 'Import failed';
+    $('fphist-result-body').innerHTML = `<div style="color:var(--err);">${esc(res.error)}</div>`;
+    return;
+  }
+  $('fphist-result-ttl').textContent = res.errors.length ? 'Import stopped' : 'Import complete';
+  let html = `<div style="color:var(--ok);font-weight:700;margin-bottom:8px;">✓ ${res.imported} inspection` +
+             `${res.imported !== 1 ? 's' : ''} imported as "${esc(batch)}".</div>` +
+             `<div style="color:var(--muted);font-size:12px;margin-bottom:8px;">Phones pick these up the next time they open Lia Field with signal.</div>`;
+  if (res.skipped.length) {
+    html += `<div style="color:var(--warn);font-size:12px;margin-top:6px;"><strong>${res.skipped.length} skipped by the server:</strong><br>` +
+            res.skipped.slice(0, 100).map(s => `Row ${s.row}${s.serial ? ` (${esc(s.serial)})` : ''} — ${esc(s.reason)}`).join('<br>') +
+            (res.skipped.length > 100 ? `<br>…and ${res.skipped.length - 100} more` : '') + '</div>';
+  }
+  if (res.errors.length) {
+    html += `<div style="color:var(--err);font-size:12px;margin-top:8px;">${res.errors.map(esc).join('<br>')}</div>`;
+  }
+  $('fphist-result-body').innerHTML = html;
+  fpHistLoadBatches();
+}
+
+$('btn-fphist-home').addEventListener('click', () => showScreen('home'));
+$('btn-fphist-template').addEventListener('click', () => window.api.fpHistorySample());
+$('btn-fphist-pick').addEventListener('click', fpHistPick);
+$('btn-fphist-change').addEventListener('click', fpHistPick);
+$('btn-fphist-import').addEventListener('click', fpHistImport);
 
 // ════════════════════════════════════════════════════════════════
 // Log Inspections

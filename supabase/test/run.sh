@@ -173,6 +173,11 @@ echo "Running vehicle inventory assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/28_vehicle_inventory_test.sql"
 
+echo
+echo "Running fall protection history import assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/29_fp_history_import_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

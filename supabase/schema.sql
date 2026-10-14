@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 34
+-- Migrations included: 35
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -1797,6 +1797,25 @@ $$;
 
 
 --
+-- Name: fp_history_imports(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_history_imports() RETURNS TABLE(batch text, records integer, first_date date, last_date date, imported_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT substr(i.source, 16), count(*)::integer, min(i.inspection_date), max(i.inspection_date),
+         max(i.uploaded_at)
+    FROM public.fp_inspections i
+   WHERE i.account_id = public.require_lead_account()
+     AND i.source LIKE 'import:history:%'
+     AND NOT i.is_deleted
+   GROUP BY i.source
+   ORDER BY max(i.uploaded_at) DESC;
+$$;
+
+
+--
 -- Name: fp_inspection_tag_url(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3152,6 +3171,180 @@ BEGIN
   RETURN row_to_json(r);
 END;
 $$;
+
+
+--
+-- Name: import_fp_history(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.import_fp_history(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+DECLARE
+  v_account  uuid := public.require_lead_account();
+  v_batch    text := nullif(btrim(coalesce(p->>'batch', '')), '');
+  v_src      text;
+  r          jsonb;
+  v_n        integer := 0;
+  v_row      integer;
+  v_ok       integer := 0;
+  v_skipped  jsonb := '[]'::jsonb;
+  v_serial   text;
+  v_date     date;
+  v_res      text;
+  v_pass     boolean;
+  v_type_id  uuid;
+  v_type_nm  text;
+  v_mfr      text;
+  v_model    text;
+  v_model_id uuid;
+  v_asset    uuid;
+  v_label    text;
+  v_mm       integer;
+  v_yy       integer;
+  v_insp     text;
+BEGIN
+  IF v_batch IS NULL THEN RAISE EXCEPTION 'Name this import (batch)'; END IF;
+  IF length(v_batch) > 80 OR v_batch !~ '^[A-Za-z0-9 ._:-]+$' THEN
+    RAISE EXCEPTION 'A batch name is letters, digits, spaces and . _ : - only, up to 80';
+  END IF;
+  IF jsonb_typeof(p->'rows') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'No rows'; END IF;
+  IF jsonb_array_length(p->'rows') > 2000 THEN
+    RAISE EXCEPTION 'At most 2000 rows at a time — send the file in parts';
+  END IF;
+  -- Its own prefix: undo and the batch list reach only what this function
+  -- wrote, never 'import:nate-google-sheets-2026-09-28' or a later hand import.
+  v_src := 'import:history:' || v_batch;
+
+  FOR r IN SELECT * FROM jsonb_array_elements(p->'rows') LOOP
+    v_n := v_n + 1;
+    v_row := coalesce(nullif(r->>'row', '')::integer, v_n);
+    v_serial := nullif(btrim(coalesce(r->>'serial', '')), '');
+
+    BEGIN
+      IF v_serial IS NULL OR public.serial_key(v_serial) = '' THEN
+        RAISE EXCEPTION 'No serial';
+      END IF;
+      IF length(v_serial) > 64 THEN RAISE EXCEPTION 'Serial is longer than 64 characters'; END IF;
+
+      -- ISO only. 01/02/2025 is the 2nd of January to Postgres and the 1st of
+      -- February to half the spreadsheets it came from; the office converts a
+      -- date only when the file's format leaves no doubt.
+      IF coalesce(r->>'inspection_date', '') !~ '^\d{4}-\d{2}-\d{2}$' THEN
+        RAISE EXCEPTION 'Inspection date "%" is not YYYY-MM-DD', coalesce(r->>'inspection_date', '');
+      END IF;
+      BEGIN
+        v_date := (r->>'inspection_date')::date;
+      EXCEPTION WHEN others THEN
+        RAISE EXCEPTION 'Inspection date "%" is not a date', r->>'inspection_date';
+      END;
+      IF v_date IS NULL THEN RAISE EXCEPTION 'No inspection date'; END IF;
+      IF v_date > current_date THEN RAISE EXCEPTION 'Inspection date % is in the future', v_date; END IF;
+      IF v_date < date '1990-01-01' THEN RAISE EXCEPTION 'Inspection date % is before 1990', v_date; END IF;
+
+      v_res := lower(btrim(coalesce(r->>'result', '')));
+      v_pass := CASE
+        WHEN v_res IN ('pass', 'passed', 'p', 'yes', 'y', 'ok', 'true', 'in service') THEN true
+        WHEN v_res IN ('fail', 'failed', 'f', 'no', 'n', 'false', 'removed', 'out of service',
+                       'condemned', 'destroyed') THEN false
+        ELSE NULL END;
+      IF v_pass IS NULL THEN
+        RAISE EXCEPTION 'Result "%" is not pass or fail', coalesce(r->>'result', '');
+      END IF;
+
+      v_type_id := NULL; v_type_nm := NULL;
+      IF nullif(btrim(coalesce(r->>'equipment_type', '')), '') IS NOT NULL THEN
+        -- A name Lia does not know does not cost the row its history: it is
+        -- kept in the file's words with no type, and the phone asks the tech
+        -- to pick one the first time the item is opened. The office preview
+        -- lists these before anything is sent.
+        v_type_id := public.fp_type_for(v_account, r->>'equipment_type');
+        SELECT name INTO v_type_nm FROM public.fp_equipment_types WHERE id = v_type_id;
+      END IF;
+
+      v_mm := nullif(r->>'mfg_month', '')::integer;
+      v_yy := nullif(r->>'mfg_year', '')::integer;
+      IF v_mm IS NOT NULL AND (v_mm < 1 OR v_mm > 12) THEN RAISE EXCEPTION 'Manufacture month % is not 1–12', v_mm; END IF;
+      IF v_yy IS NOT NULL AND (v_yy < 1900 OR v_yy > extract(year FROM current_date)::integer) THEN
+        RAISE EXCEPTION 'Manufacture year % is not possible', v_yy;
+      END IF;
+
+      -- The item, by its assigned number.
+      INSERT INTO public.assets (account_id, kind, serial_raw, serial_key)
+      VALUES (v_account, 'fall_protection', v_serial, public.serial_key(v_serial))
+      ON CONFLICT (account_id, kind, serial_key) DO NOTHING
+      RETURNING id INTO v_asset;
+      IF v_asset IS NULL THEN
+        SELECT id INTO v_asset FROM public.assets
+         WHERE account_id = v_account AND kind = 'fall_protection'
+           AND serial_key = public.serial_key(v_serial);
+      END IF;
+
+      IF EXISTS (SELECT 1 FROM public.fp_inspections
+                  WHERE asset_id = v_asset AND inspection_date = v_date AND NOT is_deleted) THEN
+        RAISE EXCEPTION 'Already has a record on %', v_date;
+      END IF;
+
+      -- The printed tag number, if the file has one and the item has none.
+      -- Uniqueness is the write path's job, not an index's (see 17).
+      v_label := nullif(btrim(coalesce(r->>'tag_label', '')), '');
+      IF v_label IS NOT NULL THEN
+        IF EXISTS (SELECT 1 FROM public.assets a
+                    WHERE a.account_id = v_account AND a.id <> v_asset
+                      AND a.tag_label_key = public.serial_key(v_label)) THEN
+          RAISE EXCEPTION 'Tag % is already on another item', v_label;
+        END IF;
+        UPDATE public.assets SET tag_label = v_label, updated_at = clock_timestamp()
+         WHERE id = v_asset AND coalesce(tag_label, '') = '';
+      END IF;
+
+      v_mfr   := nullif(btrim(coalesce(r->>'manufacturer', '')), '');
+      v_model := nullif(btrim(coalesce(r->>'model', '')), '');
+      v_model_id := NULL;
+      IF v_mfr IS NOT NULL AND v_model IS NOT NULL THEN
+        INSERT INTO public.fp_models (account_id, manufacturer, model, item_type, created_by)
+        VALUES (v_account, v_mfr, v_model, v_type_nm, auth.uid())
+        ON CONFLICT (coalesce(account_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                     lower(manufacturer), lower(model)) DO NOTHING;
+        SELECT id INTO v_model_id FROM public.fp_models
+         WHERE account_id = v_account AND lower(manufacturer) = lower(v_mfr) AND lower(model) = lower(v_model);
+      END IF;
+
+      v_insp := nullif(btrim(coalesce(r->>'inspector', '')), '');
+
+      INSERT INTO public.fp_inspections (
+        account_id, asset_id, work_order_id, inspection_date, next_due_date,
+        tech_user_id, collected_by, collector_name, model_id, equipment_type_id,
+        item_type, description, manufacturer, model, mfr_serial, lot_number,
+        mfg_month, mfg_year, status, template_id, template_version,
+        overall_pass, discard_reason, discard_note,
+        version, is_current, source, captured_at
+      ) VALUES (
+        v_account, v_asset, left(nullif(btrim(coalesce(r->>'work_order_id', '')), ''), 64),
+        v_date, v_date + interval '1 year',
+        NULL, NULL, left(coalesce(v_insp, 'Imported history'), 120), v_model_id, v_type_id,
+        coalesce(v_type_nm, nullif(btrim(coalesce(r->>'equipment_type', '')), '')),
+        left(nullif(btrim(coalesce(r->>'description', '')), ''), 500),
+        v_mfr, v_model, left(nullif(btrim(coalesce(r->>'mfr_serial', '')), ''), 64),
+        left(nullif(btrim(coalesce(r->>'lot_number', '')), ''), 64),
+        v_mm, v_yy, public.fp_default_status(v_pass, NULL), NULL, NULL,
+        v_pass,
+        CASE WHEN v_pass THEN NULL
+             ELSE 'Failed: ' || coalesce(left(nullif(btrim(coalesce(r->>'reason', '')), ''), 500),
+                                         '(imported history — no reason recorded)') END,
+        left(nullif(btrim(coalesce(r->>'notes', '')), ''), 1000),
+        1, true, v_src, NULL
+      );
+      v_ok := v_ok + 1;
+    EXCEPTION WHEN others THEN
+      v_skipped := v_skipped || jsonb_build_object('row', v_row, 'serial', v_serial, 'reason', SQLERRM);
+    END;
+  END LOOP;
+
+  RETURN json_build_object('batch', v_batch, 'imported', v_ok, 'skipped', v_skipped);
+END;
+$_$;
 
 
 --
@@ -6125,6 +6318,59 @@ $$;
 
 
 --
+-- Name: undo_fp_history_import(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.undo_fp_history_import(p_batch text) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_src     text := 'import:history:' || btrim(coalesce(p_batch, ''));
+  v_ids     uuid[];
+  v_rows    integer;
+  v_assets  integer;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.fp_inspections
+                  WHERE account_id = v_account AND source = v_src) THEN
+    RAISE EXCEPTION 'No import called "%" in this account', p_batch;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.fp_inspections i
+              WHERE i.account_id = v_account AND i.source = v_src
+                AND (i.bsi_pushed_at IS NOT NULL OR NOT i.is_current OR i.is_deleted
+                     OR EXISTS (SELECT 1 FROM public.fp_inspections n WHERE n.supersedes = i.id))) THEN
+    RAISE EXCEPTION 'Some of these records have been corrected or billed since — undo refused';
+  END IF;
+
+  SELECT array_agg(DISTINCT asset_id) INTO v_ids FROM public.fp_inspections
+   WHERE account_id = v_account AND source = v_src;
+
+  DELETE FROM public.fp_inspections WHERE account_id = v_account AND source = v_src;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  -- An item goes only if the import is all it ever was: no other record, no
+  -- tag link, written tag or photo, nothing in another table pointing at it.
+  DELETE FROM public.assets a
+   WHERE a.id = ANY (v_ids)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_inspections i WHERE i.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.inspections i WHERE i.asset_id = a.id)
+     AND coalesce(a.tag_url, '') = '' AND coalesce(a.nfc_tag_uid, '') = ''
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_stock s WHERE s.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_external_records x WHERE x.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_links l WHERE l.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_writes w WHERE w.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_record_audit au WHERE au.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.certificate_views v WHERE v.asset_id = a.id);
+  GET DIAGNOSTICS v_assets = ROW_COUNT;
+
+  RETURN json_build_object('batch', p_batch, 'records_removed', v_rows, 'items_removed', v_assets);
+END;
+$$;
+
+
+--
 -- Name: update_fp_asset(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6432,6 +6678,7 @@ CREATE TABLE public.fp_inspections (
     rep_name text,
     verified_by text,
     impersonation_id uuid,
+    mfr_serial text,
     CONSTRAINT fp_discard_requires_reason CHECK ((overall_pass OR (discard_reason IS NOT NULL))),
     CONSTRAINT fp_inspections_mfg_month_check CHECK (((mfg_month IS NULL) OR ((mfg_month >= 1) AND (mfg_month <= 12)))),
     CONSTRAINT fp_inspections_mfg_year_check CHECK (((mfg_year IS NULL) OR ((mfg_year >= 1900) AND (mfg_year <= 2200)))),
@@ -6458,6 +6705,13 @@ COMMENT ON COLUMN public.fp_inspections.discard_reason IS 'Composed from the fai
 --
 
 COMMENT ON COLUMN public.fp_inspections.discard_note IS 'Optional free text the tech adds alongside the photo.';
+
+
+--
+-- Name: COLUMN fp_inspections.mfr_serial; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.mfr_serial IS 'The manufacturer''s serial, when it is not the number the item is known by. Kept for reference; never used to find an item.';
 
 
 --
@@ -7670,6 +7924,13 @@ CREATE UNIQUE INDEX fp_inspections_current_uq ON public.fp_inspections USING btr
 --
 
 CREATE INDEX fp_inspections_due_idx ON public.fp_inspections USING btree (next_due_date);
+
+
+--
+-- Name: fp_inspections_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_inspections_source_idx ON public.fp_inspections USING btree (account_id, source) WHERE (source ~~ 'import:%'::text);
 
 
 --
@@ -9529,6 +9790,14 @@ GRANT ALL ON FUNCTION public.fp_find_asset(p_value text) TO authenticated;
 
 
 --
+-- Name: FUNCTION fp_history_imports(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_history_imports() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.fp_history_imports() TO authenticated;
+
+
+--
 -- Name: FUNCTION fp_pending_bsi(p_work_order text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9603,6 +9872,14 @@ GRANT ALL ON FUNCTION public.fp_type_catalog() TO authenticated;
 --
 
 GRANT ALL ON FUNCTION public.fp_type_for(p_account uuid, p_key text) TO authenticated;
+
+
+--
+-- Name: FUNCTION import_fp_history(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.import_fp_history(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.import_fp_history(p jsonb) TO authenticated;
 
 
 --
@@ -10091,6 +10368,14 @@ GRANT ALL ON FUNCTION public.team_members() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.transfer_stock(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.transfer_stock(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION undo_fp_history_import(p_batch text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.undo_fp_history_import(p_batch text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.undo_fp_history_import(p_batch text) TO authenticated;
 
 
 --
