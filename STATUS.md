@@ -247,8 +247,7 @@ notarized; Windows from CI run `38664245432`, unsigned). Bundles in
 - **Defective, no tag**: the phone numbers an untagged defective item from the
   company's list of spare numbers (reserved five per phone, so offline phones
   never share one); the office pastes the list on the same screen. Migration
-  **36 — NOT applied yet**; until it is, the button stays hidden and the office
-  card shows an error.
+  **36, applied 2026-10-14**. The button appears once the office loads numbers.
 
 **1.15.3 — 2026-10-11.** Android **versionCode 18** (Play internal), iOS
 **build 19** (TestFlight internal, in beta testing), Lia Office 1.15.3 (mac

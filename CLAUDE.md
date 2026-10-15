@@ -37,9 +37,11 @@ Michael, with the 1,724 records moved into Nate's own account).
 publishable key: `import_fp_history`, `undo_fp_history_import` and
 `fp_history_imports` answer 401 `42501`, `fp_inspections` refuses anon, and the
 public certificate view still serves.
-**36 is written, rehearsed and NOT yet applied** — spare numbers for untagged
-defective items (see *Numbers for defective items with no tag*). Paste
-`supabase/dist/apply-36.sql` from `./supabase/test/run-apply-36.sh`.
+**36 was applied 2026-10-14** — spare numbers for untagged defective items
+(see *Numbers for defective items with no tag*). Verified from outside with the
+publishable key: `reserve_fp_serials`, `add_fp_serial_pool` and
+`fp_serial_pool_summary` answer 401 `42501`, `fp_serial_pool` refuses anon, and
+the public certificate view still serves. No numbers loaded yet.
 
 **34 was applied 2026-10-11** — vehicle inventory (see *Vehicle inventory*
 below). Verified from outside with the publishable key: `my_vehicles`,
