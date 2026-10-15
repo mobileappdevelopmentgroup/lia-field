@@ -229,6 +229,27 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.4 — 2026-10-14.** Android **versionCode 19** (Play internal), iOS
+**build 20** (TestFlight internal; added to external **Devs** and submitted —
+`WAITING_FOR_BETA_REVIEW`), Lia Office 1.15.4 (mac DMGs arm64 + x64, signed not
+notarized; Windows from CI run `38664245432`, unsigned). Bundles in
+`lia-deliverables/1.15.4/`. From Nate's 2026-10-14 field report.
+- **Delete a line.** A fall-protection line entered twice can be deleted (tap it,
+  Delete, tap again). A ladder's Delete now also takes it out of the upload
+  queue — before, a deleted ladder still uploaded. An uploaded one-off stays and
+  the phone says the office deletes it in Lia Office.
+- **Removal sheet scrolls** to the photo and Confirm buttons, above the keyboard.
+- **Parts popup** keeps re-placing itself while the keyboard opens, rather than
+  hiding until the screen was dragged. Not yet confirmed on a handset.
+- **Fall Protection History** (Lia Office → Advanced): import past inspections
+  from a CSV; Batavia's assigned number is the serial. Migration **35, applied
+  2026-10-14**.
+- **Defective, no tag**: the phone numbers an untagged defective item from the
+  company's list of spare numbers (reserved five per phone, so offline phones
+  never share one); the office pastes the list on the same screen. Migration
+  **36 — NOT applied yet**; until it is, the button stays hidden and the office
+  card shows an error.
+
 **1.15.3 — 2026-10-11.** Android **versionCode 18** (Play internal), iOS
 **build 19** (TestFlight internal, in beta testing), Lia Office 1.15.3 (mac
 DMGs arm64 + x64, signed not notarized; Windows from CI run `38150815338`,
