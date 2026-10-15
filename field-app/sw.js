@@ -1,4 +1,4 @@
-const CACHE = 'lia-field-v47';
+const CACHE = 'lia-field-v48';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './js/tag-link.js',
   './js/device-cache.js',
   './js/tag-stock.js',
+  './js/serial-pool.js',
   './js/storage.js',
   './js/sound.js',
   './js/parts-catalog.js',

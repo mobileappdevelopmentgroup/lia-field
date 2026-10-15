@@ -1166,7 +1166,7 @@
         <div class="mode-card" id="adv-fphist">
           <div class="mode-icon">🦺</div>
           <div class="mode-name">Fall Protection History</div>
-          <div class="mode-desc">Import past fall-protection inspections, so the phones know those items.</div>
+          <div class="mode-desc">Import past fall-protection inspections, so the phones know those items. Load spare numbers for untagged defective items.</div>
         </div>
       </div>
       <!-- The certificate site is public and is a link, not an install, so it
@@ -1780,6 +1780,26 @@
     <div class="card">
       <div class="card-ttl">Imported so far</div>
       <div id="fphist-batches" style="font-size:12.5px;color:var(--muted);">—</div>
+    </div>
+
+    <!-- Numbers tied to no tag (migration 36). A tech who finds a defective item
+         with no tag on it presses "Defective, no tag" and the phone uses the
+         next one, so no NFC tag is spent on something going in the bin. -->
+    <div class="card">
+      <div class="card-ttl">Spare numbers for untagged defective items</div>
+      <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.55;">
+        Assigned serial numbers that are not on any tag. Each phone keeps five of them, so it can number a
+        defective item with no tag even without signal — no two phones ever hold the same number.
+        Paste the column from the spreadsheet, one number per line. Numbers already loaded are skipped;
+        a number already on an item is marked used.
+      </p>
+      <div id="fppool-summary" style="font-size:12.5px;margin-bottom:10px;">—</div>
+      <textarea id="fppool-paste" rows="5" placeholder="BAT-1001&#10;BAT-1002&#10;…"
+                style="width:100%;font-family:var(--mono, monospace);font-size:12.5px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);"></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn-p" id="btn-fppool-add">Load Numbers</button>
+        <span id="fppool-msg" style="font-size:12.5px;color:var(--muted);"></span>
+      </div>
     </div>
   </div>
 </div>
@@ -5025,6 +5045,7 @@ $('home-advanced').addEventListener('click', () => showScreen('advanced'));
 $('btn-adv-home').addEventListener('click',  () => showScreen('home'));
 $('adv-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('adv-fphist').addEventListener('click',  () => requireAuth('fphist'));
+$('btn-fppool-add').addEventListener('click', fpPoolAdd);
 $('adv-views').addEventListener('click',   () => requireAuth('views'));
 $('home-team').addEventListener('click', () => requireAuth('team'));
 // No sign-in needed to read how the thing works.
@@ -5728,6 +5749,45 @@ function fpHistReset() {
     : `Importing into <strong>${esc(name)}</strong>. Only phones signed in to this account will know these items — ` +
       `to import a subcontractor's history, act as them first from the home screen.`;
   fpHistLoadBatches();
+  fpPoolLoad();
+}
+
+// ── Spare numbers (36) ───────────────────────────────────────────────────────
+// Pasted straight from the spreadsheet: a column copied out of Excel or Sheets
+// arrives one per line. A header cell ("Serial #") is dropped — a real number
+// has a digit in it.
+function fpPoolParse(text) {
+  return String(text || '').split(/[\r\n\t,;]+/).map(s => s.trim()).filter(s => s && /\d/.test(s));
+}
+
+async function fpPoolLoad() {
+  const box = $('fppool-summary');
+  const res = await window.api.fpPoolSummary();
+  if (!res.ok) { box.textContent = res.error; return; }
+  const s = res.summary;
+  if (!s.free && !s.reserved && !s.used) { box.textContent = 'No numbers loaded for this account yet.'; return; }
+  box.innerHTML =
+    `<strong>${s.free}</strong> free · <strong>${s.reserved}</strong> held by phones · <strong>${s.used}</strong> used` +
+    (s.next ? ` · next: <strong>${esc(s.next)}</strong>` : '') +
+    (s.free + s.reserved < 10 ? ` <span style="color:var(--warn);">— running low, load more</span>` : '') +
+    (s.holders || []).map(h => `<div style="color:var(--muted);margin-top:4px;">${esc(h.name)}: ${esc(h.serials)}</div>`).join('');
+}
+
+async function fpPoolAdd() {
+  const serials = fpPoolParse($('fppool-paste').value);
+  const msg = $('fppool-msg');
+  if (!serials.length) { msg.textContent = 'Paste some numbers first.'; return; }
+  $('btn-fppool-add').disabled = true;
+  msg.textContent = `Loading ${serials.length}…`;
+  const res = await window.api.fpPoolAdd(serials);
+  $('btn-fppool-add').disabled = false;
+  if (!res.ok) { msg.textContent = res.error; return; }
+  const r = res.result;
+  msg.textContent = `${r.added} added` +
+    (r.already_listed ? ` · ${r.already_listed} already loaded` : '') +
+    (r.already_on_an_item ? ` · ${r.already_on_an_item} already on an item (marked used)` : '');
+  $('fppool-paste').value = '';
+  fpPoolLoad();
 }
 
 async function fpHistLoadBatches() {

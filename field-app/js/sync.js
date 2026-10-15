@@ -91,6 +91,8 @@
     // So is the list of blank tags: one company's tags must not be recognised
     // as "ours" by whoever signs in next.
     if (root.LiaTagStock) root.LiaTagStock.clear();
+    // Numbers reserved to this user are not the next sign-in's.
+    if (root.LiaSerialPool) root.LiaSerialPool.clear();
     // And the trucks: one company's vans are not the next sign-in's.
     if (root.LiaTruck) root.LiaTruck.clear();
     return client().then(function (sb) {
@@ -130,6 +132,10 @@
         // The account's blank tags, so a tap on one is recognised as ours
         // rather than as somebody else's link. Never fatal, like the parts.
         return root.LiaTagStock ? root.LiaTagStock.pull(sb) : false;
+      }).then(function () {
+        // Numbers for defective items with no tag (36), reserved to this phone
+        // so it can hand them out offline. Never fatal.
+        return root.LiaSerialPool ? root.LiaSerialPool.pull(sb) : false;
       }).then(function () {
         // The trucks this tech is on (34). Never fatal either.
         return root.LiaTruck ? root.LiaTruck.pull(sb) : false;

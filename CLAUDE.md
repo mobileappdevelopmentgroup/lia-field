@@ -32,6 +32,15 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**35 was applied 2026-10-14** — fall-protection history import (see
+*Importing fall-protection history*). Verified from outside with the
+publishable key: `import_fp_history`, `undo_fp_history_import` and
+`fp_history_imports` answer 401 `42501`, `fp_inspections` refuses anon, and the
+public certificate view still serves.
+**36 is written, rehearsed and NOT yet applied** — spare numbers for untagged
+defective items (see *Numbers for defective items with no tag*). Paste
+`supabase/dist/apply-36.sql` from `./supabase/test/run-apply-36.sh`.
+
 **34 was applied 2026-10-11** — vehicle inventory (see *Vehicle inventory*
 below). Verified from outside with the publishable key: `my_vehicles`,
 `stock_overview` and 33's `account_part_sets_catalog` answer 401 `42501`, and
@@ -153,6 +162,8 @@ npm run schema:check       # Fail if that snapshot is stale
                                      # supabase/dist/apply-34.sql
 ./supabase/test/run-apply-35.sh      # Same for 35 (FP history import) →
                                      # supabase/dist/apply-35.sql
+./supabase/test/run-apply-36.sh      # Same for 36 (spare numbers) →
+                                     # supabase/dist/apply-36.sql
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -511,6 +522,28 @@ tapped or typed. Load-bearing:
 - Each import is a batch (`source = 'import:history:<batch>'`) with an Undo that
   refuses once a record has been corrected or billed, and cannot reach Nate's
   2026-09-28 sheet import (a different prefix).
+
+### Numbers for defective items with no tag
+
+`supabase/migrations/36_fp_serial_pool.sql`, `field-app/js/serial-pool.js`, the
+*Spare numbers* card on Lia Office's Fall Protection History screen. Field
+report 2026-10-14: a defective item with no tag needs a number, and spending an
+NFC tag on something going in the bin wastes it. The office pastes the
+company's list of assigned numbers tied to no tag; the phone's **Defective, no
+tag** button opens a new item under the next one, as its serial (no tag label,
+no link). Load-bearing:
+
+- **"Next" is decided ahead of time, not at the tap.** A phone reserves five
+  while it has signal (`reserve_fp_serials`, with every catalogue sync) and
+  spends them offline. A reserved number is never given to anyone else, so two
+  phones in the same plant room cannot both use it. A removed crew member's
+  reservations go back on the next reserve.
+- **Used is derived**: a trigger on `assets` marks a number used when any write
+  path gives an item that serial. The phone marks it spent locally the moment
+  something is recorded under it (`fpCommit`) and keeps it spent until the
+  server stops returning it.
+- Backing out of the item spends nothing. The button is hidden for an account
+  with no numbers loaded.
 
 ### Consolidating accounts
 

@@ -165,6 +165,8 @@ contextBridge.exposeInMainWorld('api', {
   fpHistoryImport:      (payload)    => ipcRenderer.invoke('fphist:import', payload),
   fpHistoryList:        ()           => ipcRenderer.invoke('fphist:list'),
   fpHistoryUndo:        (batch)      => ipcRenderer.invoke('fphist:undo', batch),
+  fpPoolSummary:        ()           => ipcRenderer.invoke('fppool:summary'),
+  fpPoolAdd:            (serials)    => ipcRenderer.invoke('fppool:add', serials),
 
   // ── Work History ─────────────────────────────────────────────────────────
   loadHistory: () => ipcRenderer.invoke('history:load'),

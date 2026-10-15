@@ -72,12 +72,66 @@ function renderLadderList() {
     card.querySelector('.lc-dup').addEventListener('click',  e => { e.stopPropagation(); duplicateLadder(idx); });
     card.querySelector('.lc-del').addEventListener('click',  e => {
       e.stopPropagation();
-      _job.ladders.splice(idx, 1);
-      renderLadderList();
-      scheduleSave();
+      deleteLadder(idx);
     });
     container.appendChild(card);
   });
+}
+
+// ── Deleting a ladder ───────────────────────────────────────────────────────
+// Splicing the list was all Delete did, so a ladder still in the upload queue
+// went up anyway and turned up in the office after the tech had removed it.
+// Same rules as a fall-protection line (fpDeleteItem):
+//  - not uploaded: out of the list and out of the queue;
+//  - uploaded, with another copy of the same ladder that day on this job: the
+//    server holds one current record per ladder per day, so the copy goes. The
+//    kept one is sent again only if the deleted copy landed last and differs;
+//  - uploaded and the only copy: it stays. Withdrawing a live record is the
+//    office's call (Lia Office → Field Work), not something a phone does.
+function ladderDay(l) {
+  const d = new Date(l.capturedAt || Date.now());
+  return isNaN(d) ? '' : d.toLocaleDateString('en-CA');
+}
+function ladderSerialKey(s) {
+  return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function ladderSameRecord(a, b) {
+  const strip = l => { const p = ladderPayload(l); delete p.captured_at; return JSON.stringify(p); };
+  return strip(a) === strip(b);
+}
+
+function deleteLadder(idx) {
+  const ladders = _job.ladders || [];
+  const l = ladders[idx];
+  if (!l) return 'missing';
+  const S = window.LiaSyncState;
+  const sync = window.LiaSync;
+  const state = S ? S.stateOf(l.id) : 'local';
+
+  if (state === 'uploaded') {
+    const key = ladderSerialKey(l.serialNum), day = ladderDay(l);
+    const twin = ladders.find(o => o.id !== l.id &&
+      ladderSerialKey(o.serialNum) === key && ladderDay(o) === day);
+    if (!twin) {
+      setSaveStatus(`${l.serialNum} is already on the server — ask the office to delete it in Lia Office (Field Work).`);
+      return 'uploaded';
+    }
+    const twinAt = S.sentAt(twin.id), goneAt = S.sentAt(l.id);
+    if (twinAt && goneAt && goneAt > twinAt && !ladderSameRecord(l, twin) && sync) {
+      S.markUnsent(twin.id);
+      sync.enqueue({ clientId: twin.id, kind: 'ladder', payload: ladderPayload(twin) });
+    }
+  } else if (sync && sync.dequeue) {
+    sync.dequeue(l.id);
+  }
+
+  ladders.splice(idx, 1);
+  // The form may be editing a ladder by its position in this list.
+  if (idx === _editingIdx) cancelEdit();
+  else if (idx < _editingIdx) _editingIdx--;
+  renderLadderList();
+  scheduleSave();
+  return state === 'uploaded' ? 'duplicate' : 'removed';
 }
 
 // A record landing is the one event a tech is waiting on, so the screen shows

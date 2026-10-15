@@ -80,6 +80,9 @@ function fpRenderAll() {
 
   const inp = $('fp-input-panel');
   if (inp) inp.style.display = batch ? 'none' : '';
+  // Only for a company that has loaded a list of spare numbers.
+  const ut = $('fp-btn-untagged');
+  if (ut) ut.style.display = window.LiaSerialPool && window.LiaSerialPool.hasAny() ? '' : 'none';
   const bp = $('fp-batch-panel');
   if (bp) bp.style.display = batch ? '' : 'none';
 
@@ -562,6 +565,26 @@ function fpStartFromStock(blank, tag) {
   fpRenderAll();
 }
 
+// ── Defective, and no tag on it ─────────────────────────────────────────────
+// The item takes the next number from the company's list of numbers tied to no
+// tag (serial-pool.js, migration 36) as its serial. Nothing is spent until it
+// is recorded: backing out leaves the number for the next one.
+function fpStartUntagged() {
+  _fpVia = null;
+  const pool = window.LiaSerialPool;
+  const n = pool && pool.next();
+  if (!n) {
+    const had = pool && pool.fetchedAt();
+    fpHint(had
+      ? 'This phone has used all its spare numbers. Connect to the internet to get more, or type a number from the list with New.'
+      : 'No spare numbers on this phone yet. Connect to the internet to get some — the office loads the list in Lia Office.', true);
+    return;
+  }
+  fpBlank(n);
+  fpHint(`Using ${n} from your list of spare numbers. Write it on the item — it gets no tag.`);
+  fpRenderAll();
+}
+
 // Is this link somebody else's? A certificate link is ours: it carries a
 // public_ref, resolves through the catalogue, and points at a page of our own —
 // so there is nothing to fetch and no decision to put to the tech. One that
@@ -1027,6 +1050,9 @@ function fpCommit(item) {
     item.id = pid;
   }
   _job.items.unshift(item);
+  // A number from the company's list is spent once something is recorded
+  // under it, whichever way it was entered.
+  if (window.LiaSerialPool) window.LiaSerialPool.markUsed(item.serial_num);
   // saveNow, not scheduleSave: a completed inspection — checks, and possibly a
   // photo — is not a keystroke. The 800 ms debounce is right for typing and
   // wrong here; backgrounding the app inside that window would lose the record.
@@ -1632,6 +1658,9 @@ function fpReadNext() {
 
   const nw = $('fp-btn-new');
   if (nw) nw.addEventListener('click', () => { _fpVia = null; fpHint(''); fpBlank(''); });
+
+  const ut = $('fp-btn-untagged');
+  if (ut) ut.addEventListener('click', fpStartUntagged);
 
   const save = $('fp-btn-save');
   if (save) save.addEventListener('click', fpSave);

@@ -1165,6 +1165,9 @@
     <!-- Tap is a pass. This reads a tag and shows what it is without recording
          anything; Inspect it from there if wanted. -->
     <button class="fp-view-btn" id="fp-btn-view" style="display:none;">View a tag — no inspection</button>
+    <!-- Defective, and no tag on it: record it under the next number from the
+         company's list rather than spending a tag on it (serial-pool.js). -->
+    <button class="fp-view-btn" id="fp-btn-untagged" style="display:none;">Defective, no tag — use the next number</button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
              autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
@@ -1567,6 +1570,7 @@
 <script src="./js/tag-link.js"></script>
 <script src="./js/device-cache.js"></script>
 <script src="./js/tag-stock.js"></script>
+<script src="./js/serial-pool.js"></script>
 <script src="./js/storage.js"></script>
 <script src="./js/sound.js"></script>
 <script src="./js/parts-catalog.js"></script>

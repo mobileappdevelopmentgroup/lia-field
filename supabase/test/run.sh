@@ -178,6 +178,11 @@ echo "Running fall protection history import assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/29_fp_history_import_test.sql"
 
+echo
+echo "Running untagged serial pool assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/30_fp_serial_pool_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

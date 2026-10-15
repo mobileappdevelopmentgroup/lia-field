@@ -49,6 +49,8 @@ p.on('dialog', d => d.dismiss());
 await p.addInitScript(([withResult, noResult]) => {
   window.__imports = [];
   window.__file = 'with-result';
+  window.__pool = { free: 0, reserved: 0, used: 0, next: null, holders: [] };
+  window.__poolAdds = [];
   const parsed = { 'with-result': withResult, 'no-result': noResult };
   window.api = {
     isSupabaseConfigured: async () => true,
@@ -62,6 +64,10 @@ await p.addInitScript(([withResult, noResult]) => {
     fpHistoryParse: async () => parsed[window.__file],
     fpHistoryList: async () => ({ ok: true, batches: window.__imports.length
       ? [{ batch: window.__imports[0].batch, records: window.__imports[0].rows.length, first_date: '2025-03-12', last_date: '2025-03-12' }] : [] }),
+    fpPoolSummary: async () => ({ ok: true, summary: window.__pool }),
+    fpPoolAdd: async (serials) => { window.__poolAdds.push(serials);
+      window.__pool = { free: serials.length, reserved: 0, used: 0, next: serials[0], holders: [] };
+      return { ok: true, result: { added: serials.length, already_listed: 0, already_on_an_item: 0 } }; },
     fpHistoryImport: async (payload) => { window.__imports.push(payload);
       return { ok: true, batch: payload.batch, imported: payload.rows.length, skipped: [], errors: [] }; },
   };
@@ -109,6 +115,15 @@ ok('and nothing is sent until it does', await p.evaluate(() => window.__imports.
 await p.check('#fphist-all-passed');
 await p.click('#btn-fphist-import'); await p.waitForTimeout(300);
 ok('once ticked, the rows go up as passed', await p.evaluate(() => window.__imports[1].rows.map(r => r.result)), ['pass']);
+
+// Spare numbers for untagged defective items (36).
+ok('no numbers yet says so', await p.$eval('#fppool-summary', e => e.textContent), 'No numbers loaded for this account yet.');
+await p.fill('#fppool-paste', 'Serial #\nBAT-1001\nBAT-1002\n\nBAT-1003\t\n');
+await p.click('#btn-fppool-add'); await p.waitForTimeout(300);
+ok('a pasted column goes up without its header or blanks', await p.evaluate(() => window.__poolAdds[0]), ['BAT-1001', 'BAT-1002', 'BAT-1003']);
+ok('and the result is reported', await p.$eval('#fppool-msg', e => e.textContent), '3 added');
+ok('the summary shows what is free and the next number',
+   await p.$eval('#fppool-summary', e => /3 free/.test(e.textContent) && /next: BAT-1001/.test(e.textContent) && /running low/.test(e.textContent)), true);
 
 console.log('\npage errors:', errs.length ? errs : 'none');
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');

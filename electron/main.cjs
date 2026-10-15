@@ -1604,6 +1604,28 @@ ipcMain.handle('fphist:list', async () => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// Spare numbers for untagged defective items (36). Lead-gated in the database.
+ipcMain.handle('fppool:summary', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('fp_serial_pool_summary');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, summary: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('fppool:add', async (_event, serials) => {
+  try {
+    if (!Array.isArray(serials) || !serials.length) return { ok: false, error: 'Nothing to load.' };
+    if (serials.length > 5000) return { ok: false, error: 'At most 5000 numbers at a time.' };
+    const clean = serials.map(s => String(s).trim().slice(0, 64)).filter(Boolean);
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('add_fp_serial_pool', { p: { serials: clean, source: 'Lia Office' } });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
 ipcMain.handle('fphist:undo', async (_event, batch) => {
   try {
     const sb = await getSupabase();

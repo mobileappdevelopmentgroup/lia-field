@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 35
+-- Migrations included: 36
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -390,6 +390,56 @@ BEGIN
   VALUES (v_user, v_account, 'tech', false, NULL, v_caller);
 
   RETURN v_account;
+END;
+$$;
+
+
+--
+-- Name: add_fp_serial_pool(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_fp_serial_pool(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_source  text := left(nullif(trim(coalesce(p->>'source', '')), ''), 200);
+  v_raw     text;
+  v_serial  text;
+  v_key     text;
+  v_asset   uuid;
+  v_added   integer := 0;
+  v_dup     integer := 0;
+  v_on_item integer := 0;
+  v_seen    text[] := '{}';
+BEGIN
+  IF jsonb_typeof(p->'serials') <> 'array' THEN RAISE EXCEPTION 'serials must be a list'; END IF;
+  IF jsonb_array_length(p->'serials') > 5000 THEN
+    RAISE EXCEPTION 'At most 5000 numbers at a time';
+  END IF;
+
+  FOR v_raw IN SELECT jsonb_array_elements_text(p->'serials') LOOP
+    v_serial := left(trim(v_raw), 64);
+    v_key := public.serial_key(v_serial);
+    CONTINUE WHEN coalesce(v_key, '') = '';
+    IF v_key = ANY (v_seen) OR EXISTS (SELECT 1 FROM public.fp_serial_pool
+                                        WHERE account_id = v_account AND serial_key = v_key) THEN
+      v_dup := v_dup + 1;
+      CONTINUE;
+    END IF;
+    v_seen := v_seen || v_key;
+
+    SELECT id INTO v_asset FROM public.assets
+     WHERE account_id = v_account AND kind = 'fall_protection' AND serial_key = v_key LIMIT 1;
+    INSERT INTO public.fp_serial_pool (account_id, serial, source, asset_id, used_at)
+    VALUES (v_account, v_serial, coalesce(v_source, 'office'), v_asset,
+            CASE WHEN v_asset IS NOT NULL THEN now() END);
+    IF v_asset IS NOT NULL THEN v_on_item := v_on_item + 1; ELSE v_added := v_added + 1; END IF;
+    v_asset := NULL;
+  END LOOP;
+
+  RETURN json_build_object('added', v_added, 'already_listed', v_dup, 'already_on_an_item', v_on_item);
 END;
 $$;
 
@@ -1023,6 +1073,7 @@ BEGIN
   UPDATE public.fp_record_audit   t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
   UPDATE public.fp_tag_links      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
   UPDATE public.fp_tag_stock      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_serial_pool    t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;  -- 36
   UPDATE public.fp_tag_writes     t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
 
   WITH r AS (
@@ -1137,6 +1188,7 @@ BEGIN
   UPDATE public.fp_external_records SET account_id = v_keep WHERE account_id <> v_keep;
 
   UPDATE public.fp_tag_stock      SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.fp_serial_pool    SET account_id = v_keep WHERE account_id <> v_keep;  -- 36
   UPDATE public.fp_tag_writes     SET account_id = v_keep WHERE account_id <> v_keep;
   UPDATE public.fp_record_audit   SET account_id = v_keep WHERE account_id <> v_keep;
   UPDATE public.inspection_audit  SET account_id = v_keep WHERE account_id <> v_keep;
@@ -2824,6 +2876,62 @@ BEGIN
     END IF;
   END LOOP;
   RETURN v_n;
+END;
+$$;
+
+
+--
+-- Name: fp_serial_pool_order(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_order(p_key text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT lpad(length(coalesce(p_key, ''))::text, 4, '0') || coalesce(p_key, '') $$;
+
+
+--
+-- Name: fp_serial_pool_summary(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_summary() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.require_lead_account();
+BEGIN
+  RETURN json_build_object(
+    'free',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NULL),
+    'reserved', (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NOT NULL),
+    'used',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NOT NULL),
+    'next',     (SELECT serial FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NULL
+                  ORDER BY public.fp_serial_pool_order(serial_key) LIMIT 1),
+    'holders',  coalesce((SELECT json_agg(h ORDER BY h.name) FROM (
+                  SELECT coalesce(nullif(u.name, ''), u.email, 'Unknown') AS name, count(*) AS numbers,
+                         string_agg(p.serial, ', ' ORDER BY public.fp_serial_pool_order(p.serial_key)) AS serials
+                    FROM public.fp_serial_pool p LEFT JOIN public.users u ON u.id = p.reserved_by
+                   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.reserved_by IS NOT NULL
+                   GROUP BY 1) h), '[]'::json)
+  );
+END;
+$$;
+
+
+--
+-- Name: fp_serial_pool_use(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_use() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.kind <> 'fall_protection' OR coalesce(NEW.serial_key, '') = '' THEN RETURN NEW; END IF;
+  UPDATE public.fp_serial_pool p
+     SET asset_id = NEW.id, used_at = coalesce(p.used_at, now())
+   WHERE p.account_id = NEW.account_id
+     AND p.serial_key = NEW.serial_key
+     AND p.asset_id IS DISTINCT FROM NEW.id;
+  RETURN NEW;
 END;
 $$;
 
@@ -4982,6 +5090,50 @@ $$;
 
 
 --
+-- Name: reserve_fp_serials(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reserve_fp_serials(p_count integer DEFAULT 5) RETURNS TABLE(serial text, reserved_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_uid     uuid := auth.uid();
+  v_account uuid;
+  v_want    integer := greatest(1, least(coalesce(p_count, 5), 20));
+  v_have    integer;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  v_account := public.my_account_id();
+  IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
+
+  UPDATE public.fp_serial_pool p SET reserved_by = NULL, reserved_at = NULL
+   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.reserved_by IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.account_members m
+                      WHERE m.user_id = p.reserved_by AND m.account_id = v_account AND m.removed_at IS NULL);
+
+  SELECT count(*) INTO v_have FROM public.fp_serial_pool p
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL;
+
+  IF v_have < v_want THEN
+    UPDATE public.fp_serial_pool p SET reserved_by = v_uid, reserved_at = now()
+     WHERE p.id IN (
+       SELECT f.id FROM public.fp_serial_pool f
+        WHERE f.account_id = v_account AND f.asset_id IS NULL AND f.reserved_by IS NULL
+        ORDER BY public.fp_serial_pool_order(f.serial_key)
+        LIMIT v_want - v_have
+        FOR UPDATE SKIP LOCKED);
+  END IF;
+
+  RETURN QUERY
+  SELECT p.serial, p.reserved_at FROM public.fp_serial_pool p
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL
+   ORDER BY public.fp_serial_pool_order(p.serial_key);
+END;
+$$;
+
+
+--
 -- Name: restore_crew_member(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6881,6 +7033,24 @@ CREATE TABLE public.fp_record_audit (
 
 
 --
+-- Name: fp_serial_pool; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fp_serial_pool (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    serial text NOT NULL,
+    serial_key text GENERATED ALWAYS AS (public.serial_key(serial)) STORED,
+    reserved_by uuid,
+    reserved_at timestamp with time zone,
+    asset_id uuid,
+    used_at timestamp with time zone,
+    source text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: fp_tag_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7523,6 +7693,14 @@ ALTER TABLE ONLY public.fp_record_audit
 
 
 --
+-- Name: fp_serial_pool fp_serial_pool_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fp_tag_links fp_tag_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7976,6 +8154,20 @@ CREATE INDEX fp_record_audit_asset_idx ON public.fp_record_audit USING btree (as
 
 
 --
+-- Name: fp_serial_pool_free_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_serial_pool_free_idx ON public.fp_serial_pool USING btree (account_id, serial_key) WHERE (asset_id IS NULL);
+
+
+--
+-- Name: fp_serial_pool_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_serial_pool_key_idx ON public.fp_serial_pool USING btree (account_id, serial_key);
+
+
+--
 -- Name: fp_tag_links_account_url_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8305,6 +8497,13 @@ CREATE TRIGGER fp_inspections_touch_asset AFTER INSERT OR UPDATE ON public.fp_in
 
 
 --
+-- Name: assets fp_serial_pool_use_t; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fp_serial_pool_use_t AFTER INSERT OR UPDATE OF serial_key ON public.assets FOR EACH ROW EXECUTE FUNCTION public.fp_serial_pool_use();
+
+
+--
 -- Name: assets fp_tag_stock_assign_t; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8609,6 +8808,30 @@ ALTER TABLE ONLY public.fp_record_audit
 
 ALTER TABLE ONLY public.fp_record_audit
     ADD CONSTRAINT fp_record_audit_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_reserved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_reserved_by_fkey FOREIGN KEY (reserved_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -9197,6 +9420,19 @@ CREATE POLICY fp_record_audit_read ON public.fp_record_audit FOR SELECT TO authe
 
 
 --
+-- Name: fp_serial_pool; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fp_serial_pool ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fp_serial_pool fp_serial_pool_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY fp_serial_pool_read ON public.fp_serial_pool FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
 -- Name: fp_tag_links; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9602,6 +9838,14 @@ GRANT ALL ON FUNCTION public.add_crew_member(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION add_fp_serial_pool(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION add_subcontractor(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -9833,6 +10077,21 @@ GRANT ALL ON FUNCTION public.fp_records(p_search text, p_status text, p_limit in
 --
 
 REVOKE ALL ON FUNCTION public.fp_seed_standard_types() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION fp_serial_pool_summary(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_serial_pool_summary() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.fp_serial_pool_summary() TO authenticated;
+
+
+--
+-- Name: FUNCTION fp_serial_pool_use(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_serial_pool_use() FROM PUBLIC;
 
 
 --
@@ -10104,6 +10363,14 @@ GRANT ALL ON FUNCTION public.require_lead() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.require_lead_account() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.require_lead_account() TO authenticated;
+
+
+--
+-- Name: FUNCTION reserve_fp_serials(p_count integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.reserve_fp_serials(p_count integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.reserve_fp_serials(p_count integer) TO authenticated;
 
 
 --
@@ -10515,6 +10782,13 @@ GRANT SELECT ON TABLE public.fp_models TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.fp_record_audit TO authenticated;
+
+
+--
+-- Name: TABLE fp_serial_pool; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fp_serial_pool TO authenticated;
 
 
 --
