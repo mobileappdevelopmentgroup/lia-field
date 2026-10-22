@@ -201,7 +201,7 @@ await p.waitForTimeout(200);
 ok('signed in with no work order, the ladder is not taken',
    await p.evaluate((n) => (_job.ladders || []).length - n, before), 0);
 ok('and the screen says what is needed',
-   await p.$eval('#save-status', e => /work order number first/i.test(e.textContent)), true);
+   await p.$eval('#entry-notice', e => /work order # at the top first/i.test(e.textContent)), true);
 
 await p.fill('#job-wo', 'WO-9');
 await p.evaluate(() => { document.getElementById('job-wo').dispatchEvent(new Event('input')); saveNow(); });

@@ -44,7 +44,7 @@ await p.evaluate(()=>{ window.LiaSync._writeQueue ? window.LiaSync._writeQueue([
 await p.evaluate(()=>{ _job.ladders[1].serialNum = 'C300'; renderLadderList(); });
 ok('an uploaded one-off is not deleted from the phone', await p.evaluate(()=>deleteLadder(1)), 'uploaded');
 ok('it is still listed', await p.evaluate(()=>_job.ladders.length), 2);
-ok('and the tech is told the office deletes it', await p.$eval('#save-status', e=>/Lia Office/.test(e.textContent)), true);
+ok('and the tech is told the office deletes it', await p.$eval('#entry-notice', e=>/Lia Office/.test(e.textContent)), true);
 
 // Uploaded duplicate: goes. Identical copies send nothing again.
 await p.evaluate(()=>{ _job.ladders[1].serialNum = 'B200'; });

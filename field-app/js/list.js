@@ -113,7 +113,7 @@ function deleteLadder(idx) {
     const twin = ladders.find(o => o.id !== l.id &&
       ladderSerialKey(o.serialNum) === key && ladderDay(o) === day);
     if (!twin) {
-      setSaveStatus(`${l.serialNum} is already on the server — ask the office to delete it in Lia Office (Field Work).`);
+      showEntryNotice(`${l.serialNum} is already on the server — ask the office to delete it in Lia Office (Field Work).`);
       return 'uploaded';
     }
     const twinAt = S.sentAt(twin.id), goneAt = S.sentAt(l.id);

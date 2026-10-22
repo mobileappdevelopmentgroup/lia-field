@@ -150,13 +150,21 @@
                      padding: 0 12px; padding-top: var(--safe-t);
                      height: calc(50px + var(--safe-t));
                      display: flex; align-items: center; gap: 8px; }
-    #detail-name-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    /* The name and work order must always be on screen. Nothing beside them may
+       squeeze them out — a long status did, on every phone, on 2026-10-22. */
+    #detail-name-wrap { flex: 1; min-width: 96px; display: flex; flex-direction: column; gap: 1px; }
     input.topbar-input { background: transparent; border: none; color: var(--text); font-family: var(--font);
                          font-size: 16px; font-weight: 700; padding: 0; width: 100%; outline: none; }
     input.topbar-input::placeholder { color: var(--muted); font-weight: 400; }
     input.topbar-input.wo { font-size: 16px; font-weight: 400; color: var(--muted); }
-    .save-status { font-size: 10px; color: var(--muted); flex-shrink: 0; min-width: 32px; text-align: right; }
+    /* "Saving…" / "Saved" only. A sentence goes in #entry-notice. */
+    .save-status { font-size: 10px; color: var(--muted); flex: 0 1 auto; min-width: 32px; max-width: 25%;
+                   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: right; }
     .save-status.saved { color: var(--ok); }
+    input.topbar-input.wo.missing { outline: 2px solid var(--err); outline-offset: 1px; border-radius: 4px; }
+    input.topbar-input.wo.missing::placeholder { color: var(--err); }
+    #entry-notice { flex-shrink: 0; padding: 8px 12px; font-size: 14px; line-height: 1.35;
+                    background: var(--err); color: #fff; font-weight: 600; }
 
     /* ── Form panel — natural height, no cap ── */
     #form-panel { flex-shrink: 0;
@@ -1055,6 +1063,9 @@
     <button class="btn-icon help-btn" id="btn-help-detail" title="Help">?<span class="help-dot" id="help-dot-detail" style="display:none;"></span></button>
     <button class="btn-icon" id="btn-settings" title="Custom fields">⚙</button>
   </div>
+  <!-- Why the last tap did nothing. Full width and under the top bar, right
+       beside the work order box it usually means. -->
+  <div id="entry-notice" role="alert" style="display:none;"></div>
 
   <!-- PANEL 1: Form (≤25dvh) -->
   <div id="form-panel">

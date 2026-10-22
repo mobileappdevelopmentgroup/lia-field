@@ -28,7 +28,9 @@ function openJob(id) {
   const assigned = !!_job.assignedId;
   $('job-wo').readOnly = assigned;
   $('job-wo').title = assigned ? 'Set by your lead for this job' : '';
+  $('job-wo').classList.remove('missing');
   setSaveStatus('');
+  showEntryNotice('');
   // The favourite set this job was last worked with — a job is a site.
   if (_job.partSet) setActivePartSet(_job.partSet);
   clearFormAll();
@@ -82,8 +84,24 @@ function setSaveStatus(text) {
   el.className   = 'save-status' + (text === 'saved' ? ' saved' : '');
 }
 
+// ── Saying why a tap did nothing ────────────────────────────────────────────
+// The save status is a ten-pixel slot in the top bar, for "Saved". Sentences
+// went there too, and at phone width one pushed the job name and work order
+// box clean off the screen: a refused ladder put the cursor in a box nobody
+// could see, raised the keyboard, and said nothing. Every phone, 2026-10-22.
+// A sentence goes here instead — full width, under the top bar.
+function showEntryNotice(text) {
+  const el = $('entry-notice');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+}
+
 $('job-name').addEventListener('input', scheduleSave);
-$('job-wo').addEventListener('input',   scheduleSave);
+$('job-wo').addEventListener('input', () => {
+  if ($('job-wo').value.trim()) { $('job-wo').classList.remove('missing'); showEntryNotice(''); }
+  scheduleSave();
+});
 
 // ── Form clear ────────────────────────────────────────────────────────────────
 // keepParts: Add & Duplicate carries the parts to the next ladder. The four
@@ -894,13 +912,14 @@ function needsWorkOrder() {
   return !!(st && st.syncingNow && st.syncingNow());
 }
 
+// The outline stays until a number is typed: the input has no border, so the
+// two-second border flash this replaced never showed at all.
 function demandWorkOrder() {
   const el = $('job-wo');
   if (!el) return;
+  el.classList.add('missing');
+  showEntryNotice('Enter the Work Order # at the top first — your ladders upload to the company and need one.');
   el.focus();
-  el.style.borderColor = 'var(--err)';
-  setTimeout(() => { el.style.borderColor = ''; }, 2000);
-  setSaveStatus('Enter the work order number first — signed in, your work uploads to the company and needs one to be placed.');
 }
 
 // opts.focus: false when the camera opens next (see btn-add-next).
@@ -908,6 +927,10 @@ function demandWorkOrder() {
 function addLadder(opts) {
   const o = opts || {};
   const serial = $('fi-serial').value.trim();
+  // The box, not the last autosave. saveNow runs 800ms after typing stops, so
+  // a tech who typed the number and tapped Add was refused for a number he
+  // could see.
+  if (_job && !_job.assignedId && $('job-wo').value.trim() !== (_job.workOrderNum || '')) saveNow();
   if (needsWorkOrder()) { demandWorkOrder(); return false; }
   if (!serial) {
     const el = $('fi-serial');
@@ -915,6 +938,7 @@ function addLadder(opts) {
     setTimeout(() => { el.style.borderColor = ''; }, 1200);
     return false;
   }
+  showEntryNotice('');
   if (!_job.ladders) _job.ladders = [];
   const added = buildLadderFromForm();
   added.capturedAt = new Date().toISOString();
