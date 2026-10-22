@@ -173,11 +173,12 @@ ok('which the server was told about',
 ok('no page errors', errs, []);
 await p.close(); await ctx.close();
 
-// ── Signed in, a work order is asked for before the first ladder ───────────
-// Optional on a phone that only logs locally — the CSV carries everything and
-// the tech knows which job it was. Signed in, the record reaches the company's
-// account the moment it is captured, and one with no work order is work nobody
-// can place later.
+// ── Signed in, a missing work order is asked for — never demanded ───────────
+// Signed in, the record reaches the company's account the moment it is
+// captured, and one with no work order is work the office cannot place. Until
+// 1.15.5 that refused the ladder, and on 2026-10-22 it stopped every crew at
+// once. The ladder is taken; the screen says what is missing; typing it
+// re-sends the job's ladders with it attached.
 ({ p, ctx, errs } = await open(null));
 // A job will not open until the catalogue has come down once — that gate is
 // tested in boot.test.mjs; here it just has to be satisfied.
@@ -198,19 +199,31 @@ const before = await p.evaluate(() => (_job.ladders || []).length);
 await p.fill('#fi-serial', 'WO-TEST-1');
 await p.click('#btn-add-ladder');
 await p.waitForTimeout(200);
-ok('signed in with no work order, the ladder is not taken',
-   await p.evaluate((n) => (_job.ladders || []).length - n, before), 0);
-ok('and the screen says what is needed',
-   await p.$eval('#entry-notice', e => /work order # at the top first/i.test(e.textContent)), true);
+ok('signed in with no work order, the ladder is still taken',
+   await p.evaluate((n) => (_job.ladders || []).length - n, before), 1);
+// The latest copy of a ladder, sent or still waiting.
+const latest = (sn) => p.evaluate((sn) => {
+  const sent = window.__calls.flatMap(c => Array.isArray(c.p) ? c.p : (c.p ? [c.p] : []));
+  const held = LiaSync._readQueue().map(e => e.payload);
+  return [...sent, ...held].filter(r => r && r.serial_num === sn).pop() || null;
+}, sn);
+ok('and goes up', !!(await latest('WO-TEST-1')), true);
+ok('and the screen says what is missing',
+   await p.$eval('#entry-notice', e => /no work order/i.test(e.textContent)), true);
 
 await p.fill('#job-wo', 'WO-9');
 await p.evaluate(() => { document.getElementById('job-wo').dispatchEvent(new Event('input')); saveNow(); });
+await p.waitForTimeout(300);
+ok('typing one re-sends that ladder with the work order attached',
+   (await latest('WO-TEST-1')).work_order_id, 'WO-9');
+await p.fill('#fi-serial', 'WO-TEST-2');
 await p.click('#btn-add-ladder');
 await p.waitForTimeout(300);
-ok('with one, it is taken',
-   await p.evaluate((n) => (_job.ladders || []).length - n, before), 1);
-ok('and queued with the work order attached',
-   await p.evaluate(() => LiaSync._readQueue().pop().payload.work_order_id), 'WO-9');
+ok('the next is taken',
+   await p.evaluate((n) => (_job.ladders || []).length - n, before), 2);
+ok('and goes up with the work order attached', (await latest('WO-TEST-2')).work_order_id, 'WO-9');
+ok('and the screen no longer asks',
+   await p.$eval('#entry-notice', e => getComputedStyle(e).display), 'none');
 ok('no page errors', errs, []);
 await p.close(); await ctx.close();
 

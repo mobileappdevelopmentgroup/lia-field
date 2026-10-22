@@ -31,6 +31,8 @@ function openJob(id) {
   $('job-wo').classList.remove('missing');
   setSaveStatus('');
   showEntryNotice('');
+  // A job reopened with ladders already on it and still no number says so.
+  if ((_job.ladders || []).length) flagMissingWorkOrder();
   // The favourite set this job was last worked with — a job is a site.
   if (_job.partSet) setActivePartSet(_job.partSet);
   clearFormAll();
@@ -527,8 +529,7 @@ function renderCustomFieldsForm() {
 // ── Add Ladder / Save Edits ───────────────────────────────────────────────────
 $('btn-add-ladder').addEventListener('click', () => { if (_editingIdx >= 0) saveEdits(); else addLadder(); });
 // Add, then straight back to the camera for the next ladder. If the add was
-// refused — no serial, no work order — the camera stays shut so the tech sees
-// why.
+// refused — no serial — the camera stays shut so the tech sees why.
 //
 // The add must not focus the serial field: that raises the keyboard in the
 // same tap that asks for the camera, and on a phone the two fight over the
@@ -901,10 +902,14 @@ function queueLadder(l) {
 }
 
 // A work order is optional on a phone that only logs locally — the CSV carries
-// everything and the tech knows which job it was. Once signed in it is
-// REQUIRED before the first ladder: the record goes to the company's account
-// the moment it is captured, and one without a work order is work nobody can
-// place afterwards. Better to ask for it now than to find it unattached later.
+// everything and the tech knows which job it was. Signed in, the record goes to
+// the company's account the moment it is captured, and one without a work
+// order is work the office cannot place.
+//
+// It is asked for, never demanded. Until 1.15.5 a missing work order refused
+// the ladder, and on 2026-10-22 that stopped every crew at once. The ladder is
+// taken; the red line stays until a number is typed, and typing one re-sends
+// the job's ladders with it attached (requeueJobLadders).
 function needsWorkOrder() {
   if (_job && _job.workOrderNum) return false;
   if (_job && _job.assignedId) return false;          // the lead set it
@@ -913,13 +918,13 @@ function needsWorkOrder() {
 }
 
 // The outline stays until a number is typed: the input has no border, so the
-// two-second border flash this replaced never showed at all.
-function demandWorkOrder() {
+// two-second border flash this replaced never showed at all. Not focused: the
+// ladder went in, and the next one starts at the serial.
+function flagMissingWorkOrder() {
   const el = $('job-wo');
-  if (!el) return;
+  if (!el || !needsWorkOrder()) return;
   el.classList.add('missing');
-  showEntryNotice('Enter the Work Order # at the top first — your ladders upload to the company and need one.');
-  el.focus();
+  showEntryNotice('No work order on this job — type it in Work Order # at the top so the office can match these ladders.');
 }
 
 // opts.focus: false when the camera opens next (see btn-add-next).
@@ -928,10 +933,8 @@ function addLadder(opts) {
   const o = opts || {};
   const serial = $('fi-serial').value.trim();
   // The box, not the last autosave. saveNow runs 800ms after typing stops, so
-  // a tech who typed the number and tapped Add was refused for a number he
-  // could see.
+  // a number typed and Add tapped at once would go up without it.
   if (_job && !_job.assignedId && $('job-wo').value.trim() !== (_job.workOrderNum || '')) saveNow();
-  if (needsWorkOrder()) { demandWorkOrder(); return false; }
   if (!serial) {
     const el = $('fi-serial');
     el.focus(); el.style.borderColor = 'var(--err)';
@@ -946,6 +949,7 @@ function addLadder(opts) {
   queueLadder(added);
   clearEntryForm(!!o.keepParts);
   renderLadderList();
+  flagMissingWorkOrder();
   scheduleSave();
   playSound('ladder');
   if (o.focus !== false) $('fi-serial').focus();

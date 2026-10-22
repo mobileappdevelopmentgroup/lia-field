@@ -1,11 +1,14 @@
-// A refused tap must explain itself ON SCREEN.
+// A missing work order must never stop a ladder, and must be said ON SCREEN.
 //
 // Reported 2026-10-22, every phone at once: "I go to add a ladder, the keyboard
-// pops up, and the ladder doesn't add." Signed in, a ladder needs a work order.
-// The refusal was right; the telling was not. The message went into the top
-// bar's ten-pixel save status, which could not shrink, and at phone width it
-// pushed the job name and the work order box off the right edge. The cursor
-// went into a box nobody could see, the keyboard came up, and nothing said why.
+// pops up, and the ladder doesn't add." Signed in, a ladder with no work order
+// was refused, and the message went into the top bar's ten-pixel save status,
+// which could not shrink: at phone width it pushed the job name and the work
+// order box off the right edge. The cursor went into a box nobody could see,
+// the keyboard came up, and nothing said why.
+//
+// Since 1.15.5 the ladder is taken and a red line asks for the number until it
+// is typed — a missing work order nags, it does not stop a crew.
 //
 // upload.test.mjs checked the message's TEXT, which was there all along. This
 // checks what a tech can actually see: geometry against the viewport, at the
@@ -109,25 +112,39 @@ for (const width of [320, 360, 375, 390, 412, 430]) {
   await p.click('#btn-add-ladder');
   await p.waitForTimeout(150);
 
-  ok('with no work order the ladder is not taken', (await ladders(p)) - before, 0);
-  ok('the reason is on screen, whole', await onScreen(p, '#entry-notice', width - 1), true);
-  ok('and names the work order', await p.evaluate(() => /work order/i.test(document.getElementById('entry-notice')?.textContent || '')), true);
-  ok('the cursor went to the work order box', await p.evaluate(() => document.activeElement.id), 'job-wo');
-  ok('and that box is on screen — the keyboard is never raised for a hidden field',
-     await onScreen(p, '#job-wo', 60), true);
+  ok('with no work order the ladder is still taken', (await ladders(p)) - before, 1);
+  ok('the missing work order is said on screen, whole', await onScreen(p, '#entry-notice', width - 1), true);
+  ok('and named', await p.evaluate(() => /work order/i.test(document.getElementById('entry-notice')?.textContent || '')), true);
+  ok('the work order box is on screen', await onScreen(p, '#job-wo', 60), true);
+  ok('and marked', await p.$eval('#job-wo', e => e.classList.contains('missing')), true);
   ok('so is the job name', await onScreen(p, '#job-name', 60), true);
-  ok('the box is marked until it is filled', await p.$eval('#job-wo', e => e.classList.contains('missing')), true);
   ok('the top bar does not overflow',
      await p.$eval('#detail-topbar', e => e.scrollWidth <= e.clientWidth + 1), true);
+  ok('the cursor is back at a serial field on screen, ready for the next',
+     [await p.evaluate(() => document.activeElement.id), await onScreen(p, '#fi-serial', 60)], ['fi-serial', true]);
+
+  await p.fill('#fi-serial', 'VIS-2');
+  await p.click('#btn-add-ladder');
+  await p.waitForTimeout(150);
+  ok('the next is taken too', (await ladders(p)) - before, 2);
+  ok('and the line stays until a number is typed', await onScreen(p, '#entry-notice', width - 1), true);
+
+  // Reopened later, still with no number, it says so before anything is tapped.
+  await p.evaluate(() => { saveNow(); openJob(_job.id); });
+  await p.waitForTimeout(100);
+  ok('a job reopened with ladders and no number says so', await onScreen(p, '#entry-notice', width - 1), true);
 
   // Typed and tapped at once — no waiting out the 800ms autosave.
+  await p.fill('#fi-serial', 'VIS-3');
   await p.type('#job-wo', 'WO-77');
   await p.click('#btn-add-ladder');
   await p.waitForTimeout(150);
-  ok('a number typed and Add tapped at once is taken', (await ladders(p)) - before, 1);
+  ok('a number typed and Add tapped at once is taken', (await ladders(p)) - before, 3);
   ok('and carries that number up',
-     await p.evaluate(() => LiaSync._readQueue().filter(e => e.kind === 'ladder').pop().payload.work_order_id), 'WO-77');
-  ok('the notice is gone', await p.evaluate(() => { const e = document.getElementById('entry-notice'); return e ? getComputedStyle(e).display : 'none'; }), 'none');
+     await p.evaluate(() => LiaSync._readQueue().filter(e => e.kind === 'ladder' && e.payload.serial_num === 'VIS-3').pop().payload.work_order_id), 'WO-77');
+  ok('the earlier ones go again with it',
+     await p.evaluate(() => LiaSync._readQueue().filter(e => e.kind === 'ladder' && e.payload.serial_num === 'VIS-1').pop().payload.work_order_id), 'WO-77');
+  ok('the line is gone', await p.evaluate(() => { const e = document.getElementById('entry-notice'); return e ? getComputedStyle(e).display : 'none'; }), 'none');
   ok('and so is the mark', await p.$eval('#job-wo', e => e.classList.contains('missing')), false);
 
   // Whatever lands in the status slot later, it cannot push the job off screen.
