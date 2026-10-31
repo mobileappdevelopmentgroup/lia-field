@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 36
+-- Migrations included: 38
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -403,43 +403,166 @@ CREATE FUNCTION public.add_fp_serial_pool(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead_account();
-  v_source  text := left(nullif(trim(coalesce(p->>'source', '')), ''), 200);
-  v_raw     text;
-  v_serial  text;
-  v_key     text;
-  v_asset   uuid;
-  v_added   integer := 0;
-  v_dup     integer := 0;
-  v_on_item integer := 0;
-  v_seen    text[] := '{}';
+  v_account   uuid := public.require_lead_account();
+  v_source    text := left(nullif(trim(coalesce(p->>'source', '')), ''), 200);
+  v_raw       text;
+  v_is_used   boolean;
+  v_serial    text;
+  v_key       text;
+  v_asset     uuid;
+  v_pool      public.fp_serial_pool%ROWTYPE;
+  v_n         integer;
+  v_added     integer := 0;
+  v_dup       integer := 0;
+  v_on_item   integer := 0;
+  v_on_sheet  integer := 0;
+  v_now_used  integer := 0;
+  v_unstocked integer := 0;
+  v_seen      text[] := '{}';
 BEGIN
-  IF jsonb_typeof(p->'serials') <> 'array' THEN RAISE EXCEPTION 'serials must be a list'; END IF;
-  IF jsonb_array_length(p->'serials') > 5000 THEN
+  IF jsonb_typeof(p->'serials') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'serials must be a list'; END IF;
+  IF p ? 'used' AND jsonb_typeof(p->'used') <> 'array' THEN RAISE EXCEPTION 'used must be a list'; END IF;
+  IF jsonb_array_length(p->'serials') + coalesce(jsonb_array_length(p->'used'), 0) > 5000 THEN
     RAISE EXCEPTION 'At most 5000 numbers at a time';
   END IF;
 
-  FOR v_raw IN SELECT jsonb_array_elements_text(p->'serials') LOOP
+  -- Used first, so a number listed both ways counts as used.
+  FOR v_raw, v_is_used IN
+    SELECT u, true  FROM jsonb_array_elements_text(coalesce(p->'used', '[]'::jsonb)) u
+    UNION ALL
+    SELECT s, false FROM jsonb_array_elements_text(p->'serials') s
+  LOOP
     v_serial := left(trim(v_raw), 64);
     v_key := public.serial_key(v_serial);
     CONTINUE WHEN coalesce(v_key, '') = '';
-    IF v_key = ANY (v_seen) OR EXISTS (SELECT 1 FROM public.fp_serial_pool
-                                        WHERE account_id = v_account AND serial_key = v_key) THEN
-      v_dup := v_dup + 1;
-      CONTINUE;
-    END IF;
+    IF v_key = ANY (v_seen) THEN v_dup := v_dup + 1; CONTINUE; END IF;
     v_seen := v_seen || v_key;
 
+    -- It will not go on a tag now: out of the blank stock either way.
+    DELETE FROM public.fp_tag_stock
+     WHERE account_id = v_account AND tag_label_key = v_key AND asset_id IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_unstocked := v_unstocked + v_n;
+
+    SELECT * INTO v_pool FROM public.fp_serial_pool
+     WHERE account_id = v_account AND serial_key = v_key LIMIT 1;
+    IF FOUND THEN
+      -- A later sheet saying a free (or phone-held) number is now spent.
+      IF v_is_used AND v_pool.asset_id IS NULL AND v_pool.used_at IS NULL THEN
+        UPDATE public.fp_serial_pool
+           SET used_at = now(), reserved_by = NULL, reserved_at = NULL
+         WHERE id = v_pool.id;
+        v_now_used := v_now_used + 1;
+      ELSE
+        v_dup := v_dup + 1;
+      END IF;
+      CONTINUE;
+    END IF;
+
     SELECT id INTO v_asset FROM public.assets
-     WHERE account_id = v_account AND kind = 'fall_protection' AND serial_key = v_key LIMIT 1;
+     WHERE account_id = v_account AND kind = 'fall_protection'
+       AND (serial_key = v_key OR tag_label_key = v_key)
+     ORDER BY (serial_key = v_key) DESC LIMIT 1;
+
     INSERT INTO public.fp_serial_pool (account_id, serial, source, asset_id, used_at)
     VALUES (v_account, v_serial, coalesce(v_source, 'office'), v_asset,
-            CASE WHEN v_asset IS NOT NULL THEN now() END);
-    IF v_asset IS NOT NULL THEN v_on_item := v_on_item + 1; ELSE v_added := v_added + 1; END IF;
+            CASE WHEN v_asset IS NOT NULL OR v_is_used THEN now() END);
+    IF v_asset IS NOT NULL THEN v_on_item := v_on_item + 1;
+    ELSIF v_is_used THEN v_on_sheet := v_on_sheet + 1;
+    ELSE v_added := v_added + 1; END IF;
     v_asset := NULL;
   END LOOP;
 
-  RETURN json_build_object('added', v_added, 'already_listed', v_dup, 'already_on_an_item', v_on_item);
+  RETURN json_build_object('added', v_added, 'already_listed', v_dup,
+                           'already_on_an_item', v_on_item, 'used_on_sheet', v_on_sheet,
+                           'now_used', v_now_used, 'taken_from_tag_stock', v_unstocked);
+END;
+$$;
+
+
+--
+-- Name: add_inspection_office(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_inspection_office(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_serial  text := btrim(coalesce(p->>'serial_num', ''));
+  v_wo      text := nullif(btrim(coalesce(p->>'work_order_id', '')), '');
+  v_reason  text := nullif(btrim(coalesce(p->>'reason', '')), '');
+  v_date    date := coalesce(nullif(p->>'inspection_date', '')::date, current_date);
+  v_asset   uuid;
+  v_id      uuid;
+  v_who     text;
+  v_rep     text;
+BEGIN
+  IF v_reason IS NULL THEN RAISE EXCEPTION 'Say why this record is being added'; END IF;
+  IF v_serial = '' THEN RAISE EXCEPTION 'A serial number is required'; END IF;
+  IF length(v_serial) > 64 THEN RAISE EXCEPTION 'That serial number is too long'; END IF;
+  IF v_wo IS NULL THEN RAISE EXCEPTION 'A work order number is required'; END IF;
+  IF length(v_wo) > 64 THEN RAISE EXCEPTION 'That work order number is too long'; END IF;
+  IF p ? 'parts' AND jsonb_typeof(p->'parts') <> 'array' THEN
+    RAISE EXCEPTION 'Parts must be a list';
+  END IF;
+
+  v_rep := public.account_rep_number(v_account);
+  SELECT coalesce(u.name, u.email) INTO v_who FROM public.users u WHERE u.id = auth.uid();
+
+  INSERT INTO public.assets (account_id, kind, serial_raw, serial_key)
+  VALUES (v_account, 'ladder', v_serial, public.serial_key(v_serial))
+  ON CONFLICT (account_id, kind, serial_key) DO NOTHING
+  RETURNING id INTO v_asset;
+  IF v_asset IS NULL THEN
+    SELECT id INTO v_asset FROM public.assets
+     WHERE account_id = v_account AND kind = 'ladder'
+       AND serial_key = public.serial_key(v_serial);
+  END IF;
+
+  -- One record per item per day. If the field already has it, this is a
+  -- correction; if it was deleted, it is a restore. Either way, not an add —
+  -- adding would bury the field's version under an office one with no trail.
+  IF EXISTS (SELECT 1 FROM public.inspections
+              WHERE asset_id = v_asset AND inspection_date = v_date
+                AND is_current AND NOT is_deleted) THEN
+    RAISE EXCEPTION '% already has a record for %; correct that one instead', v_serial, v_date;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.inspections
+              WHERE asset_id = v_asset AND inspection_date = v_date AND is_deleted) THEN
+    RAISE EXCEPTION '% has a deleted record for %; restore that one instead', v_serial, v_date;
+  END IF;
+
+  INSERT INTO public.inspections (
+    serial_num, inspection_date, tech_name, work_order_id, next_due_date, notes,
+    brand, type, length, account_id, asset_id, tech_user_id,
+    version, supersedes, is_current, source, captured_at,
+    lubricated, has_leveler, has_claw, has_vrung,
+    rep_number, collected_by, collector_name, parts
+  ) VALUES (
+    v_serial, v_date, coalesce(v_who, 'Lia Office'), v_wo,
+    v_date + interval '1 year',
+    nullif(p->>'notes', ''),
+    nullif(btrim(coalesce(p->>'brand', '')), ''),
+    nullif(btrim(coalesce(p->>'type', '')), ''),
+    nullif(btrim(coalesce(p->>'length', '')), ''),
+    v_account, v_asset, auth.uid(),
+    1, NULL, true, 'office_add', now(),
+    (p->>'lubricated')::boolean, (p->>'has_leveler')::boolean,
+    (p->>'has_claw')::boolean,   (p->>'has_vrung')::boolean,
+    v_rep, auth.uid(), v_who,
+    coalesce(p->'parts', '[]'::jsonb)
+  )
+  RETURNING id INTO v_id;
+
+  INSERT INTO public.inspection_audit
+    (account_id, inspection_id, serial_num, action, reason, before, after, actor_id, actor_name)
+  VALUES (v_account, v_id, v_serial, 'add', v_reason, NULL,
+          (SELECT row_to_json(i)::jsonb FROM public.inspections i WHERE i.id = v_id),
+          auth.uid(), v_who);
+
+  RETURN (SELECT row_to_json(i) FROM public.inspections i WHERE i.id = v_id);
 END;
 $$;
 
@@ -558,7 +681,7 @@ CREATE FUNCTION public.amend_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_reason  text := nullif(btrim(coalesce(p->>'reason','')), '');
   v_prev    public.fp_inspections%ROWTYPE;
@@ -1381,7 +1504,7 @@ CREATE FUNCTION public.delete_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_reason  text := nullif(btrim(coalesce(p->>'reason','')), '');
   v_row     public.fp_inspections%ROWTYPE;
@@ -2900,16 +3023,16 @@ CREATE FUNCTION public.fp_serial_pool_summary() RETURNS json
 DECLARE v_account uuid := public.require_lead_account();
 BEGIN
   RETURN json_build_object(
-    'free',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NULL),
-    'reserved', (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NOT NULL),
-    'used',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NOT NULL),
-    'next',     (SELECT serial FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND reserved_by IS NULL
+    'free',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NULL),
+    'reserved', (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NOT NULL),
+    'used',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND (asset_id IS NOT NULL OR used_at IS NOT NULL)),
+    'next',     (SELECT serial FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NULL
                   ORDER BY public.fp_serial_pool_order(serial_key) LIMIT 1),
     'holders',  coalesce((SELECT json_agg(h ORDER BY h.name) FROM (
                   SELECT coalesce(nullif(u.name, ''), u.email, 'Unknown') AS name, count(*) AS numbers,
                          string_agg(p.serial, ', ' ORDER BY public.fp_serial_pool_order(p.serial_key)) AS serials
                     FROM public.fp_serial_pool p LEFT JOIN public.users u ON u.id = p.reserved_by
-                   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.reserved_by IS NOT NULL
+                   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.used_at IS NULL AND p.reserved_by IS NOT NULL
                    GROUP BY 1) h), '[]'::json)
   );
 END;
@@ -2925,12 +3048,13 @@ CREATE FUNCTION public.fp_serial_pool_use() RETURNS trigger
     SET search_path TO 'public'
     AS $$
 BEGIN
-  IF NEW.kind <> 'fall_protection' OR coalesce(NEW.serial_key, '') = '' THEN RETURN NEW; END IF;
+  IF NEW.kind <> 'fall_protection' THEN RETURN NEW; END IF;
   UPDATE public.fp_serial_pool p
      SET asset_id = NEW.id, used_at = coalesce(p.used_at, now())
    WHERE p.account_id = NEW.account_id
-     AND p.serial_key = NEW.serial_key
-     AND p.asset_id IS DISTINCT FROM NEW.id;
+     AND p.asset_id IS DISTINCT FROM NEW.id
+     AND ((coalesce(NEW.serial_key, '') <> ''    AND p.serial_key = NEW.serial_key)
+       OR (coalesce(NEW.tag_label_key, '') <> '' AND p.serial_key = NEW.tag_label_key));
   RETURN NEW;
 END;
 $$;
@@ -5108,18 +5232,18 @@ BEGIN
   IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
 
   UPDATE public.fp_serial_pool p SET reserved_by = NULL, reserved_at = NULL
-   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.reserved_by IS NOT NULL
+   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.used_at IS NULL AND p.reserved_by IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM public.account_members m
                       WHERE m.user_id = p.reserved_by AND m.account_id = v_account AND m.removed_at IS NULL);
 
   SELECT count(*) INTO v_have FROM public.fp_serial_pool p
-   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL;
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL AND p.used_at IS NULL;
 
   IF v_have < v_want THEN
     UPDATE public.fp_serial_pool p SET reserved_by = v_uid, reserved_at = now()
      WHERE p.id IN (
        SELECT f.id FROM public.fp_serial_pool f
-        WHERE f.account_id = v_account AND f.asset_id IS NULL AND f.reserved_by IS NULL
+        WHERE f.account_id = v_account AND f.asset_id IS NULL AND f.used_at IS NULL AND f.reserved_by IS NULL
         ORDER BY public.fp_serial_pool_order(f.serial_key)
         LIMIT v_want - v_have
         FOR UPDATE SKIP LOCKED);
@@ -5127,7 +5251,7 @@ BEGIN
 
   RETURN QUERY
   SELECT p.serial, p.reserved_at FROM public.fp_serial_pool p
-   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL AND p.used_at IS NULL
    ORDER BY public.fp_serial_pool_order(p.serial_key);
 END;
 $$;
@@ -5184,7 +5308,7 @@ CREATE FUNCTION public.restore_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_row     public.fp_inspections%ROWTYPE;
   v_who     text;
@@ -7149,7 +7273,7 @@ CREATE TABLE public.inspection_audit (
     actor_id uuid,
     actor_name text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT inspection_audit_action_check CHECK ((action = ANY (ARRAY['amend'::text, 'delete'::text, 'restore'::text])))
+    CONSTRAINT inspection_audit_action_check CHECK ((action = ANY (ARRAY['amend'::text, 'delete'::text, 'restore'::text, 'add'::text])))
 );
 
 
@@ -8154,10 +8278,10 @@ CREATE INDEX fp_record_audit_asset_idx ON public.fp_record_audit USING btree (as
 
 
 --
--- Name: fp_serial_pool_free_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: fp_serial_pool_free2_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX fp_serial_pool_free_idx ON public.fp_serial_pool USING btree (account_id, serial_key) WHERE (asset_id IS NULL);
+CREATE INDEX fp_serial_pool_free2_idx ON public.fp_serial_pool USING btree (account_id, serial_key) WHERE ((asset_id IS NULL) AND (used_at IS NULL));
 
 
 --
@@ -8500,7 +8624,7 @@ CREATE TRIGGER fp_inspections_touch_asset AFTER INSERT OR UPDATE ON public.fp_in
 -- Name: assets fp_serial_pool_use_t; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER fp_serial_pool_use_t AFTER INSERT OR UPDATE OF serial_key ON public.assets FOR EACH ROW EXECUTE FUNCTION public.fp_serial_pool_use();
+CREATE TRIGGER fp_serial_pool_use_t AFTER INSERT OR UPDATE OF serial_key, tag_label ON public.assets FOR EACH ROW EXECUTE FUNCTION public.fp_serial_pool_use();
 
 
 --
@@ -9843,6 +9967,14 @@ GRANT ALL ON FUNCTION public.add_crew_member(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION add_inspection_office(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.add_inspection_office(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.add_inspection_office(p jsonb) TO authenticated;
 
 
 --

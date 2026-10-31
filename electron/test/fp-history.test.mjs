@@ -16,6 +16,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const require = createRequire(import.meta.url);
 const Papa = require('papaparse');
 const { parseFpHistory } = require(path.join(ROOT, 'electron', 'fp-history.cjs'));
+const spare = require(path.join(ROOT, 'electron', 'spare-numbers.cjs'));
 const parseCsv = csv => { const r = Papa.parse(csv, { header: true, skipEmptyLines: true }); return parseFpHistory(r.data, r.meta.fields); };
 
 const WITH_RESULT = [
@@ -25,6 +26,18 @@ const WITH_RESULT = [
   'BAT-3,03/12/2025,maybe,Lanyard,,,,J. Ortiz,',
 ].join('\n');
 const NO_RESULT = ['Serial,Date', 'BAT-9,2025-01-02'].join('\n');
+// Shaped like the sheet Batavia issues (Nate's, 2026-10-15): no header, the
+// rep number on every row, the number twice, a link, and for a spent number
+// what it was spent on.
+const ISSUED = [
+  ',,,,,,,,,,,,,,',
+  '763,FP161282,SRL,5/25/2026,Failed,SUTHERLAND,FALLTECH,72706SA1,-,8291761,12/2024,Fail,763,FP161282,https://docs.google.com/spreadsheets/d/a/edit',
+  '763,FP161283,LANYARDS,,Failed,SPARE,BUCKINGHAM,-,-,-,-,Fail,763,FP161283,https://docs.google.com/spreadsheets/d/b/edit',
+  '763,FP161347,SELECT ONE,,#N/A,,,-,-,-,-,#N/A,,FP161347,https://docs.google.com/spreadsheets/d/c/edit',
+  '763,FP161348,SELECT ONE,,#N/A,,,-,-,-,-,#N/A,,FP161348,https://docs.google.com/spreadsheets/d/d/edit',
+  '763,FP161349,SELECT ONE,,#N/A,,,-,-,-,-,#N/A,,FP161349,https://docs.google.com/spreadsheets/d/e/edit',
+].join('\n');
+const parseIssued = () => spare.parseSpareNumbers(Papa.parse(ISSUED, { header: false, skipEmptyLines: true }).data);
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript' };
 const server = http.createServer((req, res) => {
@@ -46,7 +59,7 @@ const p = await b.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; p.on('pageerror', e => errs.push(e.message));
 p.on('dialog', d => d.dismiss());
 
-await p.addInitScript(([withResult, noResult]) => {
+await p.addInitScript(([withResult, noResult, issued]) => {
   window.__imports = [];
   window.__file = 'with-result';
   window.__pool = { free: 0, reserved: 0, used: 0, next: null, holders: [] };
@@ -65,13 +78,16 @@ await p.addInitScript(([withResult, noResult]) => {
     fpHistoryList: async () => ({ ok: true, batches: window.__imports.length
       ? [{ batch: window.__imports[0].batch, records: window.__imports[0].rows.length, first_date: '2025-03-12', last_date: '2025-03-12' }] : [] }),
     fpPoolSummary: async () => ({ ok: true, summary: window.__pool }),
-    fpPoolAdd: async (serials) => { window.__poolAdds.push(serials);
-      window.__pool = { free: serials.length, reserved: 0, used: 0, next: serials[0], holders: [] };
-      return { ok: true, result: { added: serials.length, already_listed: 0, already_on_an_item: 0 } }; },
+    fpPoolParseFile: async () => issued,
+    fpPoolParseText: async (text) => window.__parseText(text),
+    fpPoolAdd: async (payload) => { window.__poolAdds.push(payload);
+      window.__pool = { free: payload.serials.length, reserved: 0, used: payload.used.length, next: payload.serials[0], holders: [] };
+      return { ok: true, result: { added: payload.serials.length, already_listed: 0, already_on_an_item: 0,
+                                   used_on_sheet: payload.used.length, now_used: 0, taken_from_tag_stock: payload.serials.length } }; },
     fpHistoryImport: async (payload) => { window.__imports.push(payload);
       return { ok: true, batch: payload.batch, imported: payload.rows.length, skipped: [], errors: [] }; },
   };
-}, [parseCsv(WITH_RESULT), parseCsv(NO_RESULT)]);
+}, [parseCsv(WITH_RESULT), parseCsv(NO_RESULT), parseIssued()]);
 
 await p.goto(BASE + '/index.html');
 await p.waitForTimeout(500);
@@ -118,12 +134,37 @@ ok('once ticked, the rows go up as passed', await p.evaluate(() => window.__impo
 
 // Spare numbers for untagged defective items (36).
 ok('no numbers yet says so', await p.$eval('#fppool-summary', e => e.textContent), 'No numbers loaded for this account yet.');
+// The paste path is the real parser too, reached through the page.
+await p.exposeFunction('__parsePaste', text => spare.parseSpareNumbers(spare.splitPaste(text)));
+await p.evaluate(() => { window.__parseText = t => window.__parsePaste(t); });
 await p.fill('#fppool-paste', 'Serial #\nBAT-1001\nBAT-1002\n\nBAT-1003\t\n');
+await p.click('#btn-fppool-check'); await p.waitForTimeout(300);
+ok('nothing is sent until the office has seen it', await p.evaluate(() => window.__poolAdds.length), 0);
+ok('a paste is checked first', await p.$eval('#fppool-stat', e => /3 free to load \(BAT-1001 – BAT-1003\)/.test(e.textContent)
+   && /0 already used/.test(e.textContent)), true);
 await p.click('#btn-fppool-add'); await p.waitForTimeout(300);
-ok('a pasted column goes up without its header or blanks', await p.evaluate(() => window.__poolAdds[0]), ['BAT-1001', 'BAT-1002', 'BAT-1003']);
-ok('and the result is reported', await p.$eval('#fppool-msg', e => e.textContent), '3 added');
+ok('a pasted column goes up without its header or blanks', await p.evaluate(() => window.__poolAdds[0].serials), ['BAT-1001', 'BAT-1002', 'BAT-1003']);
+ok('and the result is reported', await p.$eval('#fppool-msg', e => /^3 added/.test(e.textContent)), true);
+ok('the preview closes', await p.$eval('#fppool-preview', e => e.style.display), 'none');
 ok('the summary shows what is free and the next number',
    await p.$eval('#fppool-summary', e => /3 free/.test(e.textContent) && /next: BAT-1001/.test(e.textContent) && /running low/.test(e.textContent)), true);
+
+// The sheet Batavia issues, chosen as a file.
+await p.click('#btn-fppool-pick'); await p.waitForTimeout(300);
+ok('the issued sheet is split into free and spent',
+   await p.$eval('#fppool-stat', e => /3 free to load \(FP161347 – FP161349\)/.test(e.textContent)
+     && /2 already used on the sheet/.test(e.textContent)), true);
+ok('each spent number says what the sheet shows for it',
+   await p.$eval('#fppool-used', e => /FP161282 — SRL · 5\/25\/2026 · Failed · SUTHERLAND/.test(e.textContent)
+     && /FP161283 — LANYARDS · Failed · SPARE · BUCKINGHAM/.test(e.textContent)), true);
+ok('the button counts everything that goes up', await p.$eval('#btn-fppool-add', e => e.textContent), 'Load 5 Numbers');
+await p.click('#btn-fppool-add'); await p.waitForTimeout(300);
+const issuedSent = await p.evaluate(() => window.__poolAdds[1]);
+ok('free numbers go up free, spent ones go up used, named for the file',
+   [issuedSent.serials, issuedSent.used, issuedSent.source],
+   [['FP161347', 'FP161348', 'FP161349'], ['FP161282', 'FP161283'], 'Lia Office: no-result.csv']);
+ok('the office is told the blank tags left stock', await p.$eval('#fppool-msg', e => /2 marked used from the sheet/.test(e.textContent)
+   && /3 taken out of blank tag stock/.test(e.textContent)), true);
 
 console.log('\npage errors:', errs.length ? errs : 'none');
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');

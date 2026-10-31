@@ -183,6 +183,16 @@ echo "Running untagged serial pool assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/30_fp_serial_pool_test.sql"
 
+echo
+echo "Running spare-numbers-that-are-tags assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/31_fp_serial_pool_tags_test.sql"
+
+echo
+echo "Running office add / FP-correction-while-acting assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/32_field_edits_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

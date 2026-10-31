@@ -53,6 +53,9 @@ contextBridge.exposeInMainWorld('api', {
   fieldAmend:      (p)           => ipcRenderer.invoke('field:amend', p),
   fieldDelete:     (p)           => ipcRenderer.invoke('field:delete', p),
   fieldRestore:    (p)           => ipcRenderer.invoke('field:restore', p),
+  fieldHistory:    (workOrderId) => ipcRenderer.invoke('field:history', workOrderId),
+  fieldAdd:        (p)           => ipcRenderer.invoke('field:add', p),
+  fieldDeleteItem: (p)           => ipcRenderer.invoke('field:delete-item', p),
   mergeWorkOrders: ()            => ipcRenderer.invoke('merge:work-orders'),
   mergePull:       (workOrderId) => ipcRenderer.invoke('merge:pull', workOrderId),
   mergeToCsv:      (payload)     => ipcRenderer.invoke('merge:to-csv', payload),
@@ -166,7 +169,9 @@ contextBridge.exposeInMainWorld('api', {
   fpHistoryList:        ()           => ipcRenderer.invoke('fphist:list'),
   fpHistoryUndo:        (batch)      => ipcRenderer.invoke('fphist:undo', batch),
   fpPoolSummary:        ()           => ipcRenderer.invoke('fppool:summary'),
-  fpPoolAdd:            (serials)    => ipcRenderer.invoke('fppool:add', serials),
+  fpPoolAdd:            (payload)    => ipcRenderer.invoke('fppool:add', payload),
+  fpPoolParseFile:      (filePath)   => ipcRenderer.invoke('fppool:parse-file', filePath),
+  fpPoolParseText:      (text)       => ipcRenderer.invoke('fppool:parse-text', text),
 
   // ── Work History ─────────────────────────────────────────────────────────
   loadHistory: () => ipcRenderer.invoke('history:load'),

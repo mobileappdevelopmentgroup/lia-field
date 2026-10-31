@@ -352,8 +352,10 @@ function fieldRecordCall(channel, rpc, verb) {
       if (typeof p.reason !== 'string' || !p.reason.trim()) {
         return { ok: false, error: `Say why this record is being ${verb}.` };
       }
+      const fields = channel === 'field:amend' ? amendFields(p.scope, p.fields) : { body: {} };
+      if (fields.error) return { ok: false, error: fields.error };
       const sb = await getSupabase();
-      const body = Object.assign({}, p.fields || {}, {
+      const body = Object.assign({}, fields.body, {
         inspection_id: p.inspectionId, reason: p.reason.trim(),
       });
       const fn = p.scope === 'fall_protection' ? rpc.fp : rpc.ladder;
@@ -367,6 +369,167 @@ function fieldRecordCall(channel, rpc, verb) {
 fieldRecordCall('field:amend',   { ladder: 'amend_inspection',   fp: 'amend_fp_inspection' },  'corrected');
 fieldRecordCall('field:delete',  { ladder: 'delete_inspection',  fp: 'delete_fp_inspection' },  'deleted');
 fieldRecordCall('field:restore', { ladder: 'restore_inspection', fp: 'restore_fp_inspection' }, 'restored');
+
+const fieldVersions = require('./field-versions.cjs');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// What a correction may change, per kind of record. Anything else the renderer
+// sends is dropped here rather than handed to the RPC: the RPCs are the real
+// gate, but a field this screen never offers has no business in the payload.
+// Fall protection's checklist answers are deliberately absent — changing what
+// was found is re-inspecting, not amending.
+const AMENDABLE = {
+  ladder: ['brand', 'type', 'length', 'notes', 'work_order_id',
+           'lubricated', 'has_leveler', 'has_claw', 'has_vrung', 'parts'],
+  fall_protection: ['manufacturer', 'model', 'lot_number', 'mfg_month', 'mfg_year',
+                    'description', 'work_order_id', 'discard_note'],
+};
+const FLAG_KEYS = ['lubricated', 'has_leveler', 'has_claw', 'has_vrung'];
+
+function amendFields(scope, raw) {
+  const allowed = AMENDABLE[scope === 'fall_protection' ? 'fall_protection' : 'ladder'];
+  const body = {};
+  for (const [k, v] of Object.entries(raw || {})) {
+    if (!allowed.includes(k)) continue;
+    if (k === 'parts') {
+      const r = fieldVersions.parseParts(v);
+      if (r.error) return { error: r.error };
+      body.parts = r.parts;
+    } else if (FLAG_KEYS.includes(k)) {
+      // Tri-state: true, false, or null for "not assessed".
+      if (v !== null && typeof v !== 'boolean') return { error: `${k} must be yes, no or blank.` };
+      body[k] = v;
+    } else if (k === 'mfg_month' || k === 'mfg_year') {
+      const n = parseInt(v, 10);
+      const okN = k === 'mfg_month' ? n >= 1 && n <= 12 : n >= 1950 && n <= 2100;
+      if (!okN) return { error: k === 'mfg_month' ? 'Month of manufacture must be 1–12.' : 'Year of manufacture looks wrong.' };
+      body[k] = n;
+    } else {
+      const s = String(v == null ? '' : v).trim();
+      if (s.length > (k === 'notes' || k === 'description' || k === 'discard_note' ? 1000 : 64)) {
+        return { error: `${k.replace('_', ' ')} is too long.` };
+      }
+      body[k] = s;
+    }
+  }
+  if (!Object.keys(body).length) return { error: 'Nothing was changed.' };
+  return { body };
+}
+
+// Every version of every record on the work order — current, superseded and
+// deleted — with the reason each change was made. `merge:pull` stays what the
+// importer reads; this is what the screen shows.
+ipcMain.handle('field:history', async (_event, workOrderId) => {
+  try {
+    if (typeof workOrderId !== 'string' || !workOrderId.trim()) {
+      return { ok: false, error: 'Pick a work order first.' };
+    }
+    const sb = await getSupabase();
+    const [ladders, fp] = await Promise.all([
+      sb.from('inspections')
+        .select('id, asset_id, serial_num, inspection_date, version, is_current, is_deleted, source, captured_at, created_at, bsi_pushed_at, bsi_box_ref, collector_name, tech_name, brand, type, length, notes, work_order_id, parts, lubricated, has_leveler, has_claw, has_vrung')
+        .eq('work_order_id', workOrderId),
+      sb.from('fp_inspections')
+        .select('id, asset_id, inspection_date, version, is_current, is_deleted, source, captured_at, uploaded_at, bsi_pushed_at, bsi_box_ref, collector_name, manufacturer, model, item_type, lot_number, mfg_month, mfg_year, description, work_order_id, overall_pass, discard_note, assets(serial_raw)')
+        .eq('work_order_id', workOrderId),
+    ]);
+    if (ladders.error) return { ok: false, error: ladders.error.message };
+    if (fp.error) return { ok: false, error: fp.error.message };
+
+    // The reasons. Chunked, because a work order of a few hundred ladders and
+    // their versions is too many ids for one query string.
+    const audits = [];
+    const fetchAudit = async (table, scope, ids) => {
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data, error } = await sb.from(table)
+          .select('inspection_id, action, reason, actor_name, created_at')
+          .in('inspection_id', ids.slice(i, i + 100));
+        if (error) throw new Error(error.message);
+        (data || []).forEach(a => audits.push(Object.assign({ scope }, a)));
+      }
+    };
+    await fetchAudit('inspection_audit', 'ladder', (ladders.data || []).map(r => r.id));
+    await fetchAudit('fp_record_audit', 'fall_protection', (fp.data || []).map(r => r.id));
+
+    return { ok: true, items: fieldVersions.groupVersions({ ladders: ladders.data, fp: fp.data, audits }) };
+  } catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+
+// A ladder the field never sent — radioed in, or written on paper. The server
+// marks it office_add, credits whoever entered it, and refuses an item that
+// already has a record that day (that is a correction). There is no fall
+// protection equivalent on purpose: see 38_field_work_edits.sql.
+ipcMain.handle('field:add', async (_event, payload) => {
+  try {
+    const p = payload || {};
+    const reason = typeof p.reason === 'string' ? p.reason.trim() : '';
+    const serial = typeof p.serialNum === 'string' ? p.serialNum.trim() : '';
+    const wo = typeof p.workOrderId === 'string' ? p.workOrderId.trim() : '';
+    if (!reason) return { ok: false, error: 'Say why this ladder is being added.' };
+    if (!serial) return { ok: false, error: 'A serial number is required.' };
+    if (serial.length > 64) return { ok: false, error: 'That serial number is too long.' };
+    if (!wo || wo.length > 64) return { ok: false, error: 'Pick a work order first.' };
+    const date = typeof p.inspectionDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.inspectionDate)
+      ? p.inspectionDate : null;
+
+    const body = { serial_num: serial, work_order_id: wo, reason };
+    if (date) body.inspection_date = date;
+    for (const k of ['brand', 'type', 'length']) {
+      const s = typeof p[k] === 'string' ? p[k].trim() : '';
+      if (s.length > 64) return { ok: false, error: `${k} is too long.` };
+      if (s) body[k] = s;
+    }
+    if (typeof p.notes === 'string' && p.notes.trim()) {
+      if (p.notes.length > 1000) return { ok: false, error: 'Notes are too long.' };
+      body.notes = p.notes.trim();
+    }
+    const parts = fieldVersions.parseParts(p.parts);
+    if (parts.error) return { ok: false, error: parts.error };
+    body.parts = parts.parts;
+    for (const k of FLAG_KEYS) {
+      if (typeof p[k] === 'boolean') body[k] = p[k];
+    }
+
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('add_inspection_office', { p: body });
+    if (error) {
+      if (/add_inspection_office/.test(error.message) && /find|exist|schema cache/i.test(error.message)) {
+        return { ok: false, error: 'Adding a ladder from the office needs database migration 38, which has not been applied yet.' };
+      }
+      return { ok: false, error: error.message };
+    }
+    return { ok: true, record: data };
+  } catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+
+// Deleting an ITEM, not a version. The server's delete removes one version and
+// brings the previous one of that day back — right for undoing a correction,
+// wrong for "this ladder is not on this job". So this deletes every live
+// version newest first, each with the same reason, until nothing is current.
+// Not one transaction: a failure part-way leaves an earlier version current,
+// which is a valid state, and the message says how far it got.
+ipcMain.handle('field:delete-item', async (_event, payload) => {
+  try {
+    const p = payload || {};
+    const reason = typeof p.reason === 'string' ? p.reason.trim() : '';
+    if (!reason) return { ok: false, error: 'Say why this record is being deleted.' };
+    const ids = Array.isArray(p.ids) ? p.ids : [];
+    if (!ids.length || ids.length > 50 || !ids.every(x => typeof x === 'string' && UUID_RE.test(x))) {
+      return { ok: false, error: 'No record picked.' };
+    }
+    const fn = p.scope === 'fall_protection' ? 'delete_fp_inspection' : 'delete_inspection';
+    const sb = await getSupabase();
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await sb.rpc(fn, { p: { inspection_id: ids[i], reason } });
+      if (error) {
+        return { ok: false, error: i
+          ? `Stopped after ${i} of ${ids.length} versions: ${error.message}. An earlier version is still current.`
+          : error.message };
+      }
+    }
+    return { ok: true, deleted: ids.length };
+  } catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
 
 ipcMain.handle('merge:pull', async (_event, workOrderId) => {
   try {
@@ -1614,13 +1777,42 @@ ipcMain.handle('fppool:summary', async () => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
-ipcMain.handle('fppool:add', async (_event, serials) => {
+// The lead's list, chosen as a CSV or pasted. Both read by
+// electron/spare-numbers.cjs, so a paste and a file can never disagree about
+// which numbers are free. Nothing is sent until the office has seen the split.
+const spareNumbers = require('./spare-numbers.cjs');
+
+ipcMain.handle('fppool:parse-file', (_event, filePath) => {
+  const Papa = require('papaparse');
+  const checked = resolveCsvPath(filePath);
+  if (checked.error) return { error: checked.error };
+  let content;
+  try { content = fs.readFileSync(checked.path, 'utf-8'); }
+  catch (err) { return { error: `Cannot read file: ${err.message}` }; }
+  content = content.replace(/^\uFEFF/, '');
+  // No header: Batavia's sheet has none, and the number column is found by
+  // what is in it.
+  const parsed = Papa.parse(content, { header: false, skipEmptyLines: true });
+  const fatal = parsed.errors.find(e => e.type === 'Delimiter' || e.type === 'Quotes');
+  if (fatal) return { error: `CSV parse error: ${fatal.message}` };
+  return spareNumbers.parseSpareNumbers(parsed.data);
+});
+
+ipcMain.handle('fppool:parse-text', (_event, text) => {
+  if (typeof text !== 'string' || text.length > 2 * 1024 * 1024) return { error: 'Paste is too large.' };
+  return spareNumbers.parseSpareNumbers(spareNumbers.splitPaste(text));
+});
+
+ipcMain.handle('fppool:add', async (_event, payload) => {
   try {
-    if (!Array.isArray(serials) || !serials.length) return { ok: false, error: 'Nothing to load.' };
-    if (serials.length > 5000) return { ok: false, error: 'At most 5000 numbers at a time.' };
-    const clean = serials.map(s => String(s).trim().slice(0, 64)).filter(Boolean);
+    const tidy = list => (Array.isArray(list) ? list : []).map(s => String(s).trim().slice(0, 64)).filter(Boolean);
+    const serials = tidy(payload && payload.serials);
+    const used = tidy(payload && payload.used);
+    if (!serials.length && !used.length) return { ok: false, error: 'Nothing to load.' };
+    if (serials.length + used.length > 5000) return { ok: false, error: 'At most 5000 numbers at a time.' };
+    const source = String((payload && payload.source) || 'Lia Office').slice(0, 200);
     const sb = await getSupabase();
-    const { data, error } = await sb.rpc('add_fp_serial_pool', { p: { serials: clean, source: 'Lia Office' } });
+    const { data, error } = await sb.rpc('add_fp_serial_pool', { p: { serials, used, source } });
     if (error) return { ok: false, error: error.message };
     return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
   } catch (err) { return { ok: false, error: String(err) }; }

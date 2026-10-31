@@ -27,10 +27,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The migrations live in `supabase/migrations/`; `supabase/schema.sql` is a
 generated snapshot of what they add up to (`npm run schema` regenerates it,
 `npm run schema:check` fails if it is stale) and `supabase/MIGRATIONS.md` is the
-index. The live database carries **01–22** as of 2026-09-20, and the accounts were
+index. The live database carries **01–38** as of 2026-10-31 (01–22 as of 2026-09-20), and the accounts were
 restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
+
+**37 and 38 were applied 2026-10-31.** 37 — spare numbers that are also tags
+(see *Numbers for defective items with no tag*); Lia Office's file picker for
+the issued sheet now sends its `used` list. 38 — the office adds a ladder to a
+work order (`add_inspection_office()`), and `amend/delete/restore_fp_inspection`
+follow an impersonation session. Verified from outside with the publishable
+key: `add_inspection_office`, `add_fp_serial_pool` and the three FP correction
+functions answer 401 `42501`, `inspections` / `fp_inspections` refuse anon, and
+the public certificate view still serves. `inspection_audit` answers anon 200
+with no rows (RLS; no anon policy) — not a leak, but not a 401 either.
 
 **35 was applied 2026-10-14** — fall-protection history import (see
 *Importing fall-protection history*). Verified from outside with the
@@ -166,6 +176,11 @@ npm run schema:check       # Fail if that snapshot is stale
                                      # supabase/dist/apply-35.sql
 ./supabase/test/run-apply-36.sh      # Same for 36 (spare numbers) →
                                      # supabase/dist/apply-36.sql
+./supabase/test/run-apply-37.sh      # Same for 37 (spare numbers that are
+                                     # tags) → supabase/dist/apply-37.sql
+./supabase/test/run-apply-38.sh      # Same for 38 (office adds a ladder;
+                                     # FP corrections while acting as a sub)
+                                     # → supabase/dist/apply-38.sql
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -546,6 +561,15 @@ no link). Load-bearing:
   server stops returning it.
 - Backing out of the item spends nothing. The button is hidden for an account
   with no numbers loaded.
+- **Leads load their own** (37): *Choose CSV File…* takes the sheet Batavia
+  issues as-is (`electron/spare-numbers.cjs` — no header, the number column is
+  found by its contents) and previews free vs. spent before sending. A row
+  filled in on the sheet goes in **used**, never dropped, so a later paste
+  cannot load it as free.
+- **A spare number may already be one of the lead's tags** — Nate's first list
+  was entirely his 2026-09-28 tag import. Loading takes a number out of blank
+  tag stock (decided 2026-10-15), and a number that is any item's serial *or*
+  tag label goes in used. Otherwise one number reaches two items.
 
 ### Consolidating accounts
 

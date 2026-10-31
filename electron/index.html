@@ -230,6 +230,28 @@
                border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
     .fw-pill.pushed { color: var(--ok);   border-color: var(--ok); }
     .fw-pill.stale  { color: var(--warn); border-color: var(--warn); }
+    .fw-pill.deleted { color: var(--err); border-color: var(--err); }
+    .fw-rec.deleted .fw-rec-main, .fw-rec.moved .fw-rec-main { opacity: .55; }
+    .fw-rec { flex-wrap: wrap; }
+    .fw-rec-pills { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+    .fw-rec-acts  { display: flex; gap: 5px; flex-wrap: wrap; }
+    .fw-rec-more  { flex-basis: 100%; }
+    .fw-flags { display: flex; gap: 10px; flex-wrap: wrap; }
+    .fw-flags label { flex-direction: row; align-items: center; gap: 5px; }
+    .fpr-grid select, .fpr-grid textarea { padding: 6px 8px; border-radius: 5px; font-size: 12.5px;
+                      border: 1px solid var(--border); background: var(--surf2);
+                      color: var(--fg); font-family: inherit; }
+    /* Each version, newest first. The field's own version is never hidden:
+       the point of keeping it is that somebody can read what was collected. */
+    .fw-ver { border-left: 3px solid var(--border); padding: 6px 10px; margin: 6px 0;
+              font-size: 11.5px; }
+    .fw-ver.current { border-left-color: var(--accent); }
+    .fw-ver.deleted { border-left-color: var(--err); opacity: .7; }
+    .fw-ver-top { font-weight: 700; }
+    .fw-ver-line { color: var(--muted); margin-top: 2px; }
+    .fw-ver-chg { margin-top: 3px; }
+    .fw-ver-chg b { font-weight: 600; }
+    .fw-ver-reason { color: var(--warn); margin-top: 3px; }
     .mg-contrib { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     .mg-tech { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px;
                padding: 8px 12px; font-size: 12px; }
@@ -1134,7 +1156,9 @@
           <div class="cat-checks-hdr" style="margin-top:18px;">
             <span>Records</span>
             <span class="cat-ver" id="field-rec-count"></span>
+            <button class="fpr-mini" id="fw-add-btn" style="margin-left:auto;display:none;">+ Add ladder</button>
           </div>
+          <div id="field-add" class="fpr-inline" style="display:none;"></div>
           <div id="field-records"></div>
         </div>
       </div>
@@ -1534,6 +1558,16 @@
           <button class="btn-mini" id="btn-new-type">+ New</button>
           <button class="btn-mini" id="btn-new-model" style="display:none;">+ New</button>
         </div>
+        <div id="cat-new-type" class="fpr-inline" style="display:none;padding:8px 10px;">
+          <div class="fpr-grid" style="grid-template-columns:1fr;margin:0 0 6px;">
+            <label>Name the equipment type
+              <input type="text" id="cat-new-type-name" maxlength="80" placeholder="e.g. Rescue tripod"></label>
+          </div>
+          <div class="sup-actions" style="margin-top:0;">
+            <button class="btn-ok" id="cat-new-type-save">Add type</button>
+            <button class="btn-sec" id="cat-new-type-cancel">Cancel</button>
+          </div>
+        </div>
         <div id="cat-types"></div>
         <div id="cat-models" style="display:none;"></div>
         <div id="cat-parts" style="display:none;"></div>
@@ -1790,16 +1824,28 @@
       <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.55;">
         Assigned serial numbers that are not on any tag. Each phone keeps five of them, so it can number a
         defective item with no tag even without signal — no two phones ever hold the same number.
-        Paste the column from the spreadsheet, one number per line. Numbers already loaded are skipped;
-        a number already on an item is marked used.
+        Choose the sheet Batavia issued, or paste the numbers. A row already filled in on the sheet, or a number
+        already on an item, goes in as used and is never handed out. A number loaded here stops being a blank tag.
       </p>
       <div id="fppool-summary" style="font-size:12.5px;margin-bottom:10px;">—</div>
+      <div class="row" style="margin-bottom:10px;">
+        <button class="btn-p" id="btn-fppool-pick">Choose CSV File…</button>
+        <span style="font-size:12.5px;color:var(--muted);">or paste below</span>
+      </div>
       <textarea id="fppool-paste" rows="5" placeholder="BAT-1001&#10;BAT-1002&#10;…"
                 style="width:100%;font-family:var(--mono, monospace);font-size:12.5px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);"></textarea>
       <div class="row" style="margin-top:10px;">
-        <button class="btn-p" id="btn-fppool-add">Load Numbers</button>
-        <span id="fppool-msg" style="font-size:12.5px;color:var(--muted);"></span>
+        <button class="btn-g" id="btn-fppool-check">Check Pasted Numbers</button>
       </div>
+      <div id="fppool-preview" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div id="fppool-stat" style="font-size:12.5px;margin-bottom:8px;"></div>
+        <div id="fppool-used" style="font-size:12px;color:var(--muted);margin-bottom:10px;max-height:160px;overflow:auto;"></div>
+        <div class="row">
+          <button class="btn-ok" id="btn-fppool-add">Load Numbers</button>
+          <button class="btn-g" id="btn-fppool-cancel">Cancel</button>
+        </div>
+      </div>
+      <div id="fppool-msg" style="font-size:12.5px;color:var(--muted);margin-top:8px;"></div>
     </div>
   </div>
 </div>
@@ -2294,79 +2340,337 @@ async function openFieldWo(workOrderId) {
       .addEventListener('click', () => setFieldArchived(w, true));
   }
 
-  $('field-msg').textContent = 'Loading records…';
-  $('field-msg').className = 'fw-msg';
-  const res = await window.api.mergePull(workOrderId);
-  if (!res.ok) {
-    $('field-msg').textContent = res.error;
-    $('field-msg').className = 'fw-msg bad';
-    return;
+  if ($('field-add').dataset.wo !== workOrderId) {
+    $('field-add').style.display = 'none'; $('field-add').innerHTML = '';
   }
-  $('field-msg').textContent = '';
+  $('field-add').dataset.wo = workOrderId;
+
+  fwMsg('Loading records…');
+  // Two reads: what the importer sends (current records, merged across techs)
+  // and what the screen shows (every version of every item, with reasons).
+  const [res] = await Promise.all([window.api.mergePull(workOrderId), loadFieldItems(workOrderId)]);
+  if (!res.ok) { fwMsg(res.error, 'bad'); return; }
+  if ($('field-msg').className === 'fw-msg') fwMsg('');
   _fwRecords = (res.merge && res.merge.items) || [];
+}
+
+// ── The records on a work order, every version of each ──────────────────────
+// Nothing is edited in place. A correction is a new version and the old one
+// stays; a delete is a mark, not a removal. So each item can show what the
+// field collected, what the office changed and why, and what reached BSI.
+//
+// No window.prompt anywhere here: Electron does not implement it, and a
+// handler that opened with one returned before doing anything — which is how
+// "Correct" came to do nothing at all.
+
+let _fwItems = [];
+
+const FW_ORIGIN = {
+  field: 'Collected in the field', field_resend: 'Re-sent from the field',
+  corrected: 'Corrected in the office', added: 'Added in the office',
+  office_import: 'Logged from the office', imported: 'Imported',
+};
+const FW_ITEM_STATE = {
+  in_bsi:            { label: 'In BSI', cls: 'pushed' },
+  not_in_bsi:        { label: 'Not in BSI', cls: '' },
+  changed_after_bsi: { label: 'Changed after BSI — fix it there by hand', cls: 'stale' },
+  deleted:           { label: 'Deleted', cls: 'deleted' },
+  moved:             { label: 'Moved to another work order', cls: '' },
+};
+const FW_FIELD_LABEL = {
+  brand: 'Brand', type: 'Type', length: 'Length', notes: 'Notes', work_order_id: 'Work order',
+  inspection_date: 'Date', lubricated: 'Lubricated', has_leveler: 'Leveler', has_claw: 'Claw',
+  has_vrung: 'V-rung', parts: 'Parts', manufacturer: 'Manufacturer', model: 'Model',
+  item_type: 'Type', lot_number: 'Lot #', mfg_month: 'Mfg month', mfg_year: 'Mfg year',
+  description: 'Description', overall_pass: 'Result', discard_note: 'Discard note',
+};
+const FW_FLAGS = [['lubricated', 'Lubricated'], ['has_leveler', 'Leveler'], ['has_claw', 'Claw'], ['has_vrung', 'V-rung']];
+
+const fwWhen = (v) => v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+const fwParts = (parts) => (Array.isArray(parts) ? parts : []).filter(p => p && p.name)
+  .map(p => (Number(p.qty) > 1 ? `${p.name} ×${p.qty}` : p.name)).join(', ');
+const fwFlagVal = (v) => v === true ? 'yes' : v === false ? 'no' : '';
+const fwFlagParse = (s) => s === 'yes' ? true : s === 'no' ? false : null;
+
+function fwMsg(text, kind) {
+  $('field-msg').textContent = text || '';
+  $('field-msg').className = 'fw-msg' + (kind ? ' ' + kind : '');
+}
+
+async function loadFieldItems(workOrderId) {
+  const res = await window.api.fieldHistory(workOrderId);
+  if (!res.ok) { fwMsg(res.error, 'bad'); _fwItems = []; }
+  else _fwItems = res.items || [];
   renderFieldRecords();
 }
 
 function renderFieldRecords() {
   const box = $('field-records');
-  $('field-rec-count').textContent = `${_fwRecords.length} item${_fwRecords.length !== 1 ? 's' : ''}`;
+  const live = _fwItems.filter(i => i.current).length;
+  const gone = _fwItems.length - live;
+  $('field-rec-count').textContent = `${live} item${live !== 1 ? 's' : ''}` + (gone ? ` · ${gone} deleted or moved` : '');
+  $('fw-add-btn').style.display = _fwArchived ? 'none' : '';
   box.innerHTML = '';
-  if (!_fwRecords.length) {
+  if (!_fwItems.length) {
     box.innerHTML = '<div class="cat-empty" style="padding:14px;">Nothing on this work order.</div>';
     return;
   }
-  _fwRecords.forEach(it => {
-    const r = it.winner || it;
-    const row = document.createElement('div');
-    row.className = 'fw-rec';
-    const bits = [r.brand, r.type, r.length].filter(Boolean).join(' · ');
-    row.innerHTML = `
-      <div class="fw-rec-main">
-        <div class="fw-rec-ser">${esc(r.serialNum || '(no serial)')}</div>
-        <div class="fw-rec-sub">${esc(bits)}${bits && r.techName ? ' · ' : ''}${esc(r.techName || '')}</div>
-      </div>`;
-    if (!_fwArchived) {
-      const b = document.createElement('button');
-      b.className = 'btn-sec'; b.textContent = 'Correct';
-      b.addEventListener('click', () => correctFieldRecord(r));
-      row.appendChild(b);
-    }
-    box.appendChild(row);
-  });
+  _fwItems.forEach((it, idx) => box.appendChild(fieldItemRow(it, idx)));
 }
 
-// A correction demands a typed reason. The RPC refuses without one and so
-// does the main process — this prompt is the third place that is true, not
-// the only one, because a screen is the easiest of the three to bypass.
-async function correctFieldRecord(r) {
-  const reason = window.prompt(
-    `Why is ${r.serialNum || 'this record'} being corrected?\n\n` +
-    'This is kept on the audit trail. The old version is not deleted.');
-  if (reason === null) return;
-  if (!reason.trim()) {
-    $('field-msg').textContent = 'A correction needs a reason.';
-    $('field-msg').className = 'fw-msg bad';
-    return;
-  }
-  const brand = window.prompt('Brand', r.brand || '');
-  if (brand === null) return;
-  const type = window.prompt('Type', r.type || '');
-  if (type === null) return;
-  const length = window.prompt('Length', r.length || '');
-  if (length === null) return;
+function fieldItemRow(it, idx) {
+  const v = it.current || it.versions[it.versions.length - 1];
+  const s = v.snapshot;
+  const st = FW_ITEM_STATE[it.state] || FW_ITEM_STATE.not_in_bsi;
+  const isFp = it.scope === 'fall_protection';
+  const bits = isFp
+    ? [s.item_type, s.manufacturer, s.model].filter(Boolean)
+    : [s.brand, s.type, s.length].filter(Boolean);
+  const parts = isFp ? '' : fwParts(s.parts);
 
-  const res = await window.api.fieldAmend({
-    inspectionId: r.clientId, scope: r.scope, reason,
-    fields: { brand, type, length },
-  });
-  if (!res.ok) {
-    $('field-msg').textContent = res.error;
-    $('field-msg').className = 'fw-msg bad';
-    return;
+  const row = document.createElement('div');
+  row.className = 'fw-rec ' + it.state;
+  row.dataset.idx = idx;
+  row.innerHTML = `
+    <div class="fw-rec-main">
+      <div class="fw-rec-ser">${esc(it.serialNum || '(no serial)')}
+        <span class="fw-rec-sub" style="font-weight:400;">${isFp ? 'Fall protection' : 'Ladder'} · ${esc(it.inspectionDate || '')}</span></div>
+      <div class="fw-rec-sub">${esc(bits.join(' · '))}${bits.length && v.collector ? ' · ' : ''}${esc(v.collector || '')}</div>
+      ${parts ? `<div class="fw-rec-sub">Parts: ${esc(parts)}</div>` : ''}
+      ${isFp && s.overall_pass === false ? '<div class="fw-rec-sub" style="color:var(--err);">Failed — removed from service</div>' : ''}
+      <div class="fw-rec-pills">
+        <span class="fw-pill ${st.cls}">${esc(st.label)}</span>
+        ${it.versions.length > 1 ? `<span class="fw-pill">${it.versions.length} versions</span>` : ''}
+        <span class="fw-pill">${esc(FW_ORIGIN[v.origin] || '')}</span>
+      </div>
+    </div>
+    <div class="fw-rec-acts"></div>
+    <div class="fw-rec-more fpr-inline" style="display:none;"></div>`;
+
+  const acts = row.querySelector('.fw-rec-acts');
+  const more = row.querySelector('.fw-rec-more');
+  const act = (label, mode, cls) => {
+    const b = document.createElement('button');
+    b.className = 'fpr-mini' + (cls ? ' ' + cls : '');
+    b.textContent = label; b.dataset.act = mode;
+    b.addEventListener('click', () => openFieldPanel(it, mode, more));
+    acts.appendChild(b);
+  };
+  if (!_fwArchived) {
+    if (it.current) {
+      act('Edit', 'edit');
+      if (it.canUndo) act('Undo correction', 'undo');
+      act('Delete', 'delete', 'danger');
+    } else if (it.state === 'deleted') {
+      act('Restore', 'restore');
+    }
   }
+  act('History', 'history');
+  return row;
+}
+
+// One panel per row, toggled. Opening a different mode on the same row swaps it.
+function openFieldPanel(it, mode, more) {
+  if (more.style.display !== 'none' && more.dataset.mode === mode) {
+    more.style.display = 'none'; more.innerHTML = ''; more.dataset.mode = ''; return;
+  }
+  more.dataset.mode = mode;
+  more.style.display = '';
+  if (mode === 'history') { more.innerHTML = fieldHistoryHtml(it); return; }
+  if (mode === 'edit') { more.innerHTML = fieldEditHtml(it); }
+  else {
+    const n = it.liveIds.length;
+    const prev = it.canUndo ? it.versions.filter(v => !v.isDeleted && v.version < it.current.version).pop() : null;
+    const what = {
+      delete: { q: 'Why is this being deleted?', ph: 'e.g. Not on this job',
+                hint: `It stops counting on this work order and on the certificate.${n > 1 ? ` All ${n} versions are marked deleted.` : ''} Nothing is erased — it stays in the history and can be restored.`,
+                btn: 'Delete', danger: true },
+      undo:   { q: 'Why is this correction being undone?', ph: 'e.g. Corrected the wrong ladder',
+                hint: prev ? `Goes back to version ${prev.version} (${FW_ORIGIN[prev.origin] || ''}). The correction stays in the history.` : '',
+                btn: 'Undo correction' },
+      restore:{ q: 'Why is this being restored?', ph: 'e.g. Deleted by mistake',
+                hint: 'Brings back the item as it last stood.', btn: 'Restore' },
+    }[mode];
+    more.innerHTML = `
+      <div class="fpr-grid"><label class="fpr-wide">${esc(what.q)}
+        <input type="text" class="fw-reason" maxlength="500" placeholder="${escA(what.ph)}"></label></div>
+      <div class="vw-hint">${esc(what.hint)}</div>
+      <div class="sup-actions"><button class="btn-ok fw-save"${what.danger ? ' style="background:var(--err);"' : ''}>${esc(what.btn)}</button></div>`;
+  }
+  const save = more.querySelector('.fw-save');
+  if (save) save.addEventListener('click', () => saveFieldPanel(it, mode, more, save));
+  const first = more.querySelector('input, textarea, select');
+  if (first) first.focus();
+}
+
+function fieldHistoryHtml(it) {
+  return it.versions.slice().reverse().map(v => {
+    const cls = v.isCurrent ? 'current' : v.isDeleted ? 'deleted' : '';
+    const tag = v.isCurrent ? ' · CURRENT' : v.isDeleted ? ' · DELETED' : ' · superseded';
+    const lines = [];
+    if (v.origin === 'field' || v.origin === 'field_resend') {
+      lines.push(`${v.collector ? 'By ' + esc(v.collector) + ' · ' : ''}captured ${esc(fwWhen(v.capturedAt))} · reached the server ${esc(fwWhen(v.receivedAt))}`);
+    } else {
+      lines.push(`${esc(fwWhen(v.receivedAt))}${v.collector && v.origin !== 'corrected' ? ' · ' + esc(v.collector) : ''}`);
+    }
+    lines.push(v.bsiPushedAt
+      ? `Sent to BSI ${esc(fwWhen(v.bsiPushedAt))}${v.bsiBoxRef ? ' (' + esc(v.bsiBoxRef) + ')' : ''}`
+      : 'Not sent to BSI');
+    const chg = v.changes.map(c =>
+      `<div class="fw-ver-chg"><b>${esc(FW_FIELD_LABEL[c.field] || c.field)}:</b> ${esc(c.from)} → ${esc(c.to)}</div>`).join('');
+    const why = v.audit.map(a =>
+      `<div class="fw-ver-reason">${esc({ amend: 'Corrected', delete: 'Deleted', restore: 'Restored', add: 'Added', asset_edit: 'Item edited' }[a.action] || a.action)}${a.actor ? ' by ' + esc(a.actor) : ''} ${esc(fwWhen(a.at))}: “${esc(a.reason)}”</div>`).join('');
+    const snap = v.version === 1 && it.scope === 'ladder'
+      ? `<div class="fw-ver-line">${esc([v.snapshot.brand, v.snapshot.type, v.snapshot.length].filter(Boolean).join(' · ') || '—')}${fwParts(v.snapshot.parts) ? ' · Parts: ' + esc(fwParts(v.snapshot.parts)) : ''}</div>`
+      : '';
+    return `<div class="fw-ver ${cls}">
+      <div class="fw-ver-top">v${v.version} · ${esc(FW_ORIGIN[v.origin] || v.origin)}${tag}</div>
+      ${lines.map(l => `<div class="fw-ver-line">${l}</div>`).join('')}${snap}${chg}${why}
+    </div>`;
+  }).join('');
+}
+
+function fieldEditHtml(it) {
+  const s = it.current.snapshot;
+  const inp = (k, label, val, extra) =>
+    `<label${extra && extra.wide ? ' class="fpr-wide"' : ''}>${esc(label)}
+       <input type="${(extra && extra.type) || 'text'}" data-k="${k}" value="${escA(val == null ? '' : val)}"${extra && extra.attrs ? ' ' + extra.attrs : ''}></label>`;
+  const reason = `<label class="fpr-wide">Why is this being corrected?
+       <input type="text" class="fw-reason" maxlength="500" placeholder="e.g. Brand was recorded from the wrong ladder"></label>`;
+  if (it.scope === 'fall_protection') {
+    return `<div class="fpr-grid">
+        ${inp('manufacturer', 'Manufacturer', s.manufacturer)}
+        ${inp('model', 'Model', s.model)}
+        ${inp('lot_number', 'Lot #', s.lot_number)}
+        ${inp('work_order_id', 'Work order', s.work_order_id)}
+        ${inp('mfg_month', 'Month of manufacture', s.mfg_month, { type: 'number', attrs: 'min="1" max="12"' })}
+        ${inp('mfg_year', 'Year of manufacture', s.mfg_year, { type: 'number', attrs: 'min="1950" max="2100"' })}
+        ${inp('description', 'Description', s.description, { wide: true })}
+        ${reason}
+      </div>
+      <div class="vw-hint">The tech's checklist answers and the result can't be edited here.
+        Changing what was found means inspecting it again.</div>
+      <div class="sup-actions"><button class="btn-ok fw-save">Save correction</button></div>`;
+  }
+  return `<div class="fpr-grid">
+      ${inp('brand', 'Brand', s.brand)}
+      ${inp('type', 'Type', s.type)}
+      ${inp('length', 'Length', s.length)}
+      ${inp('work_order_id', 'Work order', s.work_order_id)}
+      ${inp('parts', 'Parts (e.g. G13 x2, W44)', fwParts(s.parts), { wide: true })}
+      <label class="fpr-wide">Notes <textarea data-k="notes" rows="2" maxlength="1000">${esc(s.notes || '')}</textarea></label>
+      <div class="fpr-wide fw-flags">${FW_FLAGS.map(([k, l]) => `
+        <label>${esc(l)} <select data-k="${k}">
+          <option value=""${fwFlagVal(s[k]) === '' ? ' selected' : ''}>—</option>
+          <option value="yes"${fwFlagVal(s[k]) === 'yes' ? ' selected' : ''}>Yes</option>
+          <option value="no"${fwFlagVal(s[k]) === 'no' ? ' selected' : ''}>No</option></select></label>`).join('')}
+      </div>
+      ${reason}
+    </div>
+    <div class="vw-hint">Saved as a new version. The field's version is kept and stays in the history.</div>
+    <div class="sup-actions"><button class="btn-ok fw-save">Save correction</button></div>`;
+}
+
+// Only what actually changed goes to the server, so the audit trail says what
+// the lead meant to change and nothing else.
+function fieldEditChanges(it, more) {
+  const s = it.current.snapshot;
+  const out = {};
+  more.querySelectorAll('[data-k]').forEach(el => {
+    const k = el.dataset.k;
+    if (FW_FLAGS.some(f => f[0] === k)) {
+      const v = fwFlagParse(el.value);
+      if (v !== (s[k] === undefined ? null : s[k])) out[k] = v;
+    } else if (k === 'parts') {
+      if (el.value.trim() !== fwParts(s.parts)) out.parts = el.value;
+    } else {
+      const now = el.value.trim();
+      const was = s[k] == null ? '' : String(s[k]);
+      if (now !== was) out[k] = now;
+    }
+  });
+  return out;
+}
+
+async function saveFieldPanel(it, mode, more, btn) {
+  const reason = (more.querySelector('.fw-reason') || {}).value || '';
+  if (!reason.trim()) { fwMsg('A reason is required. It is kept on the audit trail.', 'bad'); return; }
+  let res;
+  btn.disabled = true;
+  try {
+    if (mode === 'edit') {
+      const fields = fieldEditChanges(it, more);
+      if (!Object.keys(fields).length) { fwMsg('Nothing was changed.', 'bad'); return; }
+      res = await window.api.fieldAmend({ inspectionId: it.current.id, scope: it.scope, reason, fields });
+    } else if (mode === 'undo') {
+      res = await window.api.fieldDelete({ inspectionId: it.current.id, scope: it.scope, reason });
+    } else if (mode === 'delete') {
+      res = await window.api.fieldDeleteItem({ ids: it.liveIds, scope: it.scope, reason });
+    } else if (mode === 'restore') {
+      res = await window.api.fieldRestore({ inspectionId: it.restoreId, scope: it.scope, reason });
+    }
+  } finally { btn.disabled = false; }
+  if (!res || !res.ok) { fwMsg((res && res.error) || 'That did not go through.', 'bad'); return; }
   await openFieldWo(_fwSel);
-  $('field-msg').textContent = 'Corrected. The work order now shows work that has not gone to BSI.';
-  $('field-msg').className = 'fw-msg ok';
+  fwMsg({
+    edit: 'Corrected. The previous version is kept — open History to see both.',
+    undo: 'Correction undone. The earlier version is current again.',
+    delete: 'Deleted. It is kept in the history and can be restored.',
+    restore: 'Restored.',
+  }[mode], 'ok');
+}
+
+// ── Adding a ladder the field never sent ────────────────────────────────────
+// Ladders only. A fall-protection record is a tech's checklist answers on the
+// day; one made up in the office would be a certificate for an inspection
+// nobody did. See 38_field_work_edits.sql.
+$('fw-add-btn').addEventListener('click', () => {
+  const box = $('field-add');
+  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const today = new Date().toLocaleDateString('en-CA');
+  box.style.display = '';
+  box.innerHTML = `
+    <div class="fpr-grid">
+      <label>Serial # <input type="text" id="fwa-serial" maxlength="64"></label>
+      <label>Inspection date <input type="date" id="fwa-date" value="${today}" max="${today}"></label>
+      <label>Brand <input type="text" id="fwa-brand" maxlength="64"></label>
+      <label>Type <input type="text" id="fwa-type" maxlength="64"></label>
+      <label>Length <input type="text" id="fwa-length" maxlength="64"></label>
+      <label>Parts (e.g. G13 x2, W44) <input type="text" id="fwa-parts"></label>
+      <label class="fpr-wide">Notes <textarea id="fwa-notes" rows="2" maxlength="1000"></textarea></label>
+      <div class="fpr-wide fw-flags">${FW_FLAGS.map(([k, l]) => `
+        <label>${esc(l)} <select id="fwa-${k}"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select></label>`).join('')}
+      </div>
+      <label class="fpr-wide">Why is this being added from the office?
+        <input type="text" id="fwa-reason" maxlength="500" placeholder="e.g. Tech radioed it in; phone was dead"></label>
+    </div>
+    <div class="vw-hint">For a ladder the field never sent. It is marked as added in the office and credited to you.
+      If the ladder is already on record that day, correct that one instead.
+      Fall protection can't be added here — its certificate needs a tech's inspection.</div>
+    <div class="sup-actions"><button class="btn-ok" id="fwa-save">Add ladder</button>
+      <button class="btn-sec" id="fwa-cancel">Cancel</button></div>`;
+  $('fwa-cancel').addEventListener('click', () => { box.style.display = 'none'; box.innerHTML = ''; });
+  $('fwa-save').addEventListener('click', addFieldLadder);
+  $('fwa-serial').focus();
+});
+
+async function addFieldLadder() {
+  const v = (id) => $(id).value;
+  if (!v('fwa-serial').trim()) { fwMsg('A serial number is required.', 'bad'); return; }
+  if (!v('fwa-reason').trim()) { fwMsg('A reason is required. It is kept on the audit trail.', 'bad'); return; }
+  const p = {
+    workOrderId: _fwSel, serialNum: v('fwa-serial'), inspectionDate: v('fwa-date'),
+    brand: v('fwa-brand'), type: v('fwa-type'), length: v('fwa-length'),
+    parts: v('fwa-parts'), notes: v('fwa-notes'), reason: v('fwa-reason'),
+  };
+  FW_FLAGS.forEach(([k]) => { const f = fwFlagParse(v('fwa-' + k)); if (f !== null) p[k] = f; });
+  $('fwa-save').disabled = true;
+  const res = await window.api.fieldAdd(p);
+  if ($('fwa-save')) $('fwa-save').disabled = false;
+  if (!res.ok) { fwMsg(res.error, 'bad'); return; }
+  $('field-add').style.display = 'none'; $('field-add').innerHTML = '';
+  await openFieldWo(_fwSel);
+  fwMsg(`${p.serialNum.trim()} added. It has not gone to BSI yet.`, 'ok');
 }
 
 async function setFieldArchived(w, archived) {
@@ -2571,6 +2875,7 @@ function catTab(which) {
     $('cat-' + t).style.display = which === t ? '' : 'none';
   });
   $('btn-new-type').style.display  = which === 'types'  ? '' : 'none';
+  if (which !== 'types') { $('cat-new-type').style.display = 'none'; $('cat-new-type-name').value = ''; }
   $('btn-new-model').style.display = which === 'models' ? '' : 'none';
   $('cat-list-label').textContent = which === 'types' ? 'Equipment types'
     : which === 'models' ? 'Models' : 'Ladder parts';
@@ -2953,12 +3258,31 @@ function selectType(id) {
   catTypeMsg('');
 }
 
-$('btn-new-type').addEventListener('click', async () => {
-  const name = String(prompt('Name the equipment type') || '').trim();
-  if (!name) return;
+// An inline field, not prompt(): Electron does not implement prompt(), so this
+// button did nothing in the packaged app.
+function closeNewType() {
+  $('cat-new-type').style.display = 'none';
+  $('cat-new-type-name').value = '';
+}
+$('btn-new-type').addEventListener('click', () => {
+  if ($('cat-new-type').style.display !== 'none') { closeNewType(); return; }
+  $('cat-new-type').style.display = '';
+  $('cat-new-type-name').focus();
+});
+$('cat-new-type-cancel').addEventListener('click', closeNewType);
+$('cat-new-type-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('cat-new-type-save').click(); }
+  if (e.key === 'Escape') closeNewType();
+});
+$('cat-new-type-save').addEventListener('click', async () => {
+  const name = $('cat-new-type-name').value.trim();
+  if (!name) { catTypeMsg('Give the type a name.', true); $('cat-new-type-name').focus(); return; }
+  $('cat-new-type-save').disabled = true;
   catTypeMsg('Saving…');
   const res = await window.api.fpSaveType({ name });
+  $('cat-new-type-save').disabled = false;
   if (!res.ok) { catTypeMsg(res.error, true); return; }
+  closeNewType();
   await loadCatTypes();
   // A brand new type has no checks yet, so start it on the two every type asks.
   _catTypeSel = _catTypes.find(t => t.id === res.id) || null;
@@ -3567,6 +3891,16 @@ function renderJbDetail() {
         : '<button class="fpr-mini" id="btn-jb-reopen">Reopen</button>'}
       <button class="fpr-mini" id="btn-jb-del" style="margin-left:auto;">Delete job</button>
     </div>
+    <div id="jb-close-box" class="fpr-inline" style="display:none;">
+      <div class="fpr-grid" style="grid-template-columns:1fr;">
+        <label>Anything to note about finishing this job? (optional)
+          <input type="text" id="jb-close-note" maxlength="1000" placeholder="e.g. All done, gate locked"></label>
+      </div>
+      <div class="sup-actions">
+        <button class="btn-p" id="btn-jb-close-ok">Mark complete</button>
+        <button class="btn-sec" id="btn-jb-close-cancel">Cancel</button>
+      </div>
+    </div>
     <div class="asg-ro" style="font-size:11.5px;color:var(--muted);margin-top:8px;">
       Deleting removes the plan only. The inspections recorded against this work
       order are matched by number and are not touched.
@@ -3576,9 +3910,27 @@ function renderJbDetail() {
   if (ed) ed.addEventListener('click', () => { _jbEditing = { ...j }; renderJbDetail(); });
 
   const close = $('btn-jb-close');
-  if (close) close.addEventListener('click', async () => {
-    const note = prompt('Anything to note about finishing this job? (optional)') ?? '';
+  // The note is asked for inline, not with prompt(), which Electron does not
+  // implement — in the packaged app the button never got past it.
+  if (close) close.addEventListener('click', () => {
+    const box = $('jb-close-box');
+    box.style.display = box.style.display === 'none' ? '' : 'none';
+    if (box.style.display === '') $('jb-close-note').focus();
+  });
+  const closeCancel = $('btn-jb-close-cancel');
+  if (closeCancel) closeCancel.addEventListener('click', () => {
+    $('jb-close-box').style.display = 'none'; $('jb-close-note').value = '';
+  });
+  const closeNote = $('jb-close-note');
+  if (closeNote) closeNote.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('btn-jb-close-ok').click(); }
+  });
+  const closeOk = $('btn-jb-close-ok');
+  if (closeOk) closeOk.addEventListener('click', async () => {
+    const note = $('jb-close-note').value.trim();
+    closeOk.disabled = true;
     const res = await window.api.jobsClose({ job_id: j.id, note });
+    closeOk.disabled = false;
     if (!res.ok) { jbMsg(res.error, true); return; }
     jbMsg('Marked complete. It stays on the techs’ phones for two days, marked closed.');
     await loadJobBoard();
@@ -5046,6 +5398,9 @@ $('btn-adv-home').addEventListener('click',  () => showScreen('home'));
 $('adv-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('adv-fphist').addEventListener('click',  () => requireAuth('fphist'));
 $('btn-fppool-add').addEventListener('click', fpPoolAdd);
+$('btn-fppool-pick').addEventListener('click', fpPoolPick);
+$('btn-fppool-check').addEventListener('click', fpPoolCheckPaste);
+$('btn-fppool-cancel').addEventListener('click', fpPoolReset);
 $('adv-views').addEventListener('click',   () => requireAuth('views'));
 $('home-team').addEventListener('click', () => requireAuth('team'));
 // No sign-in needed to read how the thing works.
@@ -5752,12 +6107,52 @@ function fpHistReset() {
   fpPoolLoad();
 }
 
-// ── Spare numbers (36) ───────────────────────────────────────────────────────
-// Pasted straight from the spreadsheet: a column copied out of Excel or Sheets
-// arrives one per line. A header cell ("Serial #") is dropped — a real number
-// has a digit in it.
-function fpPoolParse(text) {
-  return String(text || '').split(/[\r\n\t,;]+/).map(s => s.trim()).filter(s => s && /\d/.test(s));
+// ── Spare numbers (36, 37) ───────────────────────────────────────────────────
+// A chosen sheet or a paste is read by main (electron/spare-numbers.cjs) and
+// shown split into free and already-used before anything is sent: the sheet
+// Batavia issues lists every number, spent ones included, and a spent number
+// loaded as free would be handed to a second item.
+let _fpPool = null;
+
+function fpPoolReset() {
+  _fpPool = null;
+  $('fppool-preview').style.display = 'none';
+}
+
+function fpPoolPreview(res, source) {
+  const msg = $('fppool-msg');
+  if (res.error) { fpPoolReset(); msg.textContent = res.error; return; }
+  _fpPool = Object.assign(res, { source });
+  msg.textContent = '';
+  $('fppool-stat').innerHTML =
+    `<strong>${res.free.length}</strong> free to load` +
+    (res.free.length ? ` (${esc(spareRange(res.free))})` : '') +
+    ` · <strong>${res.used.length}</strong> already used on the sheet` +
+    (res.repeated ? ` · ${res.repeated} listed twice` : '') +
+    (res.ignored ? ` · ${res.ignored} row${res.ignored !== 1 ? 's' : ''} with no number` : '') +
+    ` <span style="color:var(--muted);">— numbers read from column ${res.column}</span>`;
+  $('fppool-used').innerHTML = res.usedRows.length
+    ? '<div style="margin-bottom:4px;">These go in as used, so no phone is ever given them:</div>' +
+      res.usedRows.map(u => `<div>${esc(u.serial)} — ${esc(u.evidence.join(' · '))}</div>`).join('')
+    : '';
+  $('btn-fppool-add').textContent = `Load ${res.free.length + res.used.length} Numbers`;
+  $('fppool-preview').style.display = '';
+}
+
+function spareRange(list) {
+  return list.length === 1 ? list[0] : `${list[0]} – ${list[list.length - 1]}`;
+}
+
+async function fpPoolPick() {
+  const p = await window.api.openCsv();
+  if (!p) return;
+  fpPoolPreview(await window.api.fpPoolParseFile(p), p.split(/[\\/]/).pop());
+}
+
+async function fpPoolCheckPaste() {
+  const text = $('fppool-paste').value;
+  if (!text.trim()) { $('fppool-msg').textContent = 'Paste some numbers first.'; return; }
+  fpPoolPreview(await window.api.fpPoolParseText(text), 'pasted');
 }
 
 async function fpPoolLoad() {
@@ -5774,19 +6169,23 @@ async function fpPoolLoad() {
 }
 
 async function fpPoolAdd() {
-  const serials = fpPoolParse($('fppool-paste').value);
+  if (!_fpPool) return;
   const msg = $('fppool-msg');
-  if (!serials.length) { msg.textContent = 'Paste some numbers first.'; return; }
+  const { free, used, source } = _fpPool;
   $('btn-fppool-add').disabled = true;
-  msg.textContent = `Loading ${serials.length}…`;
-  const res = await window.api.fpPoolAdd(serials);
+  msg.textContent = `Loading ${free.length + used.length}…`;
+  const res = await window.api.fpPoolAdd({ serials: free, used, source: `Lia Office: ${source}` });
   $('btn-fppool-add').disabled = false;
   if (!res.ok) { msg.textContent = res.error; return; }
   const r = res.result;
   msg.textContent = `${r.added} added` +
+    (r.used_on_sheet ? ` · ${r.used_on_sheet} marked used from the sheet` : '') +
+    (r.already_on_an_item ? ` · ${r.already_on_an_item} already on an item (marked used)` : '') +
+    (r.now_used ? ` · ${r.now_used} now used` : '') +
     (r.already_listed ? ` · ${r.already_listed} already loaded` : '') +
-    (r.already_on_an_item ? ` · ${r.already_on_an_item} already on an item (marked used)` : '');
+    (r.taken_from_tag_stock ? ` · ${r.taken_from_tag_stock} taken out of blank tag stock` : '');
   $('fppool-paste').value = '';
+  fpPoolReset();
   fpPoolLoad();
 }
 

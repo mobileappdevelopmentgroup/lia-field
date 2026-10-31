@@ -60,6 +60,9 @@ const TYPE_ABBREV: Record<string, string> = {
   comp:   'Composite',
   dbl:    'Dbl Step',
   mhole:  'Mhole',
+  // The phone's dropdown says Manhole; BSI's says Mhole, and no fuzzy rule
+  // in keyboardSelectDropdown gets from one to the other.
+  manhole: 'Mhole',
   other:  'Other',
   pltfrm: 'Pltfrm Stp',
   rack:   'Rack',

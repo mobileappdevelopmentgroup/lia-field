@@ -367,7 +367,8 @@ const BRAND_OPTIONS = [
 ];
 const TYPE_OPTIONS = [
   'Extension','Step','Combination','Multi-Position','Straight',
-  'Platform','Attic','Podium','Trestle','Articulated','Rolling','Folding','Hook'
+  'Platform','Attic','Podium','Trestle','Articulated','Rolling','Folding','Hook',
+  'Manhole'
 ];
 // ── Parts library seed (from Batavia work-order data) ─────────────────────────
 // favorited = shown as a quick-tap button; defaultQty = first-tap quantity

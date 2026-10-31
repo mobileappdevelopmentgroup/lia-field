@@ -210,6 +210,22 @@ await p.waitForTimeout(150);
 ok('a quoted prompt survives a round trip',
    await p.$eval('#cat-checks .cat-check-row input', e => e.value), 'Says "OK" on the label');
 
+// ── A new equipment type, named inline (Electron has no prompt()) ──────────
+await p.evaluate(() => { window.prompt = () => { throw new Error('prompt() is and will not be supported.'); };
+                         showScreen('catalog'); loadCatalog(); });
+await p.waitForTimeout(300);
+await p.click('#tab-types'); await p.waitForTimeout(150);
+const typesBefore = await p.evaluate(() => _catTypes.length);
+await p.click('#btn-new-type');
+ok('+ New opens a name field', await p.isVisible('#cat-new-type-name'), true);
+await p.click('#cat-new-type-save'); await p.waitForTimeout(150);
+ok('a blank name is refused', await p.evaluate(() => _catTypes.length), typesBefore);
+await p.fill('#cat-new-type-name', 'Rescue tripod');
+await p.press('#cat-new-type-name', 'Enter'); await p.waitForTimeout(400);
+ok('Enter adds the type', await p.evaluate(() => _catTypes.some(t => t.name === 'Rescue tripod')), true);
+ok('and opens it for editing', await p.$eval('#cat-type-name', e => e.value), 'Rescue tripod');
+ok('the name field closes', await p.isVisible('#cat-new-type-name'), false);
+
 console.log('\npage errors:', errs.length ? errs : 'none');
 await b.close(); server.close();
 console.log(fails ? `RESULT: ${fails} failure(s)` : 'RESULT: all passed');
