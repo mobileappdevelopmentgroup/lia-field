@@ -4,7 +4,8 @@
 // and what it refuses to do quietly:
 //   • superseded and deleted records are SHOWN, marked — an audit trail that
 //     hides what changed is not one
-//   • neither correcting nor deleting is possible without a typed reason
+//   • correcting and deleting need no typed reason (2026-10-31); the kept
+//     version and the restore button are the safety net
 //   • the tech's answers are not editable here; changing what was found is
 //     re-inspecting, not amending
 import { chromium } from 'playwright';
@@ -138,12 +139,6 @@ ok('correcting opens a form', await p.evaluate(() => !!$('fpi-reason')), true);
 ok('and says the tech’s answers are not editable here',
    await p.$eval('.fpr-inline', e => /Changing what\s+was found is re-inspecting/.test(e.textContent.replace(/\s+/g, ' '))), true);
 
-await p.click('#fpi-save'); await p.waitForTimeout(250);
-// A correction with no reason is indistinguishable from tampering later on.
-ok('a correction with no reason is refused',
-   await p.$eval('#fpr-msg', e => /reason is required/i.test(e.textContent)), true);
-ok('and nothing was sent', await p.evaluate(() => window.__calls.filter(c => c[0] === 'amend').length), 0);
-
 await p.fill('#fpi-mfr', 'MSA Safety Works');
 await p.fill('#fpi-reason', 'Model was recorded from the wrong label');
 await p.click('#fpi-save'); await p.waitForTimeout(400);
@@ -158,14 +153,11 @@ ok('and the lead is told the old version is kept',
 
 // ── Deleting ────────────────────────────────────────────────────────────────
 await p.click('[data-fpr-del]'); await p.waitForTimeout(250);
-await p.click('#fpi-save'); await p.waitForTimeout(250);
-ok('a deletion with no reason is refused',
-   await p.evaluate(() => window.__calls.filter(c => c[0] === 'delete').length), 0);
-await p.fill('#fpi-reason', 'Recorded against the wrong item');
+ok('deleting asks for no reason', await p.evaluate(() => !!$('fpi-reason')), false);
 await p.click('#fpi-save'); await p.waitForTimeout(400);
-ok('a deletion with a reason goes through',
+ok('a deletion goes through with one click',
    await p.evaluate(() => window.__calls.filter(c => c[0] === 'delete').pop()[1]),
-   { inspection_id: 'i2', reason: 'Recorded against the wrong item' });
+   { inspection_id: 'i2', reason: '' });
 // It is not destroyed, and the wording has to say so or the lead will not use it.
 ok('and the lead is told the record is kept',
    await p.$eval('#fpr-msg', e => /kept and stays auditable/i.test(e.textContent)), true);
@@ -173,16 +165,12 @@ ok('and the lead is told the record is kept',
 // ── Correcting the item itself ──────────────────────────────────────────────
 await p.click('#btn-fpr-edit-asset'); await p.waitForTimeout(200);
 await p.fill('#fpa-serial', 'FP158354A');
-await p.click('#btn-fpa-save'); await p.waitForTimeout(250);
-ok('changing a serial without a reason is refused',
-   await p.evaluate(() => window.__calls.filter(c => c[0] === 'asset').length), 0);
-await p.fill('#fpa-reason', 'Serial was mistyped on first entry');
 await p.click('#btn-fpa-save'); await p.waitForTimeout(400);
-ok('with a reason it goes through',
+ok('changing a serial needs no note',
    await p.evaluate(() => {
      const c = window.__calls.filter(x => x[0] === 'asset').pop()[1];
      return { serial: c.serial_raw, reason: c.reason };
-   }), { serial: 'FP158354A', reason: 'Serial was mistyped on first entry' });
+   }), { serial: 'FP158354A', reason: '' });
 // Tags already in the field point at the certificate code.
 ok('and the certificate code is explicitly out of scope',
    await p.$eval('#fpr-detail', e => /certificate code never changes/i.test(e.textContent)), true);

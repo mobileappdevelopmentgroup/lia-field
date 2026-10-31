@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, Menu, nativeTheme } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
@@ -64,6 +64,85 @@ function readConfig() {
   catch { return {}; }
 }
 
+// ── Display preferences ──────────────────────────────────────────────────────
+// Zoom and appearance, kept between launches in userData/display.json. Chromium
+// does not reliably remember zoom for a file:// page, so it is saved here.
+// Appearance goes through nativeTheme.themeSource, which is what the page's
+// prefers-color-scheme follows, so the CSS needs no message from main.
+
+const DISPLAY_FILE = () => path.join(app.getPath('userData'), 'display.json');
+const THEMES = ['system', 'light', 'dark'];
+const ZOOM_MIN = -3, ZOOM_MAX = 4;   // ~58% to ~207%
+
+function readDisplay() {
+  let d = {};
+  try { d = JSON.parse(fs.readFileSync(DISPLAY_FILE(), 'utf-8')) || {}; } catch { /* first launch */ }
+  const zoom = Number(d.zoom);
+  return {
+    zoom: Number.isFinite(zoom) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)) : 0,
+    theme: THEMES.includes(d.theme) ? d.theme : 'system',
+  };
+}
+
+let display = { zoom: 0, theme: 'system' };
+
+function saveDisplay() {
+  try { fs.writeFileSync(DISPLAY_FILE(), JSON.stringify(display)); } catch { /* not worth failing over */ }
+}
+
+function setZoom(level) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  display.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, level));
+  mainWindow.webContents.setZoomLevel(display.zoom);
+  saveDisplay();
+}
+
+function setTheme(theme) {
+  display.theme = theme;
+  nativeTheme.themeSource = theme;
+  saveDisplay();
+  buildMenu();
+}
+
+// Electron's default menu, written out so View can carry Appearance and zoom
+// steps that are saved. ⌘= is there hidden because ⌘+ needs Shift on most
+// keyboards, and that is the key people actually press.
+function buildMenu() {
+  const mac = process.platform === 'darwin';
+  const zoomBy = (d) => () => {
+    if (mainWindow && !mainWindow.isDestroyed()) setZoom(mainWindow.webContents.getZoomLevel() + d);
+  };
+  const theme = (id, label) => ({
+    label, type: 'radio', checked: display.theme === id, click: () => setTheme(id),
+  });
+  const template = [
+    ...(mac ? [{ role: 'appMenu' }] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => setZoom(0) },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: zoomBy(0.5) },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: zoomBy(0.5), visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: zoomBy(-0.5) },
+        { type: 'separator' },
+        { label: 'Appearance', submenu: [
+          theme('system', 'Match System'), theme('light', 'Light'), theme('dark', 'Dark'),
+        ] },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 // ── Window ───────────────────────────────────────────────────────────────────
 
 function createWindow() {
@@ -77,7 +156,8 @@ function createWindow() {
     minWidth: 700,
     minHeight: 560,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#0f0f1a',
+    // Matches --bg in either theme, so the window does not flash the other one.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f0f1a' : '#f4f5fa',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -85,6 +165,14 @@ function createWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  // Set after every load: a reload or a crash recovery starts back at 100%.
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.setZoomLevel(display.zoom);
+  });
+  // Pinch and ⌘-scroll change zoom without going through the menu.
+  mainWindow.webContents.on('zoom-changed', (_e, dir) => {
+    setZoom(mainWindow.webContents.getZoomLevel() + (dir === 'in' ? 0.5 : -0.5));
+  });
   mainWindow.setTitle('Lia');
   mainWindow.on('page-title-updated', (e) => { e.preventDefault(); mainWindow.setTitle('Lia'); });
 }
@@ -93,6 +181,9 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'media');
   });
+  display = readDisplay();
+  nativeTheme.themeSource = display.theme;
+  buildMenu();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -339,24 +430,29 @@ ipcMain.handle('field:set-archived', async (_event, payload) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
-// Correcting what the field recorded. Every one of these demands a typed
-// reason — the RPC refuses without it, and so does this, so the screen cannot
-// be the only thing standing between a silent edit and the audit trail.
-function fieldRecordCall(channel, rpc, verb) {
+// Correcting what the field recorded. The note is optional (decided
+// 2026-10-31): every change is already a kept version with who and when, and a
+// deleted record can be restored, so a typed reason was friction for the office
+// rather than protection. The RPCs still require a non-blank reason, so a blank
+// note is sent as NO_NOTE, which the screens recognise and do not quote.
+const NO_NOTE = '(no note)';
+function officeNote(v) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s ? s.slice(0, 500) : NO_NOTE;
+}
+
+function fieldRecordCall(channel, rpc) {
   ipcMain.handle(channel, async (_event, payload) => {
     try {
       const p = payload || {};
       if (typeof p.inspectionId !== 'string' || !p.inspectionId) {
         return { ok: false, error: 'No record picked.' };
       }
-      if (typeof p.reason !== 'string' || !p.reason.trim()) {
-        return { ok: false, error: `Say why this record is being ${verb}.` };
-      }
       const fields = channel === 'field:amend' ? amendFields(p.scope, p.fields) : { body: {} };
       if (fields.error) return { ok: false, error: fields.error };
       const sb = await getSupabase();
       const body = Object.assign({}, fields.body, {
-        inspection_id: p.inspectionId, reason: p.reason.trim(),
+        inspection_id: p.inspectionId, reason: officeNote(p.reason),
       });
       const fn = p.scope === 'fall_protection' ? rpc.fp : rpc.ladder;
       if (!fn) return { ok: false, error: 'That cannot be done to this kind of record.' };
@@ -366,9 +462,9 @@ function fieldRecordCall(channel, rpc, verb) {
     } catch (err) { return { ok: false, error: String(err) }; }
   });
 }
-fieldRecordCall('field:amend',   { ladder: 'amend_inspection',   fp: 'amend_fp_inspection' },  'corrected');
-fieldRecordCall('field:delete',  { ladder: 'delete_inspection',  fp: 'delete_fp_inspection' },  'deleted');
-fieldRecordCall('field:restore', { ladder: 'restore_inspection', fp: 'restore_fp_inspection' }, 'restored');
+fieldRecordCall('field:amend',   { ladder: 'amend_inspection',   fp: 'amend_fp_inspection' });
+fieldRecordCall('field:delete',  { ladder: 'delete_inspection',  fp: 'delete_fp_inspection' });
+fieldRecordCall('field:restore', { ladder: 'restore_inspection', fp: 'restore_fp_inspection' });
 
 const fieldVersions = require('./field-versions.cjs');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -462,10 +558,9 @@ ipcMain.handle('field:history', async (_event, workOrderId) => {
 ipcMain.handle('field:add', async (_event, payload) => {
   try {
     const p = payload || {};
-    const reason = typeof p.reason === 'string' ? p.reason.trim() : '';
+    const reason = officeNote(p.reason);
     const serial = typeof p.serialNum === 'string' ? p.serialNum.trim() : '';
     const wo = typeof p.workOrderId === 'string' ? p.workOrderId.trim() : '';
-    if (!reason) return { ok: false, error: 'Say why this ladder is being added.' };
     if (!serial) return { ok: false, error: 'A serial number is required.' };
     if (serial.length > 64) return { ok: false, error: 'That serial number is too long.' };
     if (!wo || wo.length > 64) return { ok: false, error: 'Pick a work order first.' };
@@ -511,8 +606,7 @@ ipcMain.handle('field:add', async (_event, payload) => {
 ipcMain.handle('field:delete-item', async (_event, payload) => {
   try {
     const p = payload || {};
-    const reason = typeof p.reason === 'string' ? p.reason.trim() : '';
-    if (!reason) return { ok: false, error: 'Say why this record is being deleted.' };
+    const reason = officeNote(p.reason);
     const ids = Array.isArray(p.ids) ? p.ids : [];
     if (!ids.length || ids.length > 50 || !ids.every(x => typeof x === 'string' && UUID_RE.test(x))) {
       return { ok: false, error: 'No record picked.' };
@@ -691,8 +785,8 @@ ipcMain.handle('fp:get-checks', async (_event, modelId) => {
 // ── Fall protection records ────────────────────────────────────────────────
 // Browsing, correcting and deleting what the field recorded. Every write goes
 // through a SECURITY DEFINER function that supersedes rather than overwrites
-// and demands a reason — see supabase/migrations/15_fp_records.sql for why a certificate
-// is never destroyed.
+// (see supabase/migrations/15_fp_records.sql for why a certificate is never
+// destroyed). The note is optional — see officeNote().
 ipcMain.handle('fpr:list', async (_event, opts) => {
   try {
     const sb = await getSupabase();
@@ -716,20 +810,21 @@ ipcMain.handle('fpr:detail', async (_event, assetId) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
-function fprWrite(channel, rpc) {
+function fprWrite(channel, rpc, noted) {
   ipcMain.handle(channel, async (_event, payload) => {
     try {
       const sb = await getSupabase();
-      const { data, error } = await sb.rpc(rpc, { p: payload });
+      const p = noted ? Object.assign({}, payload, { reason: officeNote(payload && payload.reason) }) : payload;
+      const { data, error } = await sb.rpc(rpc, { p });
       if (error) return { ok: false, error: error.message };
       return { ok: true, result: typeof data === 'string' ? JSON.parse(data) : data };
     } catch (err) { return { ok: false, error: String(err) }; }
   });
 }
-fprWrite('fpr:amend',       'amend_fp_inspection');
-fprWrite('fpr:delete',      'delete_fp_inspection');
-fprWrite('fpr:restore',     'restore_fp_inspection');
-fprWrite('fpr:update-asset', 'update_fp_asset');
+fprWrite('fpr:amend',       'amend_fp_inspection', true);
+fprWrite('fpr:delete',      'delete_fp_inspection', true);
+fprWrite('fpr:restore',     'restore_fp_inspection', true);
+fprWrite('fpr:update-asset', 'update_fp_asset', true);
 fprWrite('fpr:mark-pushed', 'mark_fp_bsi_pushed');
 
 ipcMain.handle('fpr:pending-bsi', async (_event, workOrder) => {

@@ -24,6 +24,39 @@
       --font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       --mono:    'SF Mono','Fira Code','Cascadia Code',monospace;
     }
+    /* Light appearance. Follows View → Appearance (nativeTheme in main); with
+       "Match System" it follows macOS. Dark is the default above, untouched.
+       The run log stays dark on purpose: it is a terminal. */
+    :root { color-scheme: dark; }
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg:      #f4f5fa;
+        --surf:    #ffffff;
+        --surf2:   #eceef6;
+        --border:  #d3d6e6;
+        --border-rgb: 211,214,230;
+        --border-h: #9a9cb8;
+        --accent:  #4f6ef7;
+        --acc-h:   #3d5be0;
+        --ok:      #1f9d55;
+        --warn:    #c98700;
+        --err:     #d63a2a;
+        --bad:     #c0281a;
+        --warn-fg: #8a5a00;
+        --text:    #1b1d2e;
+        --muted:   #636682;
+        --ink:     0,0,0;
+        --fg-accent: #3450d6;
+        --fg-err:  #c0281a;
+        --fg-ok:   #17803d;
+        --fg-warn: #8a5a00;
+        --fg-dim:  #556070;
+        --bg-err:  #fde8e6;
+        --bg-warn: #fdf3dc;
+        --bg-dim:  #eceef3;
+      }
+    }
     html, body { height: 100%; }
     body { font-family: var(--font); background: var(--bg); color: var(--text);
            display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-size: 13px; }
@@ -44,7 +77,7 @@
     .tb-home:hover { color: var(--text); border-color: var(--accent); }
     #user-badge { font-size: 11px; color: var(--muted); }
     #credit-badge { font-size: 11px; font-weight: 700; background: rgba(79,110,247,.15);
-                    color: #8fa4ff; border: 1px solid rgba(79,110,247,.25);
+                    color: var(--fg-accent, #8fa4ff); border: 1px solid rgba(79,110,247,.25);
                     border-radius: 99px; padding: 2px 10px; }
 
     /* ── Onboarding screens ─────────────────────────────────────────────── */
@@ -55,8 +88,8 @@
     .ob-hint  { color: var(--muted); font-size: 12px; line-height: 1.55; }
     .ob-actions { margin-top: 16px; }
     .ob-msg   { margin-top: 10px; font-size: 12px; min-height: 16px; }
-    .ob-msg.err { color: #f87171; }
-    .ob-msg.ok  { color: #4ade80; }
+    .ob-msg.err { color: var(--fg-err, #f87171); }
+    .ob-msg.ok  { color: var(--fg-ok, #4ade80); }
     .ob-row   { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px;
                 border-bottom: 1px solid var(--border); font-size: 13px; }
     .ob-row .ob-who  { font-weight: 600; }
@@ -98,7 +131,7 @@
     #team-remove-panel input { width: 100%; background: var(--bg); color: var(--fg);
                                border: 1px solid var(--border); border-radius: 7px;
                                padding: 8px 10px; font-size: 13px; }
-    #team-remove-error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
+    #team-remove-error { color: var(--fg-err, #f87171); font-size: 12px; margin-top: 10px; min-height: 16px; }
     .ctx-box { background: var(--surf); border: 1px solid var(--border); border-radius: 12px;
                padding: 22px; width: 420px; max-width: calc(100vw - 40px); }
     .ctx-box h3 { margin: 0 0 4px; font-size: 15px; }
@@ -108,7 +141,7 @@
     .ctx-box select, .ctx-box input { width: 100%; background: var(--bg); color: var(--fg);
                      border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-size: 13px; }
     .ctx-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
-    #ctx-error { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 16px; }
+    #ctx-error { color: var(--fg-err, #f87171); font-size: 12px; margin-top: 10px; min-height: 16px; }
 
     @media (max-height: 720px) {
       .mode-icon { font-size: 22px; }
@@ -136,7 +169,7 @@
     input[type="text"]:focus, input[type="number"]:focus {
       border-color: var(--accent); }
     input::placeholder { color: var(--muted); }
-    #login-error { font-size: 12px; color: #ff7b6e; background: rgba(231,76,60,.07);
+    #login-error { font-size: 12px; color: var(--fg-err, #ff7b6e); background: rgba(231,76,60,.07);
                    border: 1px solid rgba(231,76,60,.22); border-radius: 6px;
                    padding: 8px 12px; display: none; }
     #login-error.vis { display: block; }
@@ -200,7 +233,7 @@
        twenty solid green rows is not readable either. */
     .fw-row { padding: 11px 13px; border-bottom: 1px solid var(--border); cursor: pointer;
               border-left: 3px solid transparent; }
-    .fw-row:hover    { background: rgba(255,255,255,.03); }
+    .fw-row:hover    { background: rgba(var(--ink, 255,255,255),.03); }
     .fw-row.sel      { background: rgba(79,110,247,.10); }
     .fw-row.processed      { border-left-color: var(--ok);
                              background: rgba(46,204,113,.07); }
@@ -314,7 +347,7 @@
                     padding: 12px 16px; font-size: 11px; font-weight: 700; color: var(--muted);
                     text-transform: uppercase; letter-spacing: .07em; }
     .cat-item { padding: 10px 16px; cursor: pointer; border-left: 2px solid transparent; }
-    .cat-item:hover { background: rgba(255,255,255,.03); }
+    .cat-item:hover { background: rgba(var(--ink, 255,255,255),.03); }
     .cat-item.sel { background: rgba(79,110,247,.10); border-left-color: var(--accent); }
     .cat-item-name { font-size: 13px; font-weight: 600; }
     .cat-item-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -355,11 +388,11 @@
     .fpr-sn { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 13px;
               font-weight: 700; }
     .fpr-st { font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
-              padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,.07);
+              padding: 2px 6px; border-radius: 4px; background: rgba(var(--ink, 255,255,255),.07);
               color: var(--muted); }
-    .fpr-st.pass { background: rgba(37,162,68,.18); color: #5fd08a; }
-    .fpr-st.fail { background: rgba(217,45,32,.18); color: #ff6b5e; }
-    .fpr-st.inspection-overdue { background: rgba(240,165,0,.18); color: #f5c842; }
+    .fpr-st.pass { background: rgba(37,162,68,.18); color: var(--fg-ok, #5fd08a); }
+    .fpr-st.fail { background: rgba(217,45,32,.18); color: var(--fg-err, #ff6b5e); }
+    .fpr-st.inspection-overdue { background: rgba(240,165,0,.18); color: var(--fg-warn, #f5c842); }
     .fpr-link { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
                 word-break: break-all; color: var(--muted); margin-top: 8px; }
     /* The code printed on the tag face. Shown beside the serial because when
@@ -441,7 +474,7 @@
     .fpr-hist-date { font-weight: 700; font-size: 13px; }
     .fpr-hist-state { margin-left: auto; font-size: 10.5px; text-transform: uppercase;
                       letter-spacing: .04em; color: var(--muted); }
-    .fpr-hist-reason { font-size: 11.5px; color: #ff6b5e; margin-top: 4px; }
+    .fpr-hist-reason { font-size: 11.5px; color: var(--fg-err, #ff6b5e); margin-top: 4px; }
     .fpr-hist-acts { display: flex; gap: 5px; margin-top: 7px; }
     .fpr-inline { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
     .fpr-claim { display: flex; gap: 10px; font-size: 11.5px; padding: 5px 0;
@@ -486,22 +519,22 @@
     .tg-stat span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
     .tg-ranges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
     .tg-range { font-family: var(--mono); font-size: 11.5px; padding: 3px 7px; border-radius: 4px;
-                background: rgba(255,255,255,.05); border: 1px solid var(--border); }
+                background: rgba(var(--ink, 255,255,255),.05); border: 1px solid var(--border); }
     .tg-search { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 7px 10px;
                  background: var(--bg); color: var(--text); border: 1px solid var(--border);
                  border-radius: 6px; font: inherit; font-size: 13px; }
     .tg-state { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
                 padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
-    .tg-state.blank { background: rgba(255,255,255,.06); color: var(--muted); }
+    .tg-state.blank { background: rgba(var(--ink, 255,255,255),.06); color: var(--muted); }
     .tg-state.pass  { background: rgba(46,204,113,.15); color: var(--ok); }
     .tg-state.fail  { background: rgba(231,76,60,.16); color: var(--err); }
     .tg-state.none  { background: rgba(240,165,0,.14); color: var(--warn); }
     .tg-link { background: none; border: none; padding: 0; color: var(--acc-h); cursor: pointer;
                font: inherit; font-size: 12px; text-decoration: underline; }
     .tg-scroll { max-height: calc(100vh - 330px); overflow-y: auto; }
-    .sup-sev.office   { background: rgba(79,110,247,.18); color: #8fa4ff; }
-    .sup-sev.field    { background: rgba(37,162,68,.18);  color: #5fd08a; }
-    .sup-sev.customer { background: rgba(240,165,0,.16);  color: #f5c842; }
+    .sup-sev.office   { background: rgba(79,110,247,.18); color: var(--fg-accent, #8fa4ff); }
+    .sup-sev.field    { background: rgba(37,162,68,.18);  color: var(--fg-ok, #5fd08a); }
+    .sup-sev.customer { background: rgba(240,165,0,.16);  color: var(--fg-warn, #f5c842); }
     /* ── Support inbox ────────────────────────────────────────────────────
        Severity is the organising idea, so it is the loudest thing in the row.
        A tech saying he cannot finish the job is the only red on this screen. */
@@ -511,8 +544,8 @@
     .sup-item { display: block; width: 100%; text-align: left; background: none;
                 border: none; border-bottom: 1px solid var(--border); cursor: pointer;
                 padding: 10px 12px; color: inherit; font-family: inherit; }
-    .sup-item:hover { background: rgba(255,255,255,.03); }
-    .sup-item.on { background: rgba(255,255,255,.06); }
+    .sup-item:hover { background: rgba(var(--ink, 255,255,255),.03); }
+    .sup-item.on { background: rgba(var(--ink, 255,255,255),.06); }
     .sup-item.unread .sup-item-subj { font-weight: 700; }
     .sup-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
     .sup-item-subj { font-size: 13px; margin-bottom: 3px; }
@@ -521,13 +554,13 @@
                margin-left: auto; }
     .sup-sev { font-size: 10px; font-weight: 800; letter-spacing: .03em;
                text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
-               background: rgba(255,255,255,.07); color: var(--muted); }
-    .sup-sev.blocking { background: rgba(217,45,32,.18); color: #ff6b5e; }
-    .sup-sev.annoying { background: rgba(240,165,0,.16); color: #f5c842; }
+               background: rgba(var(--ink, 255,255,255),.07); color: var(--muted); }
+    .sup-sev.blocking { background: rgba(217,45,32,.18); color: var(--fg-err, #ff6b5e); }
+    .sup-sev.annoying { background: rgba(240,165,0,.16); color: var(--fg-warn, #f5c842); }
     .sup-head-subj { font-size: 16px; font-weight: 700; margin-bottom: 7px; }
     .sup-head-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     .sup-chip { font-size: 11px; padding: 2px 7px; border-radius: 4px;
-                background: rgba(255,255,255,.06); color: var(--muted); }
+                background: rgba(var(--ink, 255,255,255),.06); color: var(--muted); }
     /* The context the tech never had to be asked for — most of the value of
        the whole feature is in this one strip. */
     .sup-ctx { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px;
@@ -535,7 +568,7 @@
                font-size: 11.5px; color: var(--muted); }
     .sup-ctx b { color: var(--fg); font-weight: 600; margin-right: 4px; }
     .sup-msg { border-radius: 7px; padding: 9px 12px; margin-bottom: 8px; max-width: 88%; }
-    .sup-msg.rep { background: rgba(255,255,255,.05); border: 1px solid var(--border); }
+    .sup-msg.rep { background: rgba(var(--ink, 255,255,255),.05); border: 1px solid var(--border); }
     .sup-msg.dev { background: rgba(79,110,247,.12);
                    border: 1px solid rgba(79,110,247,.28);
                    margin-left: auto; }
@@ -599,7 +632,7 @@
     .mode-icon  { font-size: 36px; }
     .mode-name  { font-size: 15px; font-weight: 700; }
     .mode-desc  { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
-    .mode-credits { font-size: 11px; margin-top: 4px; color: #8fa4ff;
+    .mode-credits { font-size: 11px; margin-top: 4px; color: var(--fg-accent, #8fa4ff);
                     background: rgba(79,110,247,.12); border-radius: 99px; padding: 2px 10px; }
     .home-footer { font-size: 11px; color: var(--muted); }
     .home-footer a { color: var(--muted); cursor: pointer; text-decoration: underline; }
@@ -672,7 +705,7 @@
     .btn-warn { background: var(--warn); color: #fff; }
     .btn-warn:hover:not(:disabled) { background: #d0900a; }
     .btn-g   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-    .btn-g:hover:not(:disabled) { color: var(--text); border-color: #4a4a6a; }
+    .btn-g:hover:not(:disabled) { color: var(--text); border-color: var(--border-h, #4a4a6a); }
     .btn-err { background: var(--err); color: #fff; }
     .btn-err:hover:not(:disabled) { background: #c0392b; }
     .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -692,17 +725,17 @@
     thead th { background: var(--surf2); color: var(--muted); font-size: 10px; font-weight: 700;
                text-transform: uppercase; letter-spacing: .07em; padding: 8px 12px; text-align: left;
                border-bottom: 1px solid var(--border); white-space: nowrap; }
-    tbody td { padding: 9px 12px; border-bottom: 1px solid rgba(43,43,75,.6); vertical-align: top; }
+    tbody td { padding: 9px 12px; border-bottom: 1px solid rgba(var(--border-rgb, 43,43,75),.6); vertical-align: top; }
     tbody tr:last-child td { border-bottom: none; }
-    tbody tr:hover td { background: rgba(255,255,255,.02); }
+    tbody tr:hover td { background: rgba(var(--ink, 255,255,255),.02); }
     .sn { font-family: var(--mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
     .meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
     .parts-cell { display: flex; flex-wrap: wrap; gap: 4px; }
     .badge { display: inline-flex; align-items: center; gap: 3px; border-radius: 4px;
              padding: 2px 7px; font-size: 11px; font-family: var(--mono); white-space: nowrap; }
-    .badge-part { background: rgba(79,110,247,.12); color: #8fa4ff; border: 1px solid rgba(79,110,247,.22); }
-    .badge-ok   { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.22); }
-    .badge-miss { background: rgba(240,165,0,.12);  color: #f5c842;  border: 1px solid rgba(240,165,0,.22); }
+    .badge-part { background: rgba(79,110,247,.12); color: var(--fg-accent, #8fa4ff); border: 1px solid rgba(79,110,247,.22); }
+    .badge-ok   { background: rgba(46,204,113,.12); color: var(--fg-ok, #5de89a); border: 1px solid rgba(46,204,113,.22); }
+    .badge-miss { background: rgba(240,165,0,.12);  color: var(--fg-warn, #f5c842);  border: 1px solid rgba(240,165,0,.22); }
     .badge-qty  { background: rgba(79,110,247,.25); border-radius: 3px; padding: 0 4px; font-size: 10px; font-weight: 700; }
     .no-parts   { color: var(--muted); font-size: 11px; font-style: italic; }
     .wo-row     { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
@@ -712,17 +745,17 @@
     #work-order-input { flex: 1; max-width: 240px; }
     .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600;
             padding: 4px 12px; border-radius: 99px; margin-bottom: 12px; }
-    .pill-wait { background: rgba(79,110,247,.12); color: #8fa4ff; border: 1px solid rgba(79,110,247,.25); }
-    .pill-ok   { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.25); }
-    .pill-run  { background: rgba(240,165,0,.12);  color: #f5c842;  border: 1px solid rgba(240,165,0,.25); }
-    .pill-done { background: rgba(46,204,113,.12); color: #5de89a; border: 1px solid rgba(46,204,113,.25); }
-    .pill-err  { background: rgba(231,76,60,.12);  color: #ff7b6e;  border: 1px solid rgba(231,76,60,.25); }
+    .pill-wait { background: rgba(79,110,247,.12); color: var(--fg-accent, #8fa4ff); border: 1px solid rgba(79,110,247,.25); }
+    .pill-ok   { background: rgba(46,204,113,.12); color: var(--fg-ok, #5de89a); border: 1px solid rgba(46,204,113,.25); }
+    .pill-run  { background: rgba(240,165,0,.12);  color: var(--fg-warn, #f5c842);  border: 1px solid rgba(240,165,0,.25); }
+    .pill-done { background: rgba(46,204,113,.12); color: var(--fg-ok, #5de89a); border: 1px solid rgba(46,204,113,.25); }
+    .pill-err  { background: rgba(231,76,60,.12);  color: var(--fg-err, #ff7b6e);  border: 1px solid rgba(231,76,60,.25); }
     .dots::after { content: ''; animation: dots 1.5s steps(4,end) infinite; }
     @keyframes dots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} 100%{content:''} }
     .instr { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
     .instr li { display: flex; align-items: flex-start; gap: 10px; line-height: 1.4; }
     .instr-n { width: 20px; height: 20px; border-radius: 50%; background: rgba(79,110,247,.15);
-               color: #8fa4ff; font-size: 10px; font-weight: 700; display: flex;
+               color: var(--fg-accent, #8fa4ff); font-size: 10px; font-weight: 700; display: flex;
                align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
     #diff-card { display: none; }
     #diff-card.vis { display: block; }
@@ -734,7 +767,7 @@
     .diff-gap  .diff-section-ttl { color: var(--warn); }
     .diff-done .diff-section-ttl { color: var(--muted); }
     .diff-row  { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0;
-                 border-bottom: 1px solid rgba(43,43,75,.5); }
+                 border-bottom: 1px solid rgba(var(--border-rgb, 43,43,75),.5); }
     .diff-row:last-child { border-bottom: none; }
     .diff-sn   { font-family: var(--mono); font-size: 12px; font-weight: 600; min-width: 90px; }
     .diff-parts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
@@ -754,7 +787,7 @@
     .hist-wo { font-family: var(--mono); font-size: 13px; font-weight: 700; }
     .hist-date { font-size: 11px; color: var(--muted); }
     .hist-count { margin-left: auto; font-size: 11px; font-weight: 700;
-                  background: rgba(79,110,247,.12); color: #8fa4ff;
+                  background: rgba(79,110,247,.12); color: var(--fg-accent, #8fa4ff);
                   border: 1px solid rgba(79,110,247,.22); border-radius: 99px; padding: 2px 9px; }
     .hist-chevron { font-size: 10px; color: var(--muted); transition: transform .18s; margin-left: 4px; }
     .hist-group.open .hist-chevron { transform: rotate(90deg); }
@@ -769,7 +802,7 @@
     #log { background: var(--log-bg); border: 1px solid var(--border); border-radius: 6px;
            padding: 12px 14px; font-family: var(--mono); font-size: 11px; line-height: 1.65;
            color: var(--log-txt); height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-    #log .err { color: #ff7b6e; }
+    #log .err { color: var(--fg-err, #ff7b6e); }
     #sum-card { display: none; }
     #sum-card.vis { display: block; }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(115px,1fr)); gap: 10px; margin-bottom: 14px; }
@@ -781,14 +814,14 @@
     .stat-warn .stat-n  { color: var(--warn); }
     .stat-plain .stat-n { color: var(--text); }
     .result-note { border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 10px; }
-    .note-good { background: rgba(46,204,113,.08); color: #5de89a; border: 1px solid rgba(46,204,113,.2); }
-    .note-bad  { background: rgba(240,165,0,.08);  color: #f5c842;  border: 1px solid rgba(240,165,0,.2); }
+    .note-good { background: rgba(46,204,113,.08); color: var(--fg-ok, #5de89a); border: 1px solid rgba(46,204,113,.2); }
+    .note-bad  { background: rgba(240,165,0,.08);  color: var(--fg-warn, #f5c842);  border: 1px solid rgba(240,165,0,.2); }
     .log-path  { font-size: 11px; font-family: var(--mono); color: var(--muted); margin-top: 6px; }
     .part-tag  { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-family: var(--mono); margin: 2px; }
-    .tag-error     { background: #3b1a1a; color: #f87171; }
-    .tag-not_found { background: #2a2310; color: #fbbf24; }
-    .tag-skipped   { background: #1e2330; color: #94a3b8; }
-    #sum-detail tr:nth-child(odd) td, #sum-extra tr:nth-child(odd) td { background: rgba(255,255,255,.03); }
+    .tag-error     { background: var(--bg-err, #3b1a1a); color: var(--fg-err, #f87171); }
+    .tag-not_found { background: var(--bg-warn, #2a2310); color: var(--fg-warn, #fbbf24); }
+    .tag-skipped   { background: var(--bg-dim, #1e2330); color: var(--fg-dim, #94a3b8); }
+    #sum-detail tr:nth-child(odd) td, #sum-extra tr:nth-child(odd) td { background: rgba(var(--ink, 255,255,255),.03); }
     body.summary-mode .sidebar  { display: none; }
     body.summary-mode .content  { padding: 32px 10%; }
     body.summary-mode #sum-card { border: none; background: transparent; padding: 0; }
@@ -801,12 +834,12 @@
     #log-collapsed.vis { display: block; }
     #err-card { display: none; }
     #err-card.vis { display: block; }
-    #err-msg { font-size: 12.5px; font-family: var(--mono); color: #ff7b6e;
+    #err-msg { font-size: 12.5px; font-family: var(--mono); color: var(--fg-err, #ff7b6e);
                background: rgba(231,76,60,.07); border: 1px solid rgba(231,76,60,.22);
                border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; white-space: pre-wrap; }
     .back-btn { background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
                 padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; gap: 4px; }
-    .back-btn:hover { color: var(--text); background: rgba(255,255,255,.05); }
+    .back-btn:hover { color: var(--text); background: rgba(var(--ink, 255,255,255),.05); }
   </style>
 </head>
 <body>
@@ -1004,10 +1037,11 @@
 <!-- ═══════════════ SCREEN: FALL PROTECTION RECORDS ═══════════════ -->
 <!-- What the field recorded, and the only place it can be corrected.
 
-     Corrections SUPERSEDE — the old row stays, marked not-current — and both
-     correcting and deleting demand a reason. A certificate is a safety
-     document; an edit that silently rewrote one with no trace would make every
-     certificate unfalsifiable after the fact. See supabase/15_fp_records.sql. -->
+     Corrections SUPERSEDE — the old row stays, marked not-current — and a
+     delete is soft and can be restored. A certificate is a safety document; an
+     edit that silently rewrote one with no trace would make every certificate
+     unfalsifiable after the fact. The note is optional (2026-10-31): the kept
+     version, who and when, is the trace. See supabase/15_fp_records.sql. -->
 <div id="screen-fpr" class="screen">
   <div class="cat-wrap">
     <div class="cat-head">
@@ -1708,7 +1742,7 @@
     <div class="card" id="inspect-preview-card" style="display:none;">
       <div class="card-ttl">Preview</div>
       <div id="inspect-prev-stat" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
-      <div id="inspect-skip-warn" style="display:none;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.2);border-radius:6px;padding:9px 13px;font-size:12px;color:#f5c842;margin-bottom:12px;"></div>
+      <div id="inspect-skip-warn" style="display:none;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.2);border-radius:6px;padding:9px 13px;font-size:12px;color:var(--fg-warn, #f5c842);margin-bottom:12px;"></div>
       <div style="display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap;">
         <div style="flex:1;min-width:160px;">
           <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:5px;">
@@ -1895,7 +1929,7 @@
           <span class="prev-stat" id="prev-stat"></span>
           <button class="btn-g" style="font-size:12px;padding:5px 12px;" id="btn-change">← Change File</button>
         </div>
-        <div id="skip-warn" style="display:none; background:rgba(240,165,0,.08); border:1px solid rgba(240,165,0,.2); border-radius:6px; padding:9px 13px; font-size:12px; color:#f5c842; margin-bottom:12px;"></div>
+        <div id="skip-warn" style="display:none; background:rgba(240,165,0,.08); border:1px solid rgba(240,165,0,.2); border-radius:6px; padding:9px 13px; font-size:12px; color:var(--fg-warn, #f5c842); margin-bottom:12px;"></div>
         <div class="tbl-wrap">
           <table>
             <thead><tr><th>Serial #</th><th>Brand / Type</th><th>Length</th><th>Parts to Add</th></tr></thead>
@@ -2065,6 +2099,9 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 // attribute. Support tickets carry free text written by techs straight into
 // innerHTML, so the distinction has to be made rather than assumed away.
 const escA = s => esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// A correction saved with the note left blank carries main's NO_NOTE
+// placeholder, because the server still wants something. Not worth quoting.
+const hasNote = r => !!r && r !== '(no note)';
 
 // macOS reserves the top-left of the window for its traffic lights; nothing
 // else does. Marked on the body so the titlebar can stop holding a gutter
@@ -2482,18 +2519,13 @@ function openFieldPanel(it, mode, more) {
     const n = it.liveIds.length;
     const prev = it.canUndo ? it.versions.filter(v => !v.isDeleted && v.version < it.current.version).pop() : null;
     const what = {
-      delete: { q: 'Why is this being deleted?', ph: 'e.g. Not on this job',
-                hint: `It stops counting on this work order and on the certificate.${n > 1 ? ` All ${n} versions are marked deleted.` : ''} Nothing is erased — it stays in the history and can be restored.`,
+      delete: { hint: `It stops counting on this work order and on the certificate.${n > 1 ? ` All ${n} versions are marked deleted.` : ''} Nothing is erased — it stays in the history and can be restored.`,
                 btn: 'Delete', danger: true },
-      undo:   { q: 'Why is this correction being undone?', ph: 'e.g. Corrected the wrong ladder',
-                hint: prev ? `Goes back to version ${prev.version} (${FW_ORIGIN[prev.origin] || ''}). The correction stays in the history.` : '',
+      undo:   { hint: prev ? `Goes back to version ${prev.version} (${FW_ORIGIN[prev.origin] || ''}). The correction stays in the history.` : '',
                 btn: 'Undo correction' },
-      restore:{ q: 'Why is this being restored?', ph: 'e.g. Deleted by mistake',
-                hint: 'Brings back the item as it last stood.', btn: 'Restore' },
+      restore:{ hint: 'Brings back the item as it last stood.', btn: 'Restore' },
     }[mode];
     more.innerHTML = `
-      <div class="fpr-grid"><label class="fpr-wide">${esc(what.q)}
-        <input type="text" class="fw-reason" maxlength="500" placeholder="${escA(what.ph)}"></label></div>
       <div class="vw-hint">${esc(what.hint)}</div>
       <div class="sup-actions"><button class="btn-ok fw-save"${what.danger ? ' style="background:var(--err);"' : ''}>${esc(what.btn)}</button></div>`;
   }
@@ -2519,7 +2551,7 @@ function fieldHistoryHtml(it) {
     const chg = v.changes.map(c =>
       `<div class="fw-ver-chg"><b>${esc(FW_FIELD_LABEL[c.field] || c.field)}:</b> ${esc(c.from)} → ${esc(c.to)}</div>`).join('');
     const why = v.audit.map(a =>
-      `<div class="fw-ver-reason">${esc({ amend: 'Corrected', delete: 'Deleted', restore: 'Restored', add: 'Added', asset_edit: 'Item edited' }[a.action] || a.action)}${a.actor ? ' by ' + esc(a.actor) : ''} ${esc(fwWhen(a.at))}: “${esc(a.reason)}”</div>`).join('');
+      `<div class="fw-ver-reason">${esc({ amend: 'Corrected', delete: 'Deleted', restore: 'Restored', add: 'Added', asset_edit: 'Item edited' }[a.action] || a.action)}${a.actor ? ' by ' + esc(a.actor) : ''} ${esc(fwWhen(a.at))}${hasNote(a.reason) ? ': “' + esc(a.reason) + '”' : ''}</div>`).join('');
     const snap = v.version === 1 && it.scope === 'ladder'
       ? `<div class="fw-ver-line">${esc([v.snapshot.brand, v.snapshot.type, v.snapshot.length].filter(Boolean).join(' · ') || '—')}${fwParts(v.snapshot.parts) ? ' · Parts: ' + esc(fwParts(v.snapshot.parts)) : ''}</div>`
       : '';
@@ -2535,7 +2567,7 @@ function fieldEditHtml(it) {
   const inp = (k, label, val, extra) =>
     `<label${extra && extra.wide ? ' class="fpr-wide"' : ''}>${esc(label)}
        <input type="${(extra && extra.type) || 'text'}" data-k="${k}" value="${escA(val == null ? '' : val)}"${extra && extra.attrs ? ' ' + extra.attrs : ''}></label>`;
-  const reason = `<label class="fpr-wide">Why is this being corrected?
+  const reason = `<label class="fpr-wide">Note (optional)
        <input type="text" class="fw-reason" maxlength="500" placeholder="e.g. Brand was recorded from the wrong ladder"></label>`;
   if (it.scope === 'fall_protection') {
     return `<div class="fpr-grid">
@@ -2594,7 +2626,6 @@ function fieldEditChanges(it, more) {
 
 async function saveFieldPanel(it, mode, more, btn) {
   const reason = (more.querySelector('.fw-reason') || {}).value || '';
-  if (!reason.trim()) { fwMsg('A reason is required. It is kept on the audit trail.', 'bad'); return; }
   let res;
   btn.disabled = true;
   try {
@@ -2641,7 +2672,7 @@ $('fw-add-btn').addEventListener('click', () => {
       <div class="fpr-wide fw-flags">${FW_FLAGS.map(([k, l]) => `
         <label>${esc(l)} <select id="fwa-${k}"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select></label>`).join('')}
       </div>
-      <label class="fpr-wide">Why is this being added from the office?
+      <label class="fpr-wide">Note (optional)
         <input type="text" id="fwa-reason" maxlength="500" placeholder="e.g. Tech radioed it in; phone was dead"></label>
     </div>
     <div class="vw-hint">For a ladder the field never sent. It is marked as added in the office and credited to you.
@@ -2657,7 +2688,6 @@ $('fw-add-btn').addEventListener('click', () => {
 async function addFieldLadder() {
   const v = (id) => $(id).value;
   if (!v('fwa-serial').trim()) { fwMsg('A serial number is required.', 'bad'); return; }
-  if (!v('fwa-reason').trim()) { fwMsg('A reason is required. It is kept on the audit trail.', 'bad'); return; }
   const p = {
     workOrderId: _fwSel, serialNum: v('fwa-serial'), inspectionDate: v('fwa-date'),
     brand: v('fwa-brand'), type: v('fwa-type'), length: v('fwa-length'),
@@ -3610,7 +3640,7 @@ function renderFprDetail(d) {
         <label>Tag label <input type="text" id="fpa-label" value="${escA(a.tag_label || '')}"></label>
         <label>Tag chip id <input type="text" id="fpa-tag" value="${escA(a.nfc_tag_uid || '')}"></label>
         <label class="fpr-wide">Tag link <input type="text" id="fpa-url" value="${escA(a.tag_url || '')}"></label>
-        <label class="fpr-wide">Why is this changing? <input type="text" id="fpa-reason"
+        <label class="fpr-wide">Note (optional) <input type="text" id="fpa-reason"
           placeholder="e.g. Serial was mistyped on first entry"></label>
       </div>
       <div class="sup-actions">
@@ -3637,7 +3667,7 @@ function renderFprDetail(d) {
     ${(d.audit || []).length ? `
       <div class="cat-checks-hdr" style="margin-top:18px;"><span>Corrections</span></div>
       ${d.audit.map(x => `<div class="fpr-audit">
-          <b>${esc(x.action)}</b> ${esc(x.reason)}
+          <b>${esc(x.action)}</b> ${hasNote(x.reason) ? esc(x.reason) : ''}
           <span>${esc(x.actor_name || '')} · ${esc(new Date(x.created_at).toLocaleDateString())}</span>
         </div>`).join('')}` : ''}`;
 
@@ -3679,7 +3709,6 @@ function wireFprDetail(d) {
   const save = $('btn-fpa-save');
   if (save) save.addEventListener('click', async () => {
     const reason = $('fpa-reason').value.trim();
-    if (!reason) { fprMsg('Say why this item is being changed.', true); return; }
     const res = await window.api.fprUpdateAsset({
       asset_id: d.asset.id, serial_raw: $('fpa-serial').value.trim(),
       tag_label: $('fpa-label').value.trim(),
@@ -3692,9 +3721,8 @@ function wireFprDetail(d) {
     openFprDetail(d.asset.id);
   });
 
-  // Correcting and deleting both open an inline form rather than a dialog: the
-  // reason is mandatory, and a prompt() that can be dismissed with Enter is how
-  // "because" ends up as the reason on every correction.
+  // Correcting and deleting open inline under the row. The note is optional;
+  // every change is kept as a version, and a deleted record can be restored.
   document.querySelectorAll('[data-fpr-amend]').forEach(b => b.addEventListener('click', () => {
     fprInline(b.dataset.fprAmend, 'amend', d);
   }));
@@ -3723,23 +3751,18 @@ function fprInline(inspectionId, mode, d) {
          <label>Model <input type="text" id="fpi-model" value="${escA(h.model || '')}"></label>
          <label>Lot # <input type="text" id="fpi-lot" value="${escA(h.lot_number || '')}"></label>
          <label>Work order <input type="text" id="fpi-wo" value="${escA(h.work_order_id || '')}"></label>
-         <label class="fpr-wide">Why is this being corrected?
+         <label class="fpr-wide">Note (optional)
            <input type="text" id="fpi-reason" placeholder="e.g. Model was recorded from the wrong label"></label>
        </div>
        <div class="vw-hint">The tech's answers are not editable here. Changing what
          was found is re-inspecting, and that is a new inspection.</div>
        <div class="sup-actions"><button class="btn-ok" id="fpi-save">Save correction</button></div>`
-    : `<div class="fpr-grid">
-         <label class="fpr-wide">Why is this being deleted?
-           <input type="text" id="fpi-reason" placeholder="e.g. Recorded against the wrong item"></label>
-       </div>
-       <div class="vw-hint">The record is kept and stays auditable — it stops
-         appearing on the certificate.</div>
+    : `<div class="vw-hint">It stops appearing on the certificate. Nothing is
+         erased — it stays in the history and can be restored.</div>
        <div class="sup-actions"><button class="btn-ok" id="fpi-save" style="background:var(--err);">Delete record</button></div>`;
 
   $('fpi-save').addEventListener('click', async () => {
-    const reason = $('fpi-reason').value.trim();
-    if (!reason) { fprMsg('A reason is required.', true); return; }
+    const reason = mode === 'amend' ? $('fpi-reason').value.trim() : '';
     const res = mode === 'amend'
       ? await window.api.fprAmend({
           inspection_id: inspectionId, reason,
@@ -6444,7 +6467,7 @@ $('btn-upload-inspections').addEventListener('click', async () => {
     $('inspect-result-ttl').textContent = 'Upload Failed';
     $('inspect-result-ttl').style.color = 'var(--err)';
     $('inspect-result-body').innerHTML =
-      `<div style="color:#ff7b6e;font-family:var(--mono);font-size:12px;background:rgba(231,76,60,.07);
+      `<div style="color:var(--fg-err, #ff7b6e);font-family:var(--mono);font-size:12px;background:rgba(231,76,60,.07);
        border:1px solid rgba(231,76,60,.22);border-radius:6px;padding:12px 14px;">` +
       esc(result.error) + '</div>';
     return;

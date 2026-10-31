@@ -187,26 +187,30 @@ await p.click(rowAct('A-2', 'edit'));
 await p.waitForTimeout(150);
 const form = `${recRow('A-2')} .fw-rec-more`;
 ok('Edit opens a form in the row', await p.$$eval(`${form} [data-k="brand"]`, e => e.length), 1);
-await p.fill(`${form} [data-k="brand"]`, 'Werner');
+ok('the note is labelled optional', /Note \(optional\)/.test(await p.$eval(form, e => e.textContent)), true);
 await p.click(`${form} .fw-save`);
 await p.waitForTimeout(150);
-ok('a blank reason is refused', /reason is required/i.test(await p.$eval('#field-msg', e => e.textContent)), true);
+ok('saving with nothing changed is refused', /Nothing was changed/i.test(await p.$eval('#field-msg', e => e.textContent)), true);
 ok('and nothing was sent', await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAmend').length), 0);
 
-await p.fill(`${form} .fw-reason`, 'wrong brand on the tag');
+// No note: the office is not made to justify fixing a typo. Main fills the
+// server's required reason in (officeNote); the screen just sends it blank.
+await p.fill(`${form} [data-k="brand"]`, 'Werner');
 await p.fill(`${form} [data-k="parts"]`, 'W44 x2');
 await p.selectOption(`${form} [data-k="has_claw"]`, 'yes');
 await p.click(`${form} .fw-save`);
 await p.waitForTimeout(400);
 const amend = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldAmend'));
-ok('a correction with a reason goes through', !!amend, true);
-ok('carrying the reason', amend && amend.p.reason, 'wrong brand on the tag');
+ok('a correction with no note goes through', !!amend, true);
+ok('with the note blank', amend && amend.p.reason, '');
 ok('and only what changed', amend && amend.p.fields, { brand: 'Werner', parts: 'W44 x2', has_claw: true });
+ok('the placeholder for a blank note is not quoted in History',
+   await p.evaluate(() => [hasNote('(no note)'), hasNote(''), hasNote('wrong brand')]), [false, false, true]);
 
 // ── Delete, undo, restore ───────────────────────────────────────────────────
 await p.click(rowAct('A-1', 'delete'));
 await p.waitForTimeout(150);
-await p.fill(`${recRow('A-1')} .fw-reason`, 'not on this job');
+ok('deleting asks for no reason', await p.$$eval(`${recRow('A-1')} .fw-reason`, e => e.length), 0);
 await p.click(`${recRow('A-1')} .fw-save`);
 await p.waitForTimeout(400);
 const di = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldDeleteItem'));
@@ -215,7 +219,6 @@ ok('deleting an item takes every live version, newest first',
 
 await p.click(rowAct('A-1', 'undo'));
 await p.waitForTimeout(150);
-await p.fill(`${recRow('A-1')} .fw-reason`, 'corrected the wrong one');
 await p.click(`${recRow('A-1')} .fw-save`);
 await p.waitForTimeout(400);
 ok('undo deletes only the correction',
@@ -223,7 +226,6 @@ ok('undo deletes only the correction',
 
 await p.click(rowAct('A-3', 'restore'));
 await p.waitForTimeout(150);
-await p.fill(`${recRow('A-3')} .fw-reason`, 'deleted by mistake');
 await p.click(`${recRow('A-3')} .fw-save`);
 await p.waitForTimeout(400);
 ok('restore brings back the deleted version',
@@ -232,18 +234,17 @@ ok('restore brings back the deleted version',
 // ── Adding a ladder the field never sent ────────────────────────────────────
 ok('Field Work can add a ladder', await p.isVisible('#fw-add-btn'), true);
 await p.click('#fw-add-btn');
-await p.fill('#fwa-serial', 'A-9');
 await p.click('#fwa-save');
 await p.waitForTimeout(150);
-ok('an add needs a reason', await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAdd').length), 0);
+ok('an add needs a serial', await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAdd').length), 0);
+await p.fill('#fwa-serial', 'A-9');
 await p.fill('#fwa-brand', 'Werner');
 await p.fill('#fwa-parts', 'G13 x2');
-await p.fill('#fwa-reason', 'tech radioed it in');
 await p.click('#fwa-save');
 await p.waitForTimeout(400);
 const add = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldAdd'));
 ok('the add goes to this work order', add && [add.p.workOrderId, add.p.serialNum, add.p.reason],
-   ['WO-FIXED', 'A-9', 'tech radioed it in']);
+   ['WO-FIXED', 'A-9', '']);
 
 // ── Archiving ───────────────────────────────────────────────────────────────
 await p.$$eval('#field-wos .fw-row', els =>

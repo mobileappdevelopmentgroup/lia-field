@@ -322,11 +322,17 @@ is not retroactive, and the screen says so.
 ### Correcting fall-protection records, and pushing them to BSI
 
 `supabase/migrations/15_fp_records.sql` is the office's side of what the field recorded. A
-correction **supersedes** — the old row stays, marked, and both correcting and
-deleting demand a typed reason. Deleting is soft and promotes the previous
+correction **supersedes** — the old row stays, marked. Deleting is soft and promotes the previous
 version *of the same date* (`is_current` is per `(asset_id, inspection_date)`,
 not per item). `public_ref` can never change: tags already in the field point at
 it.
+
+**The note is optional in Lia Office (decided 2026-10-31).** Delete, undo and
+restore ask nothing; corrections and office-added ladders have an optional
+note. The RPCs still refuse a blank reason, so main's `officeNote()` sends
+`(no note)` in its place, and the screens don't quote it (`hasNote()`). The
+kept version, who and when, is the audit trail. Making the server accept blank
+would mean re-emitting every write path for nothing.
 
 The tech's own answers are not editable in the office. Changing what was found
 is re-inspecting, not amending, and the screen says so.
