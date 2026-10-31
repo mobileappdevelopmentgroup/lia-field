@@ -150,13 +150,21 @@
                      padding: 0 12px; padding-top: var(--safe-t);
                      height: calc(50px + var(--safe-t));
                      display: flex; align-items: center; gap: 8px; }
-    #detail-name-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    /* The name and work order must always be on screen. Nothing beside them may
+       squeeze them out — a long status did, on every phone, on 2026-10-22. */
+    #detail-name-wrap { flex: 1; min-width: 96px; display: flex; flex-direction: column; gap: 1px; }
     input.topbar-input { background: transparent; border: none; color: var(--text); font-family: var(--font);
                          font-size: 16px; font-weight: 700; padding: 0; width: 100%; outline: none; }
     input.topbar-input::placeholder { color: var(--muted); font-weight: 400; }
     input.topbar-input.wo { font-size: 16px; font-weight: 400; color: var(--muted); }
-    .save-status { font-size: 10px; color: var(--muted); flex-shrink: 0; min-width: 32px; text-align: right; }
+    /* "Saving…" / "Saved" only. A sentence goes in #entry-notice. */
+    .save-status { font-size: 10px; color: var(--muted); flex: 0 1 auto; min-width: 32px; max-width: 25%;
+                   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: right; }
     .save-status.saved { color: var(--ok); }
+    input.topbar-input.wo.missing { outline: 2px solid var(--err); outline-offset: 1px; border-radius: 4px; }
+    input.topbar-input.wo.missing::placeholder { color: var(--err); }
+    #entry-notice { flex-shrink: 0; padding: 8px 12px; font-size: 14px; line-height: 1.35;
+                    background: var(--err); color: #fff; font-weight: 600; }
 
     /* ── Form panel — natural height, no cap ── */
     #form-panel { flex-shrink: 0;
@@ -188,6 +196,10 @@
     input.field-input:focus { border-color: var(--accent); }
     input.field-input.serial-warn,
     input.field-input.serial-warn:focus { border-color: var(--err); box-shadow: 0 0 0 2px rgba(var(--err-rgb), .25); }
+    /* The field the brand/type/length buttons below are filling right now —
+       same ring as serial-warn, in accent rather than error colour, so it
+       reads as "fill me from below" and not as something wrong. */
+    input.field-input.picking { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .28); }
     input.field-input::placeholder { color: var(--muted); }
     .field-clear-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
                      background: none; border: none; color: var(--muted); font-size: 18px;
@@ -354,6 +366,7 @@
                 line-height: 1; color: var(--muted); flex-shrink: 0; }
     .star-btn.starred { color: #f0c040; }
     .star-btn:active { opacity: .6; }
+    .star-btn:disabled, .lib-pos:disabled { opacity: .55; cursor: default; }
     .part-lib-name { flex: 1; font-family: var(--mono); font-size: 14px;
                      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lib-qty-wrap { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
@@ -370,6 +383,27 @@
                font-size: 13px; font-weight: 700; padding: 3px 4px; text-align: center;
                outline: none; -webkit-appearance: none; appearance: none; }
     .lib-pos:focus { border-color: var(--accent); }
+    .part-lib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .part-lib-text .part-lib-name { flex: none; }
+    .part-lib-desc { font-size: 11px; color: var(--muted); overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; }
+    .lib-section { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .06em;
+                   text-transform: uppercase; padding: 6px 2px 0; }
+    .lib-more { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0; }
+    /* Favourite sets: the picker in the library, the switcher above the buttons */
+    .lib-set-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; flex-shrink: 0; flex-wrap: wrap; }
+    .lib-set-row select { flex: 1; min-width: 120px; background: var(--surf2); color: var(--text);
+                          border: 1px solid var(--border); border-radius: 8px; padding: 9px 8px; font-size: 14px; }
+    .lib-set-btn { background: var(--surf2); color: var(--text); border: 1px solid var(--border);
+                   border-radius: 8px; padding: 9px 10px; font-size: 13px; cursor: pointer; }
+    .lib-set-btn:active { background: var(--surf3); }
+    .lib-set-btn.danger { color: var(--err-fg); border-color: rgba(var(--err-rgb),.35); }
+    .part-set-bar { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+    .part-set-bar:empty { display: none; }
+    .part-set-chip { flex-shrink: 0; background: var(--surf2); border: 1px solid var(--border);
+                     color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 12px;
+                     font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .part-set-chip.active { background: rgba(var(--accent-rgb),.18); border-color: var(--accent); color: var(--accent-fg); }
 
     /* ── Add Ladder button panel (sticky bottom) ── */
     #add-btn-panel { flex-shrink: 0; padding: 10px 12px; display: flex; gap: 8px;
@@ -380,10 +414,20 @@
     .add-ladder-btn.next { background: var(--surf2); color: var(--ok-fg);
                            border: 1.5px solid var(--ok); }
     .add-ladder-btn.next:active { background: rgba(var(--ok-rgb),.14); }
+    /* Three across on a phone: the two follow-on buttons give up some size. */
+    .add-ladder-btn.next { font-size: 14px; padding: 12px 6px; line-height: 1.2; }
     .ladder-lookup { font-size: 12px; line-height: 1.35; padding: 6px 9px; margin-top: 6px;
                      border-radius: 8px; border: 1px solid var(--border); background: var(--surf2); }
     .ladder-lookup.hit { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
     .ladder-lookup.miss { color: var(--muted); }
+    .lookup-pick { display: block; margin-top: 6px; width: 100%; background: var(--surf);
+                   color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 7px;
+                   padding: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .lookup-pick:active { background: rgba(var(--accent-rgb),.14); }
+    .detail-step { flex-shrink: 0; align-self: center; font-size: 12px; font-weight: 800;
+                   color: var(--accent-fg); margin-right: auto; }
+    .part-btn.detail-btn { font-family: inherit; font-size: 12px; }
+    .part-btn.detail-btn.other { color: var(--muted); font-style: italic; }
     .cancel-edit-btn { background: var(--surf2); color: var(--fg); border: 1px solid var(--border);
                        border-radius: 10px; padding: 15px 18px; font-size: 15px; font-weight: 600;
                        cursor: pointer; flex-shrink: 0; display: none; }
@@ -459,6 +503,19 @@
     .sheet-add-row input:focus { border-color: var(--accent); }
     .sheet-add-row input::placeholder { color: var(--muted); }
     .sheet-done { width: 100%; flex-shrink: 0; }
+    /* A sheet whose content can outgrow the screen — removal from service lists
+       every failed check above the photo — scrolls as ONE column, buttons
+       included. `.sheet-fields` alone was meant to scroll, but a flex child's
+       min-height is its content, so it never did and the photo button and
+       Confirm were pushed off the bottom with no way to reach them. Lifted
+       above the on-screen keyboard by --kb-inset (set from visualViewport in
+       fp.js); the layout viewport does not shrink for the keyboard. */
+    .settings-sheet.scroll-all { overflow-y: auto; -webkit-overflow-scrolling: touch;
+                                 overscroll-behavior: contain;
+                                 bottom: var(--kb-inset, 0px);
+                                 max-height: 90vh; max-height: calc(var(--vv-h, 100dvh) * .9); }
+    .settings-sheet.scroll-all > * { flex-shrink: 0; }
+    .settings-sheet.scroll-all .sheet-fields { flex: none; overflow: visible; }
 
     /* ── Job scope ── */
     .scope-opt { width: 100%; text-align: left; background: var(--surf2);
@@ -485,19 +542,25 @@
                       border-color: rgba(var(--accent-rgb),.35); color: var(--accent-fg); }
     .fp-way.new { background: rgba(var(--ok-rgb),.14); border-color: rgba(var(--ok-rgb),.32); color: var(--ok-fg); }
     .fp-way:active { opacity: .7; }
+    .fp-view-btn { width: 100%; margin-top: 6px; min-height: 36px; border-radius: 8px; background: none;
+                   border: 1px dashed var(--border); color: var(--muted); font-size: 13px; font-weight: 600; }
+    .fp-view-btn:active { opacity: .7; }
+    #fp-view-panel { padding: 10px 12px; }
+    #fp-view-panel .fp-batch-acts { margin-top: 10px; }
+    .fp-view-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .fp-view-tag { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-fg); }
+    .fp-view-note { margin-left: auto; font-size: 11px; color: var(--muted); }
+    .fp-view-sub { margin: 8px 0 2px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+                   text-transform: uppercase; color: var(--muted); }
     .fp-typed { display: flex; gap: 6px; align-items: center; }
     .fp-typed .field-input { flex: 1; min-width: 0; padding-right: 9px; }
     .fp-hint { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
     .fp-hint.warn { color: var(--bad-fg); font-weight: 600; }
 
     /* Tap-through */
-    .fp-batch-start { width: 100%; min-height: 38px; border-radius: 8px;
-                      background: var(--surf2); border: 1px dashed var(--border);
                       color: var(--muted); font-size: 12px; font-weight: 700;
                       font-family: var(--font); cursor: pointer;
                       display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .fp-batch-start svg { width: 15px; height: 15px; flex-shrink: 0; }
-    .fp-batch-start:active { opacity: .7; }
     #fp-batch-panel { flex-shrink: 0; background: var(--surf); padding: 9px 12px;
                       border-bottom: 1px solid var(--border);
                       display: flex; flex-direction: column; gap: 7px; }
@@ -515,6 +578,7 @@
                      display: flex; flex-direction: column; justify-content: center; gap: 2px; }
     .fp-batch-last.ok { border-color: var(--ok); background: rgba(var(--ok-rgb),.10); }
     .fp-batch-last.flag { border-color: var(--bad); background: rgba(var(--bad-rgb),.10); }
+    .fp-batch-last.pend { border-color: var(--accent); background: rgba(var(--accent-rgb),.08); }
     .fp-batch-last .sn { font-family: var(--mono); font-size: 14px; font-weight: 700; }
     .fp-batch-last .sub { font-size: 11.5px; color: var(--muted); }
     .fp-batch-last .lnk { font-size: 10.5px; color: var(--muted); word-break: break-all;
@@ -724,6 +788,17 @@
     .fp-item-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
     .fp-item-badge.pass { color: var(--ok-fg); }
     .fp-item-badge.fail { color: var(--bad-fg); }
+    .fp-item.pend { border-color: rgba(var(--accent-rgb),.45); border-style: dashed; cursor: pointer; }
+    .fp-item-badge.pend { color: var(--accent-fg); }
+    /* Delete: shown on a tapped line, always on a needs-details one (tapping
+       that opens it). */
+    .fp-item-actions { display: none; margin-top: 5px; }
+    .fp-item.expanded .fp-item-actions, .fp-item.pend .fp-item-actions { display: flex; }
+    .fp-item-del { margin-left: auto; padding: 6px 12px; border-radius: 6px; font-size: 12px;
+                   font-weight: 700; font-family: var(--font); cursor: pointer;
+                   background: rgba(var(--err-rgb),.08); color: var(--err-fg);
+                   border: 1px solid rgba(var(--err-rgb),.25); }
+    .fp-item-del.armed { background: var(--err); color: #fff; border-color: var(--err); }
     .fp-photo-add { width: 104px; height: 104px; border-radius: 9px; border: 1px dashed var(--border);
                     background: var(--surf); color: var(--muted); display: flex; flex-direction: column;
                     align-items: center; justify-content: center; gap: 6px; cursor: pointer;
@@ -823,6 +898,38 @@
     .ju-btn  { flex: none; background: var(--accent, #4f6ef7); color: #fff; border: 0;
                border-radius: 9px; padding: 10px 16px; font-size: 14px; font-weight: 700; }
     .ju-btn:disabled { opacity: .6; }
+
+    /* ── My truck ── */
+    .truck-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+                  margin: 0 0 10px; padding: 11px 13px; border-radius: 11px; background: var(--surf);
+                  border: 1px solid var(--border); color: var(--text); font-size: 14px; white-space: normal; }
+    .truck-card .tc-sub { display: block; color: var(--muted); font-size: 11.5px; font-weight: 500; margin-top: 2px; }
+    .truck-card .tc-short { margin-left: auto; color: var(--warn, #b45309); font-size: 12.5px; font-weight: 700; }
+    #truck-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 14px;
+                  padding-bottom: calc(14px + var(--safe-b)); display: flex; flex-direction: column; gap: 8px; }
+    .truck-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+    .truck-asof { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+    .truck-tools, .truck-add { display: flex; gap: 8px; align-items: center; }
+    .truck-tools input, .truck-add input { flex: 1; min-width: 0; }
+    .truck-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px;
+                 background: var(--surf); border: 1px solid var(--border); }
+    .truck-row.short { border-color: rgba(245,158,11,.55); }
+    .truck-row .tr-pn { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+    .truck-row .tr-sub { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .truck-row .tr-main { flex: 1; min-width: 0; }
+    .truck-row .tr-qty { font-size: 20px; font-weight: 800; min-width: 38px; text-align: right;
+                         font-variant-numeric: tabular-nums; }
+    .truck-row .tr-qty.neg { color: var(--bad-fg, #dc2626); }
+    .truck-row button { padding: 8px 10px; font-size: 13px; border-radius: 8px; }
+    .tr-use { background: rgba(var(--bad-rgb),.12); color: var(--bad-fg); }
+    .tr-load { background: rgba(var(--ok-rgb),.14); color: var(--ok-fg); }
+    .tr-count { background: var(--surf2); color: var(--text); border: 1px solid var(--border); }
+    .truck-sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 60; }
+    .truck-sheet.hidden { display: none; }
+    .truck-sheet-in { width: 100%; background: var(--surf); border-radius: 14px 14px 0 0; padding: 16px 14px;
+                      padding-bottom: calc(16px + var(--safe-b)); display: flex; flex-direction: column; gap: 10px; }
+    .truck-sheet-title { font-weight: 700; font-size: 15px; }
+    .truck-sheet-acts { display: flex; gap: 8px; justify-content: flex-end; }
 
     /* What is still owed, named rather than counted. */
     #waiting-list { margin: 8px 0 4px; max-height: 210px; overflow-y: auto;
@@ -931,6 +1038,8 @@
       <button class="ju-btn" id="btn-upload-all">Upload now</button>
     </div>
     <div id="jobs-filters" class="jobs-filters" style="display:none;"></div>
+    <!-- My truck: shown only to someone assigned to one in Lia Office. -->
+    <button id="truck-card" class="truck-card" style="display:none;"></button>
     <div id="assigned-body"></div>
     <div class="job-empty" id="jobs-empty" style="display:none;">
       No jobs yet.<br>Tap <strong>+ New Job</strong> to start<br>collecting ladder data.
@@ -954,6 +1063,9 @@
     <button class="btn-icon help-btn" id="btn-help-detail" title="Help">?<span class="help-dot" id="help-dot-detail" style="display:none;"></span></button>
     <button class="btn-icon" id="btn-settings" title="Custom fields">⚙</button>
   </div>
+  <!-- Why the last tap did nothing. Full width and under the top bar, right
+       beside the work order box it usually means. -->
+  <div id="entry-notice" role="alert" style="display:none;"></div>
 
   <!-- PANEL 1: Form (≤25dvh) -->
   <div id="form-panel">
@@ -1049,7 +1161,7 @@
   <div id="fp-input-panel" style="display:none;">
     <div class="fp-ways" id="fp-ways-row">
       <button class="fp-way primary" id="fp-btn-tap">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>Tap
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M8 12a4 4 0 0 1 8 0"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><path d="M2 12a10 10 0 0 1 20 0"/></svg>Tap &amp; pass
       </button>
       <button class="fp-way" id="fp-btn-scan">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>Scan
@@ -1061,13 +1173,12 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New
       </button>
     </div>
-    <!-- Tapping through a rack: the reader stays on, each tap brings up the item
-         being inspected, and the next tap passes it. Offered alongside single
-         tap, never instead of it: some techs work item by item. -->
-    <button class="fp-batch-start" id="fp-btn-batch" style="display:none;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M2 12a10 10 0 0 1 20 0"/><path d="M9 17h6M12 14v6"/></svg>
-      Tap through — the next tap passes the last
-    </button>
+    <!-- Tap is a pass. This reads a tag and shows what it is without recording
+         anything; Inspect it from there if wanted. -->
+    <button class="fp-view-btn" id="fp-btn-view" style="display:none;">View a tag — no inspection</button>
+    <!-- Defective, and no tag on it: record it under the next number from the
+         company's list rather than spending a tag on it (serial-pool.js). -->
+    <button class="fp-view-btn" id="fp-btn-untagged" style="display:none;">Defective, no tag — use the next number</button>
     <div class="fp-typed" id="fp-typed-row" style="display:none;">
       <input type="text" id="fp-serial-input" class="field-input" placeholder="Serial number…"
              autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
@@ -1076,10 +1187,11 @@
     <div class="fp-hint" id="fp-hint"></div>
   </div>
 
-  <!-- Tap-through. Replaces the four ways while it is running. A tap puts the
-       item on screen as the one being inspected, every check at passing; the
-       NEXT tap records it as passed. Fail is the only thing he presses for a
-       defect, and Add info the only thing for an item we know too little about. -->
+  <!-- Tap-through, started by Tap. Replaces the four ways while it is running.
+       A tap records the item as passed there and then, every check at passing,
+       and the reader stays on. Fail (which takes that pass back out) is the only
+       thing pressed for a defect, and Add info the only thing for an item we
+       know too little about. -->
   <div id="fp-batch-panel" style="display:none;">
     <div class="fp-batch-hdr">
       <span class="fp-batch-live"><span class="fp-batch-dot" id="fp-batch-dot"></span><span id="fp-batch-live-txt">Listening</span></span>
@@ -1104,7 +1216,7 @@
     <div class="fp-batch-acts">
       <button class="fp-batch-act" id="fp-btn-batch-arm" style="display:none;">Keep tapping</button>
       <button class="fp-batch-act" id="fp-btn-batch-undo">Undo last pass</button>
-      <button class="fp-batch-act done" id="fp-btn-batch-stop">Finish</button>
+      <button class="fp-batch-act done big" id="fp-btn-batch-stop">Finish</button>
     </div>
     <div class="fp-hint" id="fp-batch-hint"></div>
   </div>
@@ -1112,6 +1224,7 @@
   <!-- The record, from the device's own copy of last year's inspection.
        Read-only by DEFAULT, not permanently: a stray touch must not rewrite last
        year's data on a part the tech is only confirming, but Edit unlocks it. -->
+  <div id="fp-view-panel" style="display:none;"></div>
   <div id="fp-record" style="display:none;"></div>
   <div id="fp-edit-form" style="display:none;"></div>
 
@@ -1140,6 +1253,9 @@
   <!-- PANEL 2: Parts grid + manual input -->
   <div id="parts-panel">
     <div class="parts-selected" id="parts-selected"></div>
+    <!-- Which favourite set the buttons below come from; only shown when
+         there is more than one. -->
+    <div class="part-set-bar" id="part-set-bar"></div>
     <div class="parts-grid" id="parts-grid"></div>
     <div class="parts-manual-row">
       <div class="ac-wrap">
@@ -1159,6 +1275,9 @@
     <!-- Adds this one and reopens the camera for the next: a rack of ladders is
          scan, parts, one tap, repeat. -->
     <button class="add-ladder-btn next" id="btn-add-next">Add &amp; Scan Next</button>
+    <!-- Adds this one, then every barcode scanned until Done becomes another
+         ladder with the same parts. -->
+    <button class="add-ladder-btn next" id="btn-add-dup">Add &amp; Duplicate</button>
     <button class="cancel-edit-btn" id="btn-cancel-edit">Cancel</button>
   </div>
 
@@ -1184,6 +1303,43 @@
      reading a topic and then asking about it does not lose your place, and
      so Back means one obvious thing.
 ══════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════
+     SCREEN: MY TRUCK — what is on it, and use / load / count
+══════════════════════════════════════════════════════ -->
+<div id="screen-truck" class="screen">
+  <div class="topbar">
+    <button class="back-btn" id="btn-truck-back">← Jobs</button>
+    <span class="topbar-title" id="truck-title">My truck</span>
+  </div>
+  <div id="truck-body">
+    <div id="truck-picker" class="truck-picker"></div>
+    <div class="truck-asof" id="truck-asof"></div>
+    <div class="truck-tools">
+      <input type="search" id="truck-q" class="field-input" placeholder="Find a part…" autocomplete="off"
+             autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="jf-btn" id="truck-short">Short only</button>
+    </div>
+    <div id="truck-list"></div>
+    <div class="truck-add">
+      <input type="text" id="truck-new-part" class="field-input" placeholder="Part not listed? Part number…"
+             autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <button class="btn-g" id="truck-new-go">Add</button>
+    </div>
+  </div>
+  <!-- Load or count one line: a small sheet so the number pad has room. -->
+  <div id="truck-sheet" class="truck-sheet hidden">
+    <div class="truck-sheet-in">
+      <div class="truck-sheet-title" id="truck-sheet-title"></div>
+      <input type="number" inputmode="numeric" min="0" id="truck-sheet-qty" class="field-input">
+      <select id="truck-sheet-from" class="field-input"></select>
+      <div class="truck-sheet-acts">
+        <button class="btn-g" id="truck-sheet-cancel">Cancel</button>
+        <button class="btn-p" id="truck-sheet-ok">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="screen-help" class="screen">
   <div class="topbar">
     <button class="back-btn" id="help-back">← Back</button>
@@ -1292,7 +1448,7 @@
 <!-- New-job scope chooser -->
 <!-- Removal from service. A photo is required; the reason comes from the checks
      that failed, so the tech does not retype it; a note is offered, never demanded. -->
-<div class="settings-sheet hidden" id="fp-condemn-sheet">
+<div class="settings-sheet scroll-all hidden" id="fp-condemn-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Removal from service</div>
   <div class="sheet-desc" id="fp-condemn-why"></div>
@@ -1396,18 +1552,36 @@
 <div class="settings-sheet hidden" id="lib-sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-ttl">Parts Library</div>
-  <div class="sheet-desc">★ Starred parts appear as quick-tap buttons. The × column sets how many are added per tap — a part set to ×2 counts 2, 4, 6… everywhere, including search results. Tap a selected part's chip to type the exact count.</div>
-  <div class="sheet-fields" id="lib-list"></div>
+  <div class="lib-set-row">
+    <select id="lib-set" aria-label="Favorites set"></select>
+    <button class="lib-set-btn" id="lib-set-new">+ New set</button>
+    <button class="lib-set-btn" id="lib-set-rename">Rename</button>
+    <button class="lib-set-btn danger" id="lib-set-delete">Delete</button>
+    <button class="lib-set-btn" id="lib-set-copy" style="display:none;">Copy to edit</button>
+  </div>
+  <div class="sheet-desc" id="lib-set-note" style="display:none;margin-bottom:10px;">
+    Published by your office — every tech gets the same buttons, so it can't be
+    changed here. Copy it to make a set of your own.
+  </div>
+  <div class="sheet-add-row" id="lib-set-edit" style="display:none;">
+    <input type="text" id="lib-set-name" maxlength="40" placeholder="Set name (e.g. Ford plant)" autocomplete="off">
+    <button class="btn-p" id="lib-set-save" style="font-size:14px;padding:12px 18px;">Save</button>
+    <button class="lib-set-btn" id="lib-set-cancel">Cancel</button>
+  </div>
+  <div class="sheet-desc">★ Starred parts are the quick-tap buttons for the set chosen above. The × column sets how many are added per tap — a part set to ×2 counts 2, 4, 6… everywhere, including search results. Tap a selected part's chip to type the exact count.</div>
   <div class="sheet-add-row">
-    <input type="text" id="new-lib-input" placeholder="New part # (e.g. Lgh123WP)" autocomplete="off">
+    <input type="search" id="new-lib-input" placeholder="Search part # or description, or add a new part" autocomplete="off" autocapitalize="characters">
     <button class="btn-p" id="btn-add-lib-part" style="font-size:14px;padding:12px 18px;">Add</button>
   </div>
+  <div class="sheet-fields" id="lib-list"></div>
   <button class="btn-ok sheet-done" id="btn-close-library">Done</button>
 </div>
 
+<script src="./js/backup.js"></script>
 <script src="./js/tag-link.js"></script>
 <script src="./js/device-cache.js"></script>
 <script src="./js/tag-stock.js"></script>
+<script src="./js/serial-pool.js"></script>
 <script src="./js/storage.js"></script>
 <script src="./js/sound.js"></script>
 <script src="./js/parts-catalog.js"></script>
@@ -1419,6 +1593,7 @@
 <script src="./js/photos.js"></script>
 <script src="./js/sync.js"></script>
 <script src="./js/sync-state.js"></script>
+<script src="./js/truck.js"></script>
 <script src="./js/fp-types.js"></script>
 <script src="./js/fp.js"></script>
 <script src="./js/help.js"></script>

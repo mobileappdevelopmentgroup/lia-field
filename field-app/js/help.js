@@ -175,13 +175,19 @@
         p('Before you can inspect something the app has to know which item it is. ' +
           'There are four ways in, and you use whichever is easiest with the item ' +
           'in your hand:'),
-        shot('fp-input', 'Tap, Scan, Type, or New — pick whichever suits the item.'),
+        shot('fp-input', 'Tap & pass, Scan, Type, or New — pick whichever suits the item.'),
         steps([
-          '<strong>Tap</strong> — hold the phone against the item\'s tag. Fastest by far.',
+          '<strong>Tap &amp; pass</strong> — starts tap-through: every tag you tap is recorded as ' +
+          'passed on the spot. Fastest by far — see <em>Tap-through</em>.',
           '<strong>Scan</strong> — point the camera at a barcode.',
           '<strong>Type</strong> — key the serial in by hand.',
           '<strong>New</strong> — an item with nothing on it at all.',
         ]),
+        p('<strong>Just want to see what a tag is?</strong> Use <strong>View a tag — ' +
+          'no inspection</strong> under the four buttons. It shows the item on file, ' +
+          'when it was last inspected and how it fared, and what the tag itself ' +
+          'carries — and records nothing. <strong>Inspect it</strong> from there if ' +
+          'you want to.'),
         p('If the app recognises the item it shows you what it already knows: ' +
           'manufacturer, model, when it was last inspected. Check it against what ' +
           'is in your hand, and if something is wrong tap <strong>Edit</strong>.'),
@@ -236,41 +242,37 @@
       id: 'fp-batch',
       group: 'Fall protection',
       title: 'Tap-through: working a whole rack',
-      blurb: 'Tap an item, look it over, tap the next. Only a defect costs a press.',
+      blurb: 'Look it over, tap it, it is passed. Only a defect costs a press.',
       body: [
-        p('Start a run and the reader stays on. Tap an item and it comes up on ' +
-          'screen with every check already at pass — you are inspecting it now. ' +
-          'Look it over in your hands.'),
-        shot('fp-batch', 'A tap-through run. The item you tapped is on screen; Fail is the only button you need.'),
-        p('<strong>Good item?</strong> Do nothing. Tap the next one: that tap ' +
-          'records the one before as passed.'),
-        p('<strong>Something wrong?</strong> Press <strong>Fail</strong>. The reader ' +
-          'stops, so the next tap cannot pass it by mistake. Tap every check that ' +
-          'failed, then take the photo. The run carries on after.'),
-        warn('Every tap on to the next item puts a passing inspection on record ' +
-             'with your name on it. If you have not looked at it, press Fail or ' +
-             'Undo — do not tap on.'),
-        p('<strong>Item we do not know?</strong> It still comes up, with ' +
-          '<strong>Add info</strong> beside Fail. Pick the equipment type and type ' +
-          'the serial, and it is recorded like any other when you tap on. Skip it ' +
-          'and tap on anyway, and that one is <em>not</em> recorded — it is counted ' +
-          'as skipped, and its tag link is kept so it comes up next time.'),
-        p('<strong>Edit info</strong> is there on known items too, for when what ' +
-          'we have is wrong.'),
+        p('Press <strong>Tap &amp; pass</strong> and the reader stays on. Look an item over, ' +
+          'then tap its tag: it is <strong>recorded as passed right there</strong>, ' +
+          'every check at pass, and the reader is ready for the next one.'),
+        shot('fp-batch', 'A tap-through run. The last tap is recorded as passed; Fail is there if it should not have been.'),
+        warn('A tap is a pass with your name on it. Look the item over ' +
+             '<em>before</em> you tap it.'),
+        p('<strong>Something wrong?</strong> Press <strong>Fail last</strong> straight ' +
+          'after tapping it. The pass is taken back out and the reader stops, so ' +
+          'nothing else can land. Tap every check that failed, then take the photo. ' +
+          'The run carries on after.'),
+        p('<strong>Item we do not know?</strong> It passes like any other and the ' +
+          'reader stays on. If its tag links to a Google Sheet, the app reads the ' +
+          'sheet in the background for the type, tag number, maker and model, and ' +
+          'finishes the record by itself. If it cannot — no signal, or a type it ' +
+          'does not recognise — the item waits on the job as ' +
+          '<strong>Needs details</strong>. Tap it there later, pick the type, and save.'),
+        p('<strong>Edit info</strong> on the item you just tapped corrects what we ' +
+          'have; Done records it again with your changes.'),
         p('<strong>Undo last pass</strong> takes the last pass back off the record ' +
           '— out of the upload queue too — and puts that item back on screen to ' +
           'fail or correct.'),
-        p('The last item has no next tap. <strong>Pass &amp; finish</strong> ' +
-          'records it and ends the run — and so does leaving the screen: the item ' +
-          'you were looking at is recorded as passed, not lost. Every tap is saved ' +
-          'as it happens, so even if the phone dies, reopening the job picks up ' +
-          'where you were.'),
+        p('<strong>Finish</strong> ends the run. Leaving the screen does the same, ' +
+          'and nothing you tapped is lost — each pass is saved the moment you tap.'),
         warn('A failed item with no photo is <strong>not recorded</strong> — on ' +
              'paper it stays in service. So the app will not let you leave one ' +
              'behind without saying so: it stops you and asks for the photo.'),
         p('<strong>No tag, or it will not read?</strong> <strong>Scan instead</strong> ' +
-          'or <strong>Type instead</strong>. It works exactly like a tap, including ' +
-          'passing the item before it.'),
+          'or <strong>Type instead</strong>. It works exactly like a tap: the item ' +
+          'is passed as soon as it is found.'),
         note('On iPhone, Apple\'s reader sheet sits over the app. Close it to ' +
              'reach Fail or Add info, and press <strong>Keep tapping</strong> to open ' +
              'it again. Neither phone reads tags with the screen off.'),
@@ -325,6 +327,15 @@
         p('<strong>Add &amp; Scan Next</strong> adds the ladder and opens the camera ' +
           'again straight away. For a row of ladders: scan, add parts, one tap, ' +
           'repeat. <strong>+ Add Ladder</strong> adds just the one.'),
+        p('<strong>Add &amp; Duplicate</strong> is for a rack of ladders getting the ' +
+          'same parts. It adds this ladder, opens the camera and keeps it open: every ' +
+          'new barcode it reads is added as another ladder with the same parts. Press ' +
+          '<strong>Done</strong> to stop, and the last ladder scanned opens for editing.'),
+        p('For a ladder that has never been inspected, press <strong>Pick brand, type ' +
+          '&amp; length</strong>. The part buttons become brands, then types, then ' +
+          'lengths — one tap each — and the parts come back when you are done. ' +
+          '<strong>Skip</strong> leaves one blank; <strong>Type it</strong> is for ' +
+          'anything not offered.'),
         shot('ladder-next', 'A ladder inspected before: its details are filled in.'),
         shot('ladder-entry', 'Ladder entry. Scan the plate, or type it.'),
         steps([
@@ -335,12 +346,43 @@
         ]),
         p('Parts are added from the parts library so the names always match what ' +
           'the office expects. Tap a part twice to make it a quantity of two.'),
+        p('Different sites use different parts, so you can keep more than one set ' +
+          'of part buttons. In the library (☰), <strong>+ New set</strong> starts one ' +
+          'and the ★ you tap go into whichever set is chosen. Switch sets from the ' +
+          'row above the part buttons; each job remembers the set you used on it. ' +
+          'The box at the top of the library searches every part by number or ' +
+          'description. Sets marked <strong>(office)</strong> come from your office ' +
+          'and update when you sync; to change one, press <strong>Copy to edit</strong> ' +
+          'and change your copy.'),
         note('Anything you are unsure about goes in the description. It comes ' +
              'through to the office with the rest.'),
       ],
     },
 
     // ── Everything else ─────────────────────────────────────────────────────
+    {
+      id: 'truck',
+      group: 'Day to day',
+      title: 'My truck: parts on board',
+      blurb: 'What is on your truck, and keeping it right — used, loaded, counted.',
+      body: [
+        p('If the office has put you on a truck, <strong>My truck</strong> shows on the ' +
+          'jobs screen. Open it to see every part on board, what the truck should ' +
+          'carry, and what it is short.'),
+        steps([
+          '<strong>−1</strong> — you used one off the truck.',
+          '<strong>+</strong> — you loaded some. Say how many, and which warehouse they came out of if it was one.',
+          '<strong>Count</strong> — you counted the shelf. Type how many are there <em>now</em>.',
+        ]),
+        p('A part that is not listed yet: type its number at the bottom and load it.'),
+        note('Every change works with no signal. It shows straight away and uploads ' +
+             'when it can — a count is kept with the time you took it, so a count made ' +
+             'in a basement this morning does not wipe out what the office loaded at noon.'),
+        p('On more than one truck? Pick the one you are in and press <strong>Make this ' +
+          'my truck today</strong>. If the office has switched it on, the parts you put ' +
+          'on ladders come off that truck by themselves.'),
+      ],
+    },
     {
       id: 'offline',
       group: 'Day to day',
@@ -441,8 +483,8 @@
         'Start the job, then tap <strong>Tap through</strong>.',
         'Tap the first item. Look it over while it is on screen.',
         'Good? Tap the next item — that records the first as passed.',
-        'Defect? Press <strong>Fail</strong>, tap what failed, take the photo.',
-        'Not on file? <strong>Add info</strong>, or tap on and it is skipped.',
+        'Defect? Press <strong>Fail last</strong>, tap what failed, take the photo.',
+        'Not on file? It passes anyway; finish any marked <strong>Needs details</strong> later.',
         'After the last item, press <strong>Pass &amp; finish</strong>.',
       ],
     },

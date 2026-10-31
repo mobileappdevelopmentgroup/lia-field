@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 32
+-- Migrations included: 38
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -78,6 +78,26 @@ CREATE FUNCTION public.account_descendants(p_account uuid) RETURNS TABLE(account
     SELECT a.id FROM public.accounts a JOIN tree t ON a.parent_account_id = t.id
   )
   SELECT id FROM tree;
+$$;
+
+
+--
+-- Name: account_part_sets_catalog(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.account_part_sets_catalog() RETURNS TABLE(id uuid, name text, parts jsonb, ord integer, mine boolean, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN QUERY
+  SELECT s.id, s.name, s.parts, s.ord, (s.account_id = v_account), s.updated_at
+    FROM public.account_part_sets s
+   WHERE public.can_use_catalog(s.account_id) AND NOT s.is_deleted
+   ORDER BY (s.account_id = v_account) DESC, s.ord NULLS LAST, s.name;
+END;
 $$;
 
 
@@ -375,6 +395,179 @@ $$;
 
 
 --
+-- Name: add_fp_serial_pool(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_fp_serial_pool(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account   uuid := public.require_lead_account();
+  v_source    text := left(nullif(trim(coalesce(p->>'source', '')), ''), 200);
+  v_raw       text;
+  v_is_used   boolean;
+  v_serial    text;
+  v_key       text;
+  v_asset     uuid;
+  v_pool      public.fp_serial_pool%ROWTYPE;
+  v_n         integer;
+  v_added     integer := 0;
+  v_dup       integer := 0;
+  v_on_item   integer := 0;
+  v_on_sheet  integer := 0;
+  v_now_used  integer := 0;
+  v_unstocked integer := 0;
+  v_seen      text[] := '{}';
+BEGIN
+  IF jsonb_typeof(p->'serials') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'serials must be a list'; END IF;
+  IF p ? 'used' AND jsonb_typeof(p->'used') <> 'array' THEN RAISE EXCEPTION 'used must be a list'; END IF;
+  IF jsonb_array_length(p->'serials') + coalesce(jsonb_array_length(p->'used'), 0) > 5000 THEN
+    RAISE EXCEPTION 'At most 5000 numbers at a time';
+  END IF;
+
+  -- Used first, so a number listed both ways counts as used.
+  FOR v_raw, v_is_used IN
+    SELECT u, true  FROM jsonb_array_elements_text(coalesce(p->'used', '[]'::jsonb)) u
+    UNION ALL
+    SELECT s, false FROM jsonb_array_elements_text(p->'serials') s
+  LOOP
+    v_serial := left(trim(v_raw), 64);
+    v_key := public.serial_key(v_serial);
+    CONTINUE WHEN coalesce(v_key, '') = '';
+    IF v_key = ANY (v_seen) THEN v_dup := v_dup + 1; CONTINUE; END IF;
+    v_seen := v_seen || v_key;
+
+    -- It will not go on a tag now: out of the blank stock either way.
+    DELETE FROM public.fp_tag_stock
+     WHERE account_id = v_account AND tag_label_key = v_key AND asset_id IS NULL;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_unstocked := v_unstocked + v_n;
+
+    SELECT * INTO v_pool FROM public.fp_serial_pool
+     WHERE account_id = v_account AND serial_key = v_key LIMIT 1;
+    IF FOUND THEN
+      -- A later sheet saying a free (or phone-held) number is now spent.
+      IF v_is_used AND v_pool.asset_id IS NULL AND v_pool.used_at IS NULL THEN
+        UPDATE public.fp_serial_pool
+           SET used_at = now(), reserved_by = NULL, reserved_at = NULL
+         WHERE id = v_pool.id;
+        v_now_used := v_now_used + 1;
+      ELSE
+        v_dup := v_dup + 1;
+      END IF;
+      CONTINUE;
+    END IF;
+
+    SELECT id INTO v_asset FROM public.assets
+     WHERE account_id = v_account AND kind = 'fall_protection'
+       AND (serial_key = v_key OR tag_label_key = v_key)
+     ORDER BY (serial_key = v_key) DESC LIMIT 1;
+
+    INSERT INTO public.fp_serial_pool (account_id, serial, source, asset_id, used_at)
+    VALUES (v_account, v_serial, coalesce(v_source, 'office'), v_asset,
+            CASE WHEN v_asset IS NOT NULL OR v_is_used THEN now() END);
+    IF v_asset IS NOT NULL THEN v_on_item := v_on_item + 1;
+    ELSIF v_is_used THEN v_on_sheet := v_on_sheet + 1;
+    ELSE v_added := v_added + 1; END IF;
+    v_asset := NULL;
+  END LOOP;
+
+  RETURN json_build_object('added', v_added, 'already_listed', v_dup,
+                           'already_on_an_item', v_on_item, 'used_on_sheet', v_on_sheet,
+                           'now_used', v_now_used, 'taken_from_tag_stock', v_unstocked);
+END;
+$$;
+
+
+--
+-- Name: add_inspection_office(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_inspection_office(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_serial  text := btrim(coalesce(p->>'serial_num', ''));
+  v_wo      text := nullif(btrim(coalesce(p->>'work_order_id', '')), '');
+  v_reason  text := nullif(btrim(coalesce(p->>'reason', '')), '');
+  v_date    date := coalesce(nullif(p->>'inspection_date', '')::date, current_date);
+  v_asset   uuid;
+  v_id      uuid;
+  v_who     text;
+  v_rep     text;
+BEGIN
+  IF v_reason IS NULL THEN RAISE EXCEPTION 'Say why this record is being added'; END IF;
+  IF v_serial = '' THEN RAISE EXCEPTION 'A serial number is required'; END IF;
+  IF length(v_serial) > 64 THEN RAISE EXCEPTION 'That serial number is too long'; END IF;
+  IF v_wo IS NULL THEN RAISE EXCEPTION 'A work order number is required'; END IF;
+  IF length(v_wo) > 64 THEN RAISE EXCEPTION 'That work order number is too long'; END IF;
+  IF p ? 'parts' AND jsonb_typeof(p->'parts') <> 'array' THEN
+    RAISE EXCEPTION 'Parts must be a list';
+  END IF;
+
+  v_rep := public.account_rep_number(v_account);
+  SELECT coalesce(u.name, u.email) INTO v_who FROM public.users u WHERE u.id = auth.uid();
+
+  INSERT INTO public.assets (account_id, kind, serial_raw, serial_key)
+  VALUES (v_account, 'ladder', v_serial, public.serial_key(v_serial))
+  ON CONFLICT (account_id, kind, serial_key) DO NOTHING
+  RETURNING id INTO v_asset;
+  IF v_asset IS NULL THEN
+    SELECT id INTO v_asset FROM public.assets
+     WHERE account_id = v_account AND kind = 'ladder'
+       AND serial_key = public.serial_key(v_serial);
+  END IF;
+
+  -- One record per item per day. If the field already has it, this is a
+  -- correction; if it was deleted, it is a restore. Either way, not an add —
+  -- adding would bury the field's version under an office one with no trail.
+  IF EXISTS (SELECT 1 FROM public.inspections
+              WHERE asset_id = v_asset AND inspection_date = v_date
+                AND is_current AND NOT is_deleted) THEN
+    RAISE EXCEPTION '% already has a record for %; correct that one instead', v_serial, v_date;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.inspections
+              WHERE asset_id = v_asset AND inspection_date = v_date AND is_deleted) THEN
+    RAISE EXCEPTION '% has a deleted record for %; restore that one instead', v_serial, v_date;
+  END IF;
+
+  INSERT INTO public.inspections (
+    serial_num, inspection_date, tech_name, work_order_id, next_due_date, notes,
+    brand, type, length, account_id, asset_id, tech_user_id,
+    version, supersedes, is_current, source, captured_at,
+    lubricated, has_leveler, has_claw, has_vrung,
+    rep_number, collected_by, collector_name, parts
+  ) VALUES (
+    v_serial, v_date, coalesce(v_who, 'Lia Office'), v_wo,
+    v_date + interval '1 year',
+    nullif(p->>'notes', ''),
+    nullif(btrim(coalesce(p->>'brand', '')), ''),
+    nullif(btrim(coalesce(p->>'type', '')), ''),
+    nullif(btrim(coalesce(p->>'length', '')), ''),
+    v_account, v_asset, auth.uid(),
+    1, NULL, true, 'office_add', now(),
+    (p->>'lubricated')::boolean, (p->>'has_leveler')::boolean,
+    (p->>'has_claw')::boolean,   (p->>'has_vrung')::boolean,
+    v_rep, auth.uid(), v_who,
+    coalesce(p->'parts', '[]'::jsonb)
+  )
+  RETURNING id INTO v_id;
+
+  INSERT INTO public.inspection_audit
+    (account_id, inspection_id, serial_num, action, reason, before, after, actor_id, actor_name)
+  VALUES (v_account, v_id, v_serial, 'add', v_reason, NULL,
+          (SELECT row_to_json(i)::jsonb FROM public.inspections i WHERE i.id = v_id),
+          auth.uid(), v_who);
+
+  RETURN (SELECT row_to_json(i) FROM public.inspections i WHERE i.id = v_id);
+END;
+$$;
+
+
+--
 -- Name: add_subcontractor(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -446,6 +639,40 @@ $$;
 
 
 --
+-- Name: adjust_stock(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.adjust_stock(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_loc    uuid := nullif(p->>'location_id','')::uuid;
+  v_reason text := p->>'reason';
+  v_qty    integer := (p->>'qty')::integer;
+  v_id     uuid;
+BEGIN
+  PERFORM public.stock_office_location(v_loc);
+  IF v_reason NOT IN ('load', 'use', 'count', 'adjust') THEN RAISE EXCEPTION 'Unknown kind of change: %', v_reason; END IF;
+  IF v_qty IS NULL OR abs(v_qty) > 100000 OR (v_reason = 'count' AND v_qty < 0)
+     OR (v_reason IN ('load','use') AND v_qty <= 0) OR (v_reason = 'adjust' AND v_qty = 0) THEN
+    RAISE EXCEPTION 'That quantity is not possible';
+  END IF;
+  IF v_reason = 'adjust' AND btrim(coalesce(p->>'note','')) = '' THEN
+    RAISE EXCEPTION 'Say why the quantity is being corrected';
+  END IF;
+  v_id := public.stock_write_move(v_loc, p->>'part_number', v_reason,
+            CASE v_reason WHEN 'use' THEN -v_qty WHEN 'count' THEN 0 ELSE v_qty END,
+            CASE WHEN v_reason = 'count' THEN v_qty END,
+            now(), NULL, p->>'note', NULL);
+  RETURN json_build_object('id', v_id,
+    'qty', (SELECT qty FROM public.stock_levels WHERE location_id = v_loc
+              AND part_key = public.stock_part_key(p->>'part_number')));
+END;
+$$;
+
+
+--
 -- Name: amend_fp_inspection(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -454,7 +681,7 @@ CREATE FUNCTION public.amend_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_reason  text := nullif(btrim(coalesce(p->>'reason','')), '');
   v_prev    public.fp_inspections%ROWTYPE;
@@ -969,6 +1196,7 @@ BEGIN
   UPDATE public.fp_record_audit   t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
   UPDATE public.fp_tag_links      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
   UPDATE public.fp_tag_stock      t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
+  UPDATE public.fp_serial_pool    t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;  -- 36
   UPDATE public.fp_tag_writes     t SET asset_id = f.keep_id FROM _lia_fold f WHERE t.asset_id = f.id;
 
   WITH r AS (
@@ -1083,6 +1311,7 @@ BEGIN
   UPDATE public.fp_external_records SET account_id = v_keep WHERE account_id <> v_keep;
 
   UPDATE public.fp_tag_stock      SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.fp_serial_pool    SET account_id = v_keep WHERE account_id <> v_keep;  -- 36
   UPDATE public.fp_tag_writes     SET account_id = v_keep WHERE account_id <> v_keep;
   UPDATE public.fp_record_audit   SET account_id = v_keep WHERE account_id <> v_keep;
   UPDATE public.inspection_audit  SET account_id = v_keep WHERE account_id <> v_keep;
@@ -1090,6 +1319,36 @@ BEGIN
   UPDATE public.certificate_views SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
   UPDATE public.known_networks    SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
   UPDATE public.support_tickets   SET account_id = v_keep WHERE account_id IS NOT NULL AND account_id <> v_keep;
+
+  -- 33: published part sets. A clash on a live name keeps the kept account's
+  -- set; the other is tombstoned rather than dropped, like every catalogue.
+  UPDATE public.account_part_sets s SET is_deleted = true, updated_at = now()
+    FROM (SELECT id, row_number() OVER (PARTITION BY name_key
+                                        ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+            FROM public.account_part_sets WHERE NOT is_deleted) r
+   WHERE s.id = r.id AND r.rn > 1;
+  UPDATE public.account_part_sets SET account_id = v_keep WHERE account_id <> v_keep;
+
+  -- 34: vehicle inventory. Load-outs clash like any catalogue (tombstoned);
+  -- trucks and warehouses are real places, so a clashing name is kept and
+  -- marked with the company it came from instead.
+  UPDATE public.stock_loadouts s SET is_deleted = true, updated_at = now()
+    FROM (SELECT id, row_number() OVER (PARTITION BY name_key
+                                        ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+            FROM public.stock_loadouts WHERE NOT is_deleted) r
+   WHERE s.id = r.id AND r.rn > 1;
+  UPDATE public.stock_loadouts SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.stock_locations l
+     SET name = left(l.name, 30) || ' (' || left(coalesce(a.name, 'merged'), 17) || ' ' || r.rn || ')',
+         updated_at = now()
+    FROM (SELECT id, row_number() OVER (PARTITION BY name_key
+                                        ORDER BY (account_id = v_keep) DESC, created_at, id) AS rn
+            FROM public.stock_locations) r, public.accounts a
+   WHERE l.id = r.id AND r.rn > 1 AND a.id = l.account_id;
+  UPDATE public.stock_locations SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.stock_levels    SET account_id = v_keep WHERE account_id <> v_keep;
+  UPDATE public.stock_moves     SET account_id = v_keep WHERE account_id <> v_keep;
+  DELETE FROM public.stock_settings WHERE account_id <> v_keep;
 
   -- Only accounts nobody belongs to any more, and nothing is left in them.
   DELETE FROM public.accounts
@@ -1245,7 +1504,7 @@ CREATE FUNCTION public.delete_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_reason  text := nullif(btrim(coalesce(p->>'reason','')), '');
   v_row     public.fp_inspections%ROWTYPE;
@@ -1369,6 +1628,25 @@ BEGIN
   END IF;
   DELETE FROM public.known_networks
    WHERE id = p_id AND account_id = public.my_account_id();
+END;
+$$;
+
+
+--
+-- Name: delete_stock_loadout(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_stock_loadout(p_id uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.require_lead_account();
+BEGIN
+  UPDATE public.stock_loadouts SET is_deleted = true, updated_at = now()
+   WHERE id = p_id AND account_id = v_account AND NOT is_deleted;
+  IF NOT FOUND THEN RAISE EXCEPTION 'No such load-out'; END IF;
+  UPDATE public.stock_locations SET loadout_id = NULL, updated_at = now() WHERE loadout_id = p_id;
+  RETURN json_build_object('deleted', p_id);
 END;
 $$;
 
@@ -1690,6 +1968,25 @@ BEGIN
 
   RETURN NULL;
 END;
+$$;
+
+
+--
+-- Name: fp_history_imports(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_history_imports() RETURNS TABLE(batch text, records integer, first_date date, last_date date, imported_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT substr(i.source, 16), count(*)::integer, min(i.inspection_date), max(i.inspection_date),
+         max(i.uploaded_at)
+    FROM public.fp_inspections i
+   WHERE i.account_id = public.require_lead_account()
+     AND i.source LIKE 'import:history:%'
+     AND NOT i.is_deleted
+   GROUP BY i.source
+   ORDER BY max(i.uploaded_at) DESC;
 $$;
 
 
@@ -2707,6 +3004,63 @@ $$;
 
 
 --
+-- Name: fp_serial_pool_order(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_order(p_key text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT lpad(length(coalesce(p_key, ''))::text, 4, '0') || coalesce(p_key, '') $$;
+
+
+--
+-- Name: fp_serial_pool_summary(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_summary() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.require_lead_account();
+BEGIN
+  RETURN json_build_object(
+    'free',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NULL),
+    'reserved', (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NOT NULL),
+    'used',     (SELECT count(*) FROM public.fp_serial_pool WHERE account_id = v_account AND (asset_id IS NOT NULL OR used_at IS NOT NULL)),
+    'next',     (SELECT serial FROM public.fp_serial_pool WHERE account_id = v_account AND asset_id IS NULL AND used_at IS NULL AND reserved_by IS NULL
+                  ORDER BY public.fp_serial_pool_order(serial_key) LIMIT 1),
+    'holders',  coalesce((SELECT json_agg(h ORDER BY h.name) FROM (
+                  SELECT coalesce(nullif(u.name, ''), u.email, 'Unknown') AS name, count(*) AS numbers,
+                         string_agg(p.serial, ', ' ORDER BY public.fp_serial_pool_order(p.serial_key)) AS serials
+                    FROM public.fp_serial_pool p LEFT JOIN public.users u ON u.id = p.reserved_by
+                   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.used_at IS NULL AND p.reserved_by IS NOT NULL
+                   GROUP BY 1) h), '[]'::json)
+  );
+END;
+$$;
+
+
+--
+-- Name: fp_serial_pool_use(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fp_serial_pool_use() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.kind <> 'fall_protection' THEN RETURN NEW; END IF;
+  UPDATE public.fp_serial_pool p
+     SET asset_id = NEW.id, used_at = coalesce(p.used_at, now())
+   WHERE p.account_id = NEW.account_id
+     AND p.asset_id IS DISTINCT FROM NEW.id
+     AND ((coalesce(NEW.serial_key, '') <> ''    AND p.serial_key = NEW.serial_key)
+       OR (coalesce(NEW.tag_label_key, '') <> '' AND p.serial_key = NEW.tag_label_key));
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: fp_tag_stock_assign(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3049,6 +3403,180 @@ BEGIN
   RETURN row_to_json(r);
 END;
 $$;
+
+
+--
+-- Name: import_fp_history(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.import_fp_history(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+DECLARE
+  v_account  uuid := public.require_lead_account();
+  v_batch    text := nullif(btrim(coalesce(p->>'batch', '')), '');
+  v_src      text;
+  r          jsonb;
+  v_n        integer := 0;
+  v_row      integer;
+  v_ok       integer := 0;
+  v_skipped  jsonb := '[]'::jsonb;
+  v_serial   text;
+  v_date     date;
+  v_res      text;
+  v_pass     boolean;
+  v_type_id  uuid;
+  v_type_nm  text;
+  v_mfr      text;
+  v_model    text;
+  v_model_id uuid;
+  v_asset    uuid;
+  v_label    text;
+  v_mm       integer;
+  v_yy       integer;
+  v_insp     text;
+BEGIN
+  IF v_batch IS NULL THEN RAISE EXCEPTION 'Name this import (batch)'; END IF;
+  IF length(v_batch) > 80 OR v_batch !~ '^[A-Za-z0-9 ._:-]+$' THEN
+    RAISE EXCEPTION 'A batch name is letters, digits, spaces and . _ : - only, up to 80';
+  END IF;
+  IF jsonb_typeof(p->'rows') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'No rows'; END IF;
+  IF jsonb_array_length(p->'rows') > 2000 THEN
+    RAISE EXCEPTION 'At most 2000 rows at a time — send the file in parts';
+  END IF;
+  -- Its own prefix: undo and the batch list reach only what this function
+  -- wrote, never 'import:nate-google-sheets-2026-09-28' or a later hand import.
+  v_src := 'import:history:' || v_batch;
+
+  FOR r IN SELECT * FROM jsonb_array_elements(p->'rows') LOOP
+    v_n := v_n + 1;
+    v_row := coalesce(nullif(r->>'row', '')::integer, v_n);
+    v_serial := nullif(btrim(coalesce(r->>'serial', '')), '');
+
+    BEGIN
+      IF v_serial IS NULL OR public.serial_key(v_serial) = '' THEN
+        RAISE EXCEPTION 'No serial';
+      END IF;
+      IF length(v_serial) > 64 THEN RAISE EXCEPTION 'Serial is longer than 64 characters'; END IF;
+
+      -- ISO only. 01/02/2025 is the 2nd of January to Postgres and the 1st of
+      -- February to half the spreadsheets it came from; the office converts a
+      -- date only when the file's format leaves no doubt.
+      IF coalesce(r->>'inspection_date', '') !~ '^\d{4}-\d{2}-\d{2}$' THEN
+        RAISE EXCEPTION 'Inspection date "%" is not YYYY-MM-DD', coalesce(r->>'inspection_date', '');
+      END IF;
+      BEGIN
+        v_date := (r->>'inspection_date')::date;
+      EXCEPTION WHEN others THEN
+        RAISE EXCEPTION 'Inspection date "%" is not a date', r->>'inspection_date';
+      END;
+      IF v_date IS NULL THEN RAISE EXCEPTION 'No inspection date'; END IF;
+      IF v_date > current_date THEN RAISE EXCEPTION 'Inspection date % is in the future', v_date; END IF;
+      IF v_date < date '1990-01-01' THEN RAISE EXCEPTION 'Inspection date % is before 1990', v_date; END IF;
+
+      v_res := lower(btrim(coalesce(r->>'result', '')));
+      v_pass := CASE
+        WHEN v_res IN ('pass', 'passed', 'p', 'yes', 'y', 'ok', 'true', 'in service') THEN true
+        WHEN v_res IN ('fail', 'failed', 'f', 'no', 'n', 'false', 'removed', 'out of service',
+                       'condemned', 'destroyed') THEN false
+        ELSE NULL END;
+      IF v_pass IS NULL THEN
+        RAISE EXCEPTION 'Result "%" is not pass or fail', coalesce(r->>'result', '');
+      END IF;
+
+      v_type_id := NULL; v_type_nm := NULL;
+      IF nullif(btrim(coalesce(r->>'equipment_type', '')), '') IS NOT NULL THEN
+        -- A name Lia does not know does not cost the row its history: it is
+        -- kept in the file's words with no type, and the phone asks the tech
+        -- to pick one the first time the item is opened. The office preview
+        -- lists these before anything is sent.
+        v_type_id := public.fp_type_for(v_account, r->>'equipment_type');
+        SELECT name INTO v_type_nm FROM public.fp_equipment_types WHERE id = v_type_id;
+      END IF;
+
+      v_mm := nullif(r->>'mfg_month', '')::integer;
+      v_yy := nullif(r->>'mfg_year', '')::integer;
+      IF v_mm IS NOT NULL AND (v_mm < 1 OR v_mm > 12) THEN RAISE EXCEPTION 'Manufacture month % is not 1–12', v_mm; END IF;
+      IF v_yy IS NOT NULL AND (v_yy < 1900 OR v_yy > extract(year FROM current_date)::integer) THEN
+        RAISE EXCEPTION 'Manufacture year % is not possible', v_yy;
+      END IF;
+
+      -- The item, by its assigned number.
+      INSERT INTO public.assets (account_id, kind, serial_raw, serial_key)
+      VALUES (v_account, 'fall_protection', v_serial, public.serial_key(v_serial))
+      ON CONFLICT (account_id, kind, serial_key) DO NOTHING
+      RETURNING id INTO v_asset;
+      IF v_asset IS NULL THEN
+        SELECT id INTO v_asset FROM public.assets
+         WHERE account_id = v_account AND kind = 'fall_protection'
+           AND serial_key = public.serial_key(v_serial);
+      END IF;
+
+      IF EXISTS (SELECT 1 FROM public.fp_inspections
+                  WHERE asset_id = v_asset AND inspection_date = v_date AND NOT is_deleted) THEN
+        RAISE EXCEPTION 'Already has a record on %', v_date;
+      END IF;
+
+      -- The printed tag number, if the file has one and the item has none.
+      -- Uniqueness is the write path's job, not an index's (see 17).
+      v_label := nullif(btrim(coalesce(r->>'tag_label', '')), '');
+      IF v_label IS NOT NULL THEN
+        IF EXISTS (SELECT 1 FROM public.assets a
+                    WHERE a.account_id = v_account AND a.id <> v_asset
+                      AND a.tag_label_key = public.serial_key(v_label)) THEN
+          RAISE EXCEPTION 'Tag % is already on another item', v_label;
+        END IF;
+        UPDATE public.assets SET tag_label = v_label, updated_at = clock_timestamp()
+         WHERE id = v_asset AND coalesce(tag_label, '') = '';
+      END IF;
+
+      v_mfr   := nullif(btrim(coalesce(r->>'manufacturer', '')), '');
+      v_model := nullif(btrim(coalesce(r->>'model', '')), '');
+      v_model_id := NULL;
+      IF v_mfr IS NOT NULL AND v_model IS NOT NULL THEN
+        INSERT INTO public.fp_models (account_id, manufacturer, model, item_type, created_by)
+        VALUES (v_account, v_mfr, v_model, v_type_nm, auth.uid())
+        ON CONFLICT (coalesce(account_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                     lower(manufacturer), lower(model)) DO NOTHING;
+        SELECT id INTO v_model_id FROM public.fp_models
+         WHERE account_id = v_account AND lower(manufacturer) = lower(v_mfr) AND lower(model) = lower(v_model);
+      END IF;
+
+      v_insp := nullif(btrim(coalesce(r->>'inspector', '')), '');
+
+      INSERT INTO public.fp_inspections (
+        account_id, asset_id, work_order_id, inspection_date, next_due_date,
+        tech_user_id, collected_by, collector_name, model_id, equipment_type_id,
+        item_type, description, manufacturer, model, mfr_serial, lot_number,
+        mfg_month, mfg_year, status, template_id, template_version,
+        overall_pass, discard_reason, discard_note,
+        version, is_current, source, captured_at
+      ) VALUES (
+        v_account, v_asset, left(nullif(btrim(coalesce(r->>'work_order_id', '')), ''), 64),
+        v_date, v_date + interval '1 year',
+        NULL, NULL, left(coalesce(v_insp, 'Imported history'), 120), v_model_id, v_type_id,
+        coalesce(v_type_nm, nullif(btrim(coalesce(r->>'equipment_type', '')), '')),
+        left(nullif(btrim(coalesce(r->>'description', '')), ''), 500),
+        v_mfr, v_model, left(nullif(btrim(coalesce(r->>'mfr_serial', '')), ''), 64),
+        left(nullif(btrim(coalesce(r->>'lot_number', '')), ''), 64),
+        v_mm, v_yy, public.fp_default_status(v_pass, NULL), NULL, NULL,
+        v_pass,
+        CASE WHEN v_pass THEN NULL
+             ELSE 'Failed: ' || coalesce(left(nullif(btrim(coalesce(r->>'reason', '')), ''), 500),
+                                         '(imported history — no reason recorded)') END,
+        left(nullif(btrim(coalesce(r->>'notes', '')), ''), 1000),
+        1, true, v_src, NULL
+      );
+      v_ok := v_ok + 1;
+    EXCEPTION WHEN others THEN
+      v_skipped := v_skipped || jsonb_build_object('row', v_row, 'serial', v_serial, 'reason', SQLERRM);
+    END;
+  END LOOP;
+
+  RETURN json_build_object('batch', v_batch, 'imported', v_ok, 'skipped', v_skipped);
+END;
+$_$;
 
 
 --
@@ -3527,6 +4055,37 @@ BEGIN
    WHERE s.account_id = public.my_account_id()
      AND s.asset_id IS NULL
    ORDER BY s.tag_label;
+END;
+$$;
+
+
+--
+-- Name: my_vehicles(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_vehicles() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN json_build_object(
+    'fetched_at', now(),
+    'auto_deduct', coalesce((SELECT auto_deduct FROM public.stock_settings WHERE account_id = v_account), false),
+    'vehicles', (SELECT coalesce(json_agg(json_build_object(
+        'id', l.id, 'name', l.name, 'unit', l.unit, 'primary', a.is_primary,
+        'loadout', (SELECT o.name FROM public.stock_loadouts o WHERE o.id = l.loadout_id AND NOT o.is_deleted),
+        'lines', (SELECT coalesce(json_agg(json_build_object('part_number', s.part_number, 'qty', s.qty,
+                                                             'par', s.par, 'need', s.need) ORDER BY s.part_key), '[]'::json)
+                    FROM public.stock_lines(l.id) s))
+        ORDER BY a.is_primary DESC, l.name), '[]'::json)
+      FROM public.stock_locations l
+      JOIN public.stock_assignees a ON a.location_id = l.id AND a.user_id = auth.uid()
+     WHERE l.account_id = v_account AND l.active AND l.kind = 'vehicle'),
+    'warehouses', (SELECT coalesce(json_agg(json_build_object('id', l.id, 'name', l.name) ORDER BY l.name), '[]'::json)
+      FROM public.stock_locations l
+     WHERE l.account_id = v_account AND l.active AND l.kind = 'warehouse'));
 END;
 $$;
 
@@ -4394,6 +4953,63 @@ $$;
 
 
 --
+-- Name: record_stock_move(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_stock_move(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_client  text := nullif(btrim(coalesce(p->>'client_id','')), '');
+  v_loc     uuid := nullif(p->>'location_id','')::uuid;
+  v_from    uuid := nullif(p->>'from_location_id','')::uuid;
+  v_reason  text := p->>'reason';
+  v_part    text := p->>'part_number';
+  v_qty     integer;
+  v_at      timestamptz := coalesce(nullif(p->>'captured_at','')::timestamptz, now());
+  v_id      uuid;
+  v_xfer    uuid;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF v_client IS NULL THEN RAISE EXCEPTION 'client_id is required'; END IF;
+  SELECT id INTO v_id FROM public.stock_moves WHERE client_id = v_client;
+  IF FOUND THEN RETURN json_build_object('id', v_id, 'duplicate', true); END IF;
+
+  IF v_reason NOT IN ('use', 'load', 'count') THEN RAISE EXCEPTION 'Unknown kind of change: %', v_reason; END IF;
+  IF NOT public.stock_can_change(v_loc) THEN
+    RAISE EXCEPTION 'You are not assigned to that truck';
+  END IF;
+  v_qty := (CASE WHEN v_reason = 'count' THEN p->>'counted_qty' ELSE p->>'qty' END)::integer;
+  IF v_qty IS NULL OR v_qty < 0 OR v_qty > 100000 OR (v_reason <> 'count' AND v_qty = 0) THEN
+    RAISE EXCEPTION 'That quantity is not possible';
+  END IF;
+
+  IF v_reason = 'load' AND v_from IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM public.stock_locations w
+                    WHERE w.id = v_from AND w.kind = 'warehouse' AND w.active
+                      AND w.account_id = (SELECT account_id FROM public.stock_locations WHERE id = v_loc)) THEN
+      RAISE EXCEPTION 'No such warehouse';
+    END IF;
+    v_xfer := gen_random_uuid();
+    PERFORM public.stock_write_move(v_from, v_part, 'transfer_out', -v_qty, NULL, v_at, NULL,
+                                    p->>'note', p->>'wo_number', v_xfer);
+    v_id := public.stock_write_move(v_loc, v_part, 'transfer_in', v_qty, NULL, v_at, v_client,
+                                    p->>'note', p->>'wo_number', v_xfer);
+  ELSE
+    v_id := public.stock_write_move(v_loc, v_part, v_reason,
+              CASE v_reason WHEN 'use' THEN -v_qty WHEN 'load' THEN v_qty ELSE 0 END,
+              CASE WHEN v_reason = 'count' THEN v_qty END,
+              v_at, v_client, p->>'note', p->>'wo_number');
+  END IF;
+
+  RETURN json_build_object('id', v_id,
+    'qty', (SELECT qty FROM public.stock_levels WHERE location_id = v_loc AND part_key = public.stock_part_key(v_part)));
+END;
+$$;
+
+
+--
 -- Name: remove_crew_member(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4598,6 +5214,50 @@ $$;
 
 
 --
+-- Name: reserve_fp_serials(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reserve_fp_serials(p_count integer DEFAULT 5) RETURNS TABLE(serial text, reserved_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_uid     uuid := auth.uid();
+  v_account uuid;
+  v_want    integer := greatest(1, least(coalesce(p_count, 5), 20));
+  v_have    integer;
+BEGIN
+  IF v_uid IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  v_account := public.my_account_id();
+  IF v_account IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
+
+  UPDATE public.fp_serial_pool p SET reserved_by = NULL, reserved_at = NULL
+   WHERE p.account_id = v_account AND p.asset_id IS NULL AND p.used_at IS NULL AND p.reserved_by IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.account_members m
+                      WHERE m.user_id = p.reserved_by AND m.account_id = v_account AND m.removed_at IS NULL);
+
+  SELECT count(*) INTO v_have FROM public.fp_serial_pool p
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL AND p.used_at IS NULL;
+
+  IF v_have < v_want THEN
+    UPDATE public.fp_serial_pool p SET reserved_by = v_uid, reserved_at = now()
+     WHERE p.id IN (
+       SELECT f.id FROM public.fp_serial_pool f
+        WHERE f.account_id = v_account AND f.asset_id IS NULL AND f.used_at IS NULL AND f.reserved_by IS NULL
+        ORDER BY public.fp_serial_pool_order(f.serial_key)
+        LIMIT v_want - v_have
+        FOR UPDATE SKIP LOCKED);
+  END IF;
+
+  RETURN QUERY
+  SELECT p.serial, p.reserved_at FROM public.fp_serial_pool p
+   WHERE p.account_id = v_account AND p.reserved_by = v_uid AND p.asset_id IS NULL AND p.used_at IS NULL
+   ORDER BY public.fp_serial_pool_order(p.serial_key);
+END;
+$$;
+
+
+--
 -- Name: restore_crew_member(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4648,7 +5308,7 @@ CREATE FUNCTION public.restore_fp_inspection(p jsonb) RETURNS json
     SET search_path TO 'public'
     AS $$
 DECLARE
-  v_account uuid := public.require_lead();
+  v_account uuid := public.require_lead_account();
   v_id      uuid := nullif(p->>'inspection_id','')::uuid;
   v_row     public.fp_inspections%ROWTYPE;
   v_who     text;
@@ -4720,6 +5380,80 @@ BEGIN
           auth.uid(), v_who);
 
   RETURN (SELECT row_to_json(i) FROM public.inspections i WHERE i.id = v_prev.id);
+END;
+$$;
+
+
+--
+-- Name: save_account_part_sets(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_account_part_sets(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_sets    jsonb := coalesce(p->'sets', '[]'::jsonb);
+  v_keep    uuid[] := '{}';
+  v_id      uuid;
+  v_name    text;
+  v_parts   jsonb;
+  v_n       integer := 0;
+  v_i       integer := 0;
+  e         jsonb;
+BEGIN
+  IF jsonb_typeof(v_sets) <> 'array' THEN
+    RAISE EXCEPTION 'sets must be a list';
+  END IF;
+
+  -- Names are checked before anything is written, so a clash leaves the
+  -- account exactly as it was rather than half-saved.
+  IF (SELECT count(*) <> count(DISTINCT lower(btrim(x->>'name')))
+        FROM jsonb_array_elements(v_sets) x) THEN
+    RAISE EXCEPTION 'Two sets have the same name';
+  END IF;
+
+  FOR e IN SELECT * FROM jsonb_array_elements(v_sets) LOOP
+    v_i := v_i + 1;
+    v_name := btrim(coalesce(e->>'name', ''));
+    IF v_name = '' THEN RAISE EXCEPTION 'A set needs a name'; END IF;
+    IF length(v_name) > 40 THEN RAISE EXCEPTION 'Set names are 40 characters at most'; END IF;
+
+    -- Trimmed, empties dropped, order kept. The same part twice — in any
+    -- case — keeps its first position and spelling.
+    SELECT coalesce(jsonb_agg(pn ORDER BY n), '[]'::jsonb) INTO v_parts
+      FROM (SELECT btrim(x.v) AS pn, x.n,
+                   row_number() OVER (PARTITION BY upper(btrim(x.v)) ORDER BY x.n) AS rk
+              FROM jsonb_array_elements_text(coalesce(e->'parts', '[]'::jsonb))
+                   WITH ORDINALITY AS x(v, n)
+             WHERE btrim(x.v) <> '') q
+     WHERE rk = 1;
+
+    v_id := NULL;
+    IF nullif(e->>'id', '') IS NOT NULL THEN
+      UPDATE public.account_part_sets
+         SET name = v_name, parts = v_parts, ord = v_i, is_deleted = false, updated_at = now()
+       WHERE id = (e->>'id')::uuid AND account_id = v_account
+      RETURNING id INTO v_id;
+    END IF;
+    IF v_id IS NULL THEN
+      INSERT INTO public.account_part_sets (account_id, name, parts, ord, created_by)
+      VALUES (v_account, v_name, v_parts, v_i, auth.uid())
+      RETURNING id INTO v_id;
+    END IF;
+
+    v_keep := v_keep || v_id;
+    v_n := v_n + 1;
+  END LOOP;
+
+  UPDATE public.account_part_sets
+     SET is_deleted = true, updated_at = now()
+   WHERE account_id = v_account AND NOT is_deleted AND NOT (id = ANY (v_keep));
+
+  RETURN json_build_object('saved', v_n,
+    'sets', (SELECT coalesce(json_agg(json_build_object('id', id, 'name', name) ORDER BY ord), '[]'::json)
+               FROM public.account_part_sets WHERE account_id = v_account AND NOT is_deleted));
 END;
 $$;
 
@@ -4988,6 +5722,106 @@ $$;
 
 
 --
+-- Name: save_stock_loadout(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_stock_loadout(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_id      uuid := nullif(p->>'id','')::uuid;
+  v_name    text := btrim(coalesce(p->>'name',''));
+  v_lines   jsonb;
+BEGIN
+  IF v_name = '' THEN RAISE EXCEPTION 'Give the load-out a name'; END IF;
+  IF EXISTS (SELECT 1 FROM public.stock_loadouts WHERE account_id = v_account AND NOT is_deleted
+              AND name_key = lower(v_name) AND id IS DISTINCT FROM v_id) THEN
+    RAISE EXCEPTION 'There is already a load-out called "%"', v_name;
+  END IF;
+  -- One line per part (first wins), par a whole number 0 or more.
+  SELECT coalesce(jsonb_agg(jsonb_build_object('part_number', pn, 'par', par) ORDER BY n), '[]'::jsonb) INTO v_lines
+    FROM (SELECT upper(btrim(x->>'part_number')) AS pn, greatest(coalesce((x->>'par')::integer, 0), 0) AS par, n,
+                 row_number() OVER (PARTITION BY upper(btrim(x->>'part_number')) ORDER BY n) AS rk
+            FROM jsonb_array_elements(coalesce(p->'lines', '[]'::jsonb)) WITH ORDINALITY AS t(x, n)
+           WHERE btrim(coalesce(x->>'part_number','')) <> '') q
+   WHERE rk = 1;
+  IF v_id IS NOT NULL THEN
+    UPDATE public.stock_loadouts SET name = v_name, lines = v_lines, updated_at = now()
+     WHERE id = v_id AND account_id = v_account AND NOT is_deleted;
+    IF NOT FOUND THEN RAISE EXCEPTION 'No such load-out'; END IF;
+  ELSE
+    INSERT INTO public.stock_loadouts (account_id, name, lines) VALUES (v_account, v_name, v_lines)
+    RETURNING id INTO v_id;
+  END IF;
+  RETURN json_build_object('id', v_id, 'lines', jsonb_array_length(v_lines));
+END;
+$$;
+
+
+--
+-- Name: save_stock_location(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_stock_location(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_id      uuid := nullif(p->>'id','')::uuid;
+  v_name    text := btrim(coalesce(p->>'name',''));
+  v_kind    text := coalesce(nullif(p->>'kind',''), 'vehicle');
+  v_lo      uuid := nullif(p->>'loadout_id','')::uuid;
+BEGIN
+  IF v_name = '' THEN RAISE EXCEPTION 'Give it a name'; END IF;
+  IF length(v_name) > 60 THEN RAISE EXCEPTION 'Names are 60 characters at most'; END IF;
+  IF v_kind NOT IN ('vehicle', 'warehouse') THEN RAISE EXCEPTION 'A location is a truck or a warehouse'; END IF;
+  IF v_lo IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.stock_loadouts
+                                       WHERE id = v_lo AND account_id = v_account AND NOT is_deleted) THEN
+    RAISE EXCEPTION 'No such load-out';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.stock_locations WHERE account_id = v_account
+              AND name_key = lower(v_name) AND id IS DISTINCT FROM v_id) THEN
+    RAISE EXCEPTION 'There is already a truck or warehouse called "%"', v_name;
+  END IF;
+  IF v_id IS NOT NULL THEN
+    UPDATE public.stock_locations
+       SET name = v_name, kind = v_kind, unit = nullif(btrim(coalesce(p->>'unit','')), ''),
+           loadout_id = v_lo, active = coalesce((p->>'active')::boolean, active), updated_at = now()
+     WHERE id = v_id AND account_id = v_account;
+    IF NOT FOUND THEN RAISE EXCEPTION 'No such truck or warehouse in this account'; END IF;
+  ELSE
+    INSERT INTO public.stock_locations (account_id, kind, name, unit, loadout_id, active, created_by)
+    VALUES (v_account, v_kind, v_name, nullif(btrim(coalesce(p->>'unit','')), ''), v_lo,
+            coalesce((p->>'active')::boolean, true), auth.uid())
+    RETURNING id INTO v_id;
+  END IF;
+  RETURN json_build_object('id', v_id);
+END;
+$$;
+
+
+--
+-- Name: save_stock_settings(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.save_stock_settings(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.require_lead_account();
+BEGIN
+  INSERT INTO public.stock_settings (account_id, auto_deduct, updated_at)
+  VALUES (v_account, coalesce((p->>'auto_deduct')::boolean, false), now())
+  ON CONFLICT (account_id) DO UPDATE SET auto_deduct = EXCLUDED.auto_deduct, updated_at = now();
+  RETURN json_build_object('auto_deduct', (SELECT auto_deduct FROM public.stock_settings WHERE account_id = v_account));
+END;
+$$;
+
+
+--
 -- Name: serial_key(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4995,6 +5829,27 @@ CREATE FUNCTION public.serial_key(p_serial text) RETURNS text
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT upper(regexp_replace(coalesce(p_serial, ''), '[^A-Za-z0-9]', '', 'g'));
+$$;
+
+
+--
+-- Name: set_my_truck(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_my_truck(p_location uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.stock_assignees a JOIN public.stock_locations l ON l.id = a.location_id
+                  WHERE a.location_id = p_location AND a.user_id = auth.uid()
+                    AND l.account_id = public.my_account_id()) THEN
+    RAISE EXCEPTION 'You are not assigned to that truck';
+  END IF;
+  UPDATE public.stock_assignees SET is_primary = (location_id = p_location) WHERE user_id = auth.uid();
+  RETURN json_build_object('primary', p_location);
+END;
 $$;
 
 
@@ -5014,6 +5869,53 @@ BEGIN
     NEW.expires_at := coalesce(NEW.uploaded_at, now()) + make_interval(days => coalesce(v_days, 730));
   END IF;
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: set_stock_assignees(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_stock_assignees(p_location uuid, p_users uuid[]) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.stock_office_location(p_location);
+        v_bad integer;
+BEGIN
+  SELECT count(*) INTO v_bad FROM unnest(coalesce(p_users, '{}')) x(u)
+   WHERE NOT EXISTS (SELECT 1 FROM public.account_members m
+                      WHERE m.user_id = x.u AND m.account_id = v_account AND m.removed_at IS NULL);
+  IF v_bad > 0 THEN RAISE EXCEPTION 'Only people in this crew can be put on a truck'; END IF;
+  DELETE FROM public.stock_assignees WHERE location_id = p_location AND NOT (user_id = ANY (coalesce(p_users, '{}')));
+  INSERT INTO public.stock_assignees (location_id, user_id, is_primary)
+  SELECT p_location, u,
+         NOT EXISTS (SELECT 1 FROM public.stock_assignees a WHERE a.user_id = u AND a.is_primary)
+    FROM unnest(coalesce(p_users, '{}')) u
+  ON CONFLICT (location_id, user_id) DO NOTHING;
+  RETURN json_build_object('assigned', coalesce(array_length(p_users, 1), 0));
+END;
+$$;
+
+
+--
+-- Name: set_stock_par(uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_stock_par(p_location uuid, p_part text, p_par integer) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.stock_office_location(p_location);
+        v_key text := public.stock_part_key(p_part);
+BEGIN
+  IF v_key = '' THEN RAISE EXCEPTION 'A part number is needed'; END IF;
+  IF p_par IS NOT NULL AND p_par < 0 THEN RAISE EXCEPTION 'Par cannot be negative'; END IF;
+  INSERT INTO public.stock_levels (location_id, account_id, part_key, part_number, qty, par_override)
+  VALUES (p_location, v_account, v_key, upper(btrim(p_part)), public.stock_qty_at(p_location, v_key, NULL), p_par)
+  ON CONFLICT (location_id, part_key) DO UPDATE SET par_override = EXCLUDED.par_override, updated_at = now();
+  RETURN json_build_object('part_number', upper(btrim(p_part)), 'par_override', p_par);
 END;
 $$;
 
@@ -5186,6 +6088,329 @@ $$;
 
 
 --
+-- Name: stock_can_change(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_can_change(p_location uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.stock_locations l
+     WHERE l.id = p_location AND l.active AND l.account_id = public.my_account_id()
+       AND (EXISTS (SELECT 1 FROM public.stock_assignees a WHERE a.location_id = l.id AND a.user_id = auth.uid())
+            OR EXISTS (SELECT 1 FROM public.account_members m
+                        WHERE m.user_id = auth.uid() AND m.removed_at IS NULL AND m.role = 'lead'
+                          AND m.account_id = l.account_id)));
+$$;
+
+
+--
+-- Name: stock_ladder_trigger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_ladder_trigger() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF NEW.asset_id IS NULL THEN RETURN NULL; END IF;
+  BEGIN
+    PERFORM public.stock_sync_ladder(NEW.asset_id, NEW.inspection_date);
+    IF TG_OP = 'UPDATE' AND (OLD.asset_id, OLD.inspection_date) IS DISTINCT FROM (NEW.asset_id, NEW.inspection_date)
+       AND OLD.asset_id IS NOT NULL THEN
+      PERFORM public.stock_sync_ladder(OLD.asset_id, OLD.inspection_date);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'stock: ladder parts not taken off the truck for %: %', NEW.id, SQLERRM;
+  END;
+  RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: stock_lines(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_lines(p_location uuid) RETURNS TABLE(part_number text, part_key text, qty integer, par integer, par_override integer, need integer)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public'
+    AS $$
+  WITH lo AS (
+    SELECT public.stock_part_key(x->>'part_number') AS k, btrim(x->>'part_number') AS pn,
+           nullif(x->>'par','')::integer AS par
+      FROM public.stock_locations l
+      JOIN public.stock_loadouts o ON o.id = l.loadout_id AND NOT o.is_deleted
+      CROSS JOIN LATERAL jsonb_array_elements(o.lines) x
+     WHERE l.id = p_location
+  ), lv AS (
+    SELECT part_key AS k, part_number AS pn, qty, par_override FROM public.stock_levels WHERE location_id = p_location
+  )
+  SELECT coalesce(lv.pn, lo.pn), coalesce(lv.k, lo.k), coalesce(lv.qty, 0),
+         coalesce(lv.par_override, lo.par), lv.par_override,
+         greatest(coalesce(lv.par_override, lo.par, 0) - coalesce(lv.qty, 0), 0)
+    FROM lv FULL JOIN lo ON lo.k = lv.k
+   WHERE coalesce(lv.k, lo.k) <> ''
+   ORDER BY 2;
+$$;
+
+
+--
+-- Name: stock_location_detail(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_location_detail(p_location uuid) RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE l public.stock_locations%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  SELECT * INTO l FROM public.stock_locations WHERE id = p_location;
+  IF NOT FOUND OR NOT public.can_see(l.account_id) THEN RAISE EXCEPTION 'No such truck or warehouse'; END IF;
+  RETURN json_build_object(
+    'id', l.id, 'kind', l.kind, 'name', l.name, 'unit', l.unit, 'active', l.active,
+    'mine', l.account_id = public.my_account_id(), 'loadout_id', l.loadout_id,
+    'lines', (SELECT coalesce(json_agg(row_to_json(s) ORDER BY s.part_key), '[]'::json) FROM public.stock_lines(l.id) s),
+    'moves', (SELECT coalesce(json_agg(json_build_object(
+                'id', m.id, 'part_number', m.part_number, 'delta', m.delta, 'reason', m.reason,
+                'counted_qty', m.counted_qty, 'note', m.note, 'wo_key', m.wo_key,
+                'who', coalesce(u.name, u.email), 'captured_at', m.captured_at, 'recorded_at', m.recorded_at)
+                ORDER BY m.captured_at DESC, m.recorded_at DESC), '[]'::json)
+                FROM (SELECT * FROM public.stock_moves WHERE location_id = l.id
+                       ORDER BY captured_at DESC, recorded_at DESC LIMIT 200) m
+                LEFT JOIN public.users u ON u.id = m.actor));
+END;
+$$;
+
+
+--
+-- Name: stock_office_location(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_office_location(p_location uuid) RETURNS uuid
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.require_lead_account();
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.stock_locations WHERE id = p_location AND account_id = v_account) THEN
+    RAISE EXCEPTION 'No such truck or warehouse in this account';
+  END IF;
+  RETURN v_account;
+END;
+$$;
+
+
+--
+-- Name: stock_overview(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_overview() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN json_build_object(
+    'auto_deduct', coalesce((SELECT auto_deduct FROM public.stock_settings WHERE account_id = v_account), false),
+    'locations', (SELECT coalesce(json_agg(json_build_object(
+      'id', l.id, 'kind', l.kind, 'name', l.name, 'unit', l.unit, 'active', l.active,
+      'mine', l.account_id = v_account, 'account_name', a.name,
+      'loadout_id', l.loadout_id,
+      'loadout', (SELECT o.name FROM public.stock_loadouts o WHERE o.id = l.loadout_id AND NOT o.is_deleted),
+      'assignees', (SELECT coalesce(json_agg(json_build_object('user_id', sa.user_id,
+                      'name', coalesce(u.name, u.email), 'primary', sa.is_primary) ORDER BY u.name), '[]'::json)
+                      FROM public.stock_assignees sa LEFT JOIN public.users u ON u.id = sa.user_id
+                     WHERE sa.location_id = l.id),
+      'parts', (SELECT count(*) FROM public.stock_lines(l.id) s WHERE s.qty <> 0 OR s.par IS NOT NULL),
+      'short', (SELECT count(*) FROM public.stock_lines(l.id) s WHERE s.need > 0),
+      'negative', (SELECT count(*) FROM public.stock_lines(l.id) s WHERE s.qty < 0))
+      ORDER BY (l.account_id = v_account) DESC, a.name, l.kind DESC, l.name), '[]'::json)
+      FROM public.stock_locations l JOIN public.accounts a ON a.id = l.account_id
+     WHERE public.can_see(l.account_id)),
+    'loadouts', (SELECT coalesce(json_agg(json_build_object('id', o.id, 'name', o.name, 'lines', o.lines)
+                   ORDER BY o.name), '[]'::json)
+                   FROM public.stock_loadouts o WHERE o.account_id = v_account AND NOT o.is_deleted));
+END;
+$$;
+
+
+--
+-- Name: stock_part_key(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_part_key(p text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT upper(btrim(coalesce(p, ''))) $$;
+
+
+--
+-- Name: stock_qty_at(uuid, text, timestamp with time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_qty_at(p_location uuid, p_key text, p_at timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid) RETURNS integer
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public'
+    AS $$
+DECLARE c record;
+BEGIN
+  SELECT captured_at, recorded_at, counted_qty, id INTO c FROM public.stock_moves
+   WHERE location_id = p_location AND part_key = p_key AND reason = 'count'
+     AND captured_at <= coalesce(p_at, 'infinity') AND id IS DISTINCT FROM p_before_id
+   ORDER BY captured_at DESC, recorded_at DESC, id DESC LIMIT 1;
+  RETURN coalesce(c.counted_qty, 0) + coalesce((
+    SELECT sum(m.delta) FROM public.stock_moves m
+     WHERE m.location_id = p_location AND m.part_key = p_key AND m.reason <> 'count'
+       AND m.captured_at <= coalesce(p_at, 'infinity') AND m.id IS DISTINCT FROM p_before_id
+       AND (c.captured_at IS NULL OR (m.captured_at, m.recorded_at) > (c.captured_at, c.recorded_at))), 0)::integer;
+END;
+$$;
+
+
+--
+-- Name: stock_recompute(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_recompute(p_location uuid, p_key text, p_part text) RETURNS integer
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_qty integer := public.stock_qty_at(p_location, p_key, NULL);
+        v_acct uuid;
+BEGIN
+  SELECT account_id INTO v_acct FROM public.stock_locations WHERE id = p_location;
+  INSERT INTO public.stock_levels (location_id, account_id, part_key, part_number, qty, updated_at)
+  VALUES (p_location, v_acct, p_key, upper(btrim(p_part)), v_qty, now())
+  ON CONFLICT (location_id, part_key) DO UPDATE SET qty = EXCLUDED.qty, updated_at = now();
+  RETURN v_qty;
+END;
+$$;
+
+
+--
+-- Name: stock_restock_report(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_restock_report() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_account uuid := public.my_account_id();
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+  RETURN (SELECT coalesce(json_agg(json_build_object(
+      'location_id', l.id, 'name', l.name, 'unit', l.unit,
+      'lines', (SELECT json_agg(json_build_object('part_number', s.part_number, 'qty', s.qty,
+                                                  'par', s.par, 'need', s.need) ORDER BY s.part_key)
+                  FROM public.stock_lines(l.id) s WHERE s.need > 0))
+      ORDER BY l.name), '[]'::json)
+    FROM public.stock_locations l
+   WHERE l.account_id = v_account AND l.active AND l.kind = 'vehicle'
+     AND EXISTS (SELECT 1 FROM public.stock_lines(l.id) s WHERE s.need > 0));
+END;
+$$;
+
+
+--
+-- Name: stock_sync_ladder(uuid, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_sync_ladder(p_asset uuid, p_date date) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_key  text := p_asset::text || '|' || p_date::text;
+  r      public.inspections%ROWTYPE;
+  v_loc  uuid;
+  v_n    integer := 0;
+  x      record;
+BEGIN
+  SELECT * INTO r FROM public.inspections
+   WHERE asset_id = p_asset AND inspection_date = p_date AND is_current AND NOT is_deleted
+   ORDER BY created_at DESC LIMIT 1;
+
+  SELECT location_id INTO v_loc FROM public.stock_moves
+   WHERE inspection_key = v_key ORDER BY recorded_at LIMIT 1;
+
+  IF v_loc IS NULL THEN
+    IF r.id IS NULL OR r.collected_by IS NULL THEN RETURN 0; END IF;
+    IF NOT coalesce((SELECT auto_deduct FROM public.stock_settings WHERE account_id = r.account_id), false) THEN
+      RETURN 0;
+    END IF;
+    SELECT a.location_id INTO v_loc FROM public.stock_assignees a
+      JOIN public.stock_locations l ON l.id = a.location_id
+     WHERE a.user_id = r.collected_by AND a.is_primary AND l.active AND l.kind = 'vehicle'
+       AND l.account_id = r.account_id
+     LIMIT 1;
+    IF v_loc IS NULL THEN RETURN 0; END IF;
+  END IF;
+
+  FOR x IN
+    WITH want AS (
+      SELECT public.stock_part_key(e->>'name') AS k, max(btrim(e->>'name')) AS pn,
+             sum(greatest(coalesce(nullif(e->>'qty','')::integer, 1), 0))::integer AS q
+        FROM jsonb_array_elements(CASE WHEN r.id IS NOT NULL AND jsonb_typeof(r.parts) = 'array'
+                                       THEN r.parts ELSE '[]'::jsonb END) e
+       WHERE btrim(coalesce(e->>'name','')) <> ''
+       GROUP BY 1
+    ), had AS (
+      SELECT part_key AS k, max(part_number) AS pn, (-sum(delta))::integer AS q
+        FROM public.stock_moves WHERE inspection_key = v_key GROUP BY 1
+    )
+    SELECT coalesce(w.k, h.k) AS k, coalesce(w.pn, h.pn) AS pn,
+           coalesce(w.q, 0) - coalesce(h.q, 0) AS more
+      FROM want w FULL JOIN had h ON h.k = w.k
+  LOOP
+    CONTINUE WHEN x.more = 0;
+    PERFORM public.stock_write_move(v_loc, x.pn, 'ladder', -x.more, NULL,
+              coalesce(r.captured_at, r.created_at, now()), NULL, NULL, r.work_order_id,
+              NULL, v_key, r.collected_by);
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN v_n;
+END;
+$$;
+
+
+--
+-- Name: stock_write_move(uuid, text, text, integer, integer, timestamp with time zone, text, text, text, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stock_write_move(p_location uuid, p_part text, p_reason text, p_delta integer, p_counted integer, p_captured timestamp with time zone, p_client text, p_note text, p_wo text, p_transfer uuid DEFAULT NULL::uuid, p_inspection_key text DEFAULT NULL::text, p_actor uuid DEFAULT NULL::uuid) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_key text := public.stock_part_key(p_part);
+        v_acct uuid;
+        v_id uuid;
+        v_at timestamptz := least(coalesce(p_captured, now()), now() + interval '5 minutes');
+        v_delta integer := p_delta;
+BEGIN
+  IF v_key = '' THEN RAISE EXCEPTION 'A part number is needed'; END IF;
+  IF length(v_key) > 60 THEN RAISE EXCEPTION 'Part numbers are 60 characters at most'; END IF;
+  SELECT account_id INTO v_acct FROM public.stock_locations WHERE id = p_location;
+  IF v_acct IS NULL THEN RAISE EXCEPTION 'No such truck or warehouse'; END IF;
+  IF p_reason = 'count' THEN
+    v_delta := p_counted - public.stock_qty_at(p_location, v_key, v_at);
+  END IF;
+  INSERT INTO public.stock_moves (account_id, location_id, part_key, part_number, delta, reason,
+         counted_qty, transfer_id, inspection_key, wo_key, note, client_id, actor, captured_at)
+  VALUES (v_acct, p_location, v_key, upper(btrim(p_part)), v_delta, p_reason,
+         CASE WHEN p_reason = 'count' THEN p_counted END, p_transfer, p_inspection_key,
+         nullif(public.wo_key(p_wo), ''), nullif(btrim(coalesce(p_note, '')), ''), p_client,
+         coalesce(p_actor, auth.uid()), v_at)
+  RETURNING id INTO v_id;
+  PERFORM public.stock_recompute(p_location, v_key, p_part);
+  RETURN v_id;
+END;
+$$;
+
+
+--
 -- Name: stop_impersonation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5335,6 +6560,93 @@ $$;
 
 
 --
+-- Name: transfer_stock(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.transfer_stock(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_from uuid := nullif(p->>'from_location_id','')::uuid;
+  v_to   uuid := nullif(p->>'to_location_id','')::uuid;
+  v_xfer uuid := gen_random_uuid();
+  v_lines jsonb := coalesce(p->'lines', jsonb_build_array(jsonb_build_object('part_number', p->>'part_number', 'qty', p->>'qty')));
+  e jsonb;
+  v_n integer := 0;
+BEGIN
+  PERFORM public.stock_office_location(v_from);
+  PERFORM public.stock_office_location(v_to);
+  IF v_from = v_to THEN RAISE EXCEPTION 'Pick two different places'; END IF;
+  FOR e IN SELECT * FROM jsonb_array_elements(v_lines) LOOP
+    IF coalesce((e->>'qty')::integer, 0) <= 0 OR (e->>'qty')::integer > 100000 THEN
+      RAISE EXCEPTION 'That quantity is not possible';
+    END IF;
+    PERFORM public.stock_write_move(v_from, e->>'part_number', 'transfer_out', -(e->>'qty')::integer, NULL,
+                                    now(), NULL, p->>'note', NULL, v_xfer);
+    PERFORM public.stock_write_move(v_to, e->>'part_number', 'transfer_in', (e->>'qty')::integer, NULL,
+                                    now(), NULL, p->>'note', NULL, v_xfer);
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN json_build_object('transfer_id', v_xfer, 'lines', v_n);
+END;
+$$;
+
+
+--
+-- Name: undo_fp_history_import(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.undo_fp_history_import(p_batch text) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := public.require_lead_account();
+  v_src     text := 'import:history:' || btrim(coalesce(p_batch, ''));
+  v_ids     uuid[];
+  v_rows    integer;
+  v_assets  integer;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.fp_inspections
+                  WHERE account_id = v_account AND source = v_src) THEN
+    RAISE EXCEPTION 'No import called "%" in this account', p_batch;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.fp_inspections i
+              WHERE i.account_id = v_account AND i.source = v_src
+                AND (i.bsi_pushed_at IS NOT NULL OR NOT i.is_current OR i.is_deleted
+                     OR EXISTS (SELECT 1 FROM public.fp_inspections n WHERE n.supersedes = i.id))) THEN
+    RAISE EXCEPTION 'Some of these records have been corrected or billed since — undo refused';
+  END IF;
+
+  SELECT array_agg(DISTINCT asset_id) INTO v_ids FROM public.fp_inspections
+   WHERE account_id = v_account AND source = v_src;
+
+  DELETE FROM public.fp_inspections WHERE account_id = v_account AND source = v_src;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  -- An item goes only if the import is all it ever was: no other record, no
+  -- tag link, written tag or photo, nothing in another table pointing at it.
+  DELETE FROM public.assets a
+   WHERE a.id = ANY (v_ids)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_inspections i WHERE i.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.inspections i WHERE i.asset_id = a.id)
+     AND coalesce(a.tag_url, '') = '' AND coalesce(a.nfc_tag_uid, '') = ''
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_stock s WHERE s.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_external_records x WHERE x.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_links l WHERE l.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_tag_writes w WHERE w.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.fp_record_audit au WHERE au.asset_id = a.id)
+     AND NOT EXISTS (SELECT 1 FROM public.certificate_views v WHERE v.asset_id = a.id);
+  GET DIAGNOSTICS v_assets = ROW_COUNT;
+
+  RETURN json_build_object('batch', p_batch, 'records_removed', v_rows, 'items_removed', v_assets);
+END;
+$$;
+
+
+--
 -- Name: update_fp_asset(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5452,6 +6764,26 @@ CREATE TABLE public.account_members (
     removed_by uuid,
     removed_reason text,
     CONSTRAINT account_members_role_check CHECK ((role = ANY (ARRAY['lead'::text, 'tech'::text])))
+);
+
+
+--
+-- Name: account_part_sets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_part_sets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    name text NOT NULL,
+    name_key text GENERATED ALWAYS AS (lower(btrim(name))) STORED,
+    parts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    ord integer,
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT account_part_sets_name_check CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 40))),
+    CONSTRAINT account_part_sets_parts_check CHECK ((jsonb_typeof(parts) = 'array'::text))
 );
 
 
@@ -5622,6 +6954,7 @@ CREATE TABLE public.fp_inspections (
     rep_name text,
     verified_by text,
     impersonation_id uuid,
+    mfr_serial text,
     CONSTRAINT fp_discard_requires_reason CHECK ((overall_pass OR (discard_reason IS NOT NULL))),
     CONSTRAINT fp_inspections_mfg_month_check CHECK (((mfg_month IS NULL) OR ((mfg_month >= 1) AND (mfg_month <= 12)))),
     CONSTRAINT fp_inspections_mfg_year_check CHECK (((mfg_year IS NULL) OR ((mfg_year >= 1900) AND (mfg_year <= 2200)))),
@@ -5648,6 +6981,13 @@ COMMENT ON COLUMN public.fp_inspections.discard_reason IS 'Composed from the fai
 --
 
 COMMENT ON COLUMN public.fp_inspections.discard_note IS 'Optional free text the tech adds alongside the photo.';
+
+
+--
+-- Name: COLUMN fp_inspections.mfr_serial; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.mfr_serial IS 'The manufacturer''s serial, when it is not the number the item is known by. Kept for reference; never used to find an item.';
 
 
 --
@@ -5817,6 +7157,24 @@ CREATE TABLE public.fp_record_audit (
 
 
 --
+-- Name: fp_serial_pool; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fp_serial_pool (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    serial text NOT NULL,
+    serial_key text GENERATED ALWAYS AS (public.serial_key(serial)) STORED,
+    reserved_by uuid,
+    reserved_at timestamp with time zone,
+    asset_id uuid,
+    used_at timestamp with time zone,
+    source text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: fp_tag_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5915,7 +7273,7 @@ CREATE TABLE public.inspection_audit (
     actor_id uuid,
     actor_name text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT inspection_audit_action_check CHECK ((action = ANY (ARRAY['amend'::text, 'delete'::text, 'restore'::text])))
+    CONSTRAINT inspection_audit_action_check CHECK ((action = ANY (ARRAY['amend'::text, 'delete'::text, 'restore'::text, 'add'::text])))
 );
 
 
@@ -6087,6 +7445,113 @@ CREATE VIEW public.ladder_inspections_public AS
 
 
 --
+-- Name: stock_assignees; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_assignees (
+    location_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    is_primary boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: stock_levels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_levels (
+    location_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    part_key text NOT NULL,
+    part_number text NOT NULL,
+    qty integer DEFAULT 0 NOT NULL,
+    par_override integer,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT stock_levels_par_override_check CHECK (((par_override IS NULL) OR (par_override >= 0)))
+);
+
+
+--
+-- Name: stock_loadouts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_loadouts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    name text NOT NULL,
+    name_key text GENERATED ALWAYS AS (lower(btrim(name))) STORED,
+    lines jsonb DEFAULT '[]'::jsonb NOT NULL,
+    is_deleted boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT stock_loadouts_lines_check CHECK ((jsonb_typeof(lines) = 'array'::text)),
+    CONSTRAINT stock_loadouts_name_check CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 60)))
+);
+
+
+--
+-- Name: stock_locations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_locations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    kind text NOT NULL,
+    name text NOT NULL,
+    name_key text GENERATED ALWAYS AS (lower(btrim(name))) STORED,
+    unit text,
+    loadout_id uuid,
+    active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT stock_locations_kind_check CHECK ((kind = ANY (ARRAY['vehicle'::text, 'warehouse'::text]))),
+    CONSTRAINT stock_locations_name_check CHECK (((length(btrim(name)) >= 1) AND (length(btrim(name)) <= 60))),
+    CONSTRAINT stock_locations_unit_check CHECK (((unit IS NULL) OR (length(unit) <= 40)))
+);
+
+
+--
+-- Name: stock_moves; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_moves (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    location_id uuid NOT NULL,
+    part_key text NOT NULL,
+    part_number text NOT NULL,
+    delta integer NOT NULL,
+    reason text NOT NULL,
+    counted_qty integer,
+    transfer_id uuid,
+    inspection_key text,
+    wo_key text,
+    note text,
+    client_id text,
+    actor uuid,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT stock_moves_check CHECK (((reason <> 'count'::text) OR (counted_qty IS NOT NULL))),
+    CONSTRAINT stock_moves_counted_qty_check CHECK (((counted_qty IS NULL) OR (counted_qty >= 0))),
+    CONSTRAINT stock_moves_note_check CHECK (((note IS NULL) OR (length(note) <= 500))),
+    CONSTRAINT stock_moves_reason_check CHECK ((reason = ANY (ARRAY['use'::text, 'load'::text, 'count'::text, 'transfer_in'::text, 'transfer_out'::text, 'adjust'::text, 'ladder'::text])))
+);
+
+
+--
+-- Name: stock_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_settings (
+    account_id uuid NOT NULL,
+    auto_deduct boolean DEFAULT false NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: support_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6224,6 +7689,14 @@ ALTER TABLE ONLY public.account_members
 
 
 --
+-- Name: account_part_sets account_part_sets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_part_sets
+    ADD CONSTRAINT account_part_sets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: account_parts account_parts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6344,6 +7817,14 @@ ALTER TABLE ONLY public.fp_record_audit
 
 
 --
+-- Name: fp_serial_pool fp_serial_pool_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fp_tag_links fp_tag_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6448,6 +7929,54 @@ ALTER TABLE ONLY public.known_networks
 
 
 --
+-- Name: stock_assignees stock_assignees_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_assignees
+    ADD CONSTRAINT stock_assignees_pkey PRIMARY KEY (location_id, user_id);
+
+
+--
+-- Name: stock_levels stock_levels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_levels
+    ADD CONSTRAINT stock_levels_pkey PRIMARY KEY (location_id, part_key);
+
+
+--
+-- Name: stock_loadouts stock_loadouts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_loadouts
+    ADD CONSTRAINT stock_loadouts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stock_locations stock_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_locations
+    ADD CONSTRAINT stock_locations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stock_moves stock_moves_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_moves
+    ADD CONSTRAINT stock_moves_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stock_settings stock_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_settings
+    ADD CONSTRAINT stock_settings_pkey PRIMARY KEY (account_id);
+
+
+--
 -- Name: support_messages support_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6522,6 +8051,13 @@ CREATE INDEX account_members_active_idx ON public.account_members USING btree (a
 --
 
 CREATE INDEX account_members_rep_idx ON public.account_members USING btree (rep_number) WHERE (rep_number IS NOT NULL);
+
+
+--
+-- Name: account_part_sets_name_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX account_part_sets_name_uq ON public.account_part_sets USING btree (account_id, name_key) WHERE (NOT is_deleted);
 
 
 --
@@ -6693,6 +8229,13 @@ CREATE INDEX fp_inspections_due_idx ON public.fp_inspections USING btree (next_d
 
 
 --
+-- Name: fp_inspections_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_inspections_source_idx ON public.fp_inspections USING btree (account_id, source) WHERE (source ~~ 'import:%'::text);
+
+
+--
 -- Name: fp_inspections_type_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6732,6 +8275,20 @@ CREATE INDEX fp_record_audit_account_idx ON public.fp_record_audit USING btree (
 --
 
 CREATE INDEX fp_record_audit_asset_idx ON public.fp_record_audit USING btree (asset_id, created_at DESC);
+
+
+--
+-- Name: fp_serial_pool_free2_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_serial_pool_free2_idx ON public.fp_serial_pool USING btree (account_id, serial_key) WHERE ((asset_id IS NULL) AND (used_at IS NULL));
+
+
+--
+-- Name: fp_serial_pool_key_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX fp_serial_pool_key_idx ON public.fp_serial_pool USING btree (account_id, serial_key);
 
 
 --
@@ -6903,6 +8460,62 @@ CREATE INDEX known_networks_cidr_idx ON public.known_networks USING gist (cidr i
 
 
 --
+-- Name: stock_assignees_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX stock_assignees_user_idx ON public.stock_assignees USING btree (user_id);
+
+
+--
+-- Name: stock_loadouts_name_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX stock_loadouts_name_uq ON public.stock_loadouts USING btree (account_id, name_key) WHERE (NOT is_deleted);
+
+
+--
+-- Name: stock_locations_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX stock_locations_account_idx ON public.stock_locations USING btree (account_id);
+
+
+--
+-- Name: stock_locations_name_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX stock_locations_name_uq ON public.stock_locations USING btree (account_id, name_key);
+
+
+--
+-- Name: stock_moves_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX stock_moves_account_idx ON public.stock_moves USING btree (account_id, recorded_at DESC);
+
+
+--
+-- Name: stock_moves_client_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX stock_moves_client_uq ON public.stock_moves USING btree (client_id) WHERE (client_id IS NOT NULL);
+
+
+--
+-- Name: stock_moves_inspection_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX stock_moves_inspection_idx ON public.stock_moves USING btree (inspection_key) WHERE (inspection_key IS NOT NULL);
+
+
+--
+-- Name: stock_moves_level_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX stock_moves_level_idx ON public.stock_moves USING btree (location_id, part_key, captured_at);
+
+
+--
 -- Name: support_messages_client_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7008,6 +8621,13 @@ CREATE TRIGGER fp_inspections_touch_asset AFTER INSERT OR UPDATE ON public.fp_in
 
 
 --
+-- Name: assets fp_serial_pool_use_t; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fp_serial_pool_use_t AFTER INSERT OR UPDATE OF serial_key, tag_label ON public.assets FOR EACH ROW EXECUTE FUNCTION public.fp_serial_pool_use();
+
+
+--
 -- Name: assets fp_tag_stock_assign_t; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7033,6 +8653,13 @@ CREATE TRIGGER inspections_attribution BEFORE INSERT ON public.inspections FOR E
 --
 
 CREATE TRIGGER inspections_touch_asset AFTER INSERT OR UPDATE ON public.inspections FOR EACH ROW EXECUTE FUNCTION public.touch_asset_from_inspection();
+
+
+--
+-- Name: inspections stock_ladder_parts; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER stock_ladder_parts AFTER INSERT OR UPDATE OF is_current, is_deleted, parts, asset_id, inspection_date ON public.inspections DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.stock_ladder_trigger();
 
 
 --
@@ -7065,6 +8692,14 @@ ALTER TABLE ONLY public.account_members
 
 ALTER TABLE ONLY public.account_members
     ADD CONSTRAINT account_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_part_sets account_part_sets_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_part_sets
+    ADD CONSTRAINT account_part_sets_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
@@ -7297,6 +8932,30 @@ ALTER TABLE ONLY public.fp_record_audit
 
 ALTER TABLE ONLY public.fp_record_audit
     ADD CONSTRAINT fp_record_audit_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_asset_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE SET NULL;
+
+
+--
+-- Name: fp_serial_pool fp_serial_pool_reserved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fp_serial_pool
+    ADD CONSTRAINT fp_serial_pool_reserved_by_fkey FOREIGN KEY (reserved_by) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --
@@ -7548,6 +9207,78 @@ ALTER TABLE ONLY public.known_networks
 
 
 --
+-- Name: stock_assignees stock_assignees_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_assignees
+    ADD CONSTRAINT stock_assignees_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.stock_locations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_levels stock_levels_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_levels
+    ADD CONSTRAINT stock_levels_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_levels stock_levels_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_levels
+    ADD CONSTRAINT stock_levels_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.stock_locations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_loadouts stock_loadouts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_loadouts
+    ADD CONSTRAINT stock_loadouts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_locations stock_locations_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_locations
+    ADD CONSTRAINT stock_locations_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_locations stock_locations_loadout_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_locations
+    ADD CONSTRAINT stock_locations_loadout_id_fkey FOREIGN KEY (loadout_id) REFERENCES public.stock_loadouts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: stock_moves stock_moves_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_moves
+    ADD CONSTRAINT stock_moves_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_moves stock_moves_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_moves
+    ADD CONSTRAINT stock_moves_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.stock_locations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: stock_settings stock_settings_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_settings
+    ADD CONSTRAINT stock_settings_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: support_messages support_messages_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7646,6 +9377,19 @@ ALTER TABLE public.account_members ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY account_members_select_own ON public.account_members FOR SELECT USING (public.can_see(account_id));
+
+
+--
+-- Name: account_part_sets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_part_sets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: account_part_sets account_part_sets_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY account_part_sets_read ON public.account_part_sets FOR SELECT TO authenticated USING (public.can_use_catalog(account_id));
 
 
 --
@@ -7797,6 +9541,19 @@ ALTER TABLE public.fp_record_audit ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY fp_record_audit_read ON public.fp_record_audit FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: fp_serial_pool; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fp_serial_pool ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: fp_serial_pool fp_serial_pool_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY fp_serial_pool_read ON public.fp_serial_pool FOR SELECT TO authenticated USING (public.can_see(account_id));
 
 
 --
@@ -7962,6 +9719,86 @@ CREATE POLICY known_networks_read ON public.known_networks FOR SELECT TO authent
 
 
 --
+-- Name: stock_assignees; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_assignees ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_assignees stock_assignees_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_assignees_read ON public.stock_assignees FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.stock_locations l
+  WHERE ((l.id = stock_assignees.location_id) AND public.can_see(l.account_id)))));
+
+
+--
+-- Name: stock_levels; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_levels ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_levels stock_levels_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_levels_read ON public.stock_levels FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: stock_loadouts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_loadouts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_loadouts stock_loadouts_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_loadouts_read ON public.stock_loadouts FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: stock_locations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_locations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_locations stock_locations_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_locations_read ON public.stock_locations FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: stock_moves; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_moves ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_moves stock_moves_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_moves_read ON public.stock_moves FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
+-- Name: stock_settings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stock_settings stock_settings_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY stock_settings_read ON public.stock_settings FOR SELECT TO authenticated USING (public.can_see(account_id));
+
+
+--
 -- Name: support_messages; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8047,6 +9884,14 @@ GRANT ALL ON FUNCTION public.account_descendants(p_account uuid) TO authenticate
 
 
 --
+-- Name: FUNCTION account_part_sets_catalog(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.account_part_sets_catalog() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.account_part_sets_catalog() TO authenticated;
+
+
+--
 -- Name: FUNCTION account_parts_catalog(p_since timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8117,11 +9962,35 @@ GRANT ALL ON FUNCTION public.add_crew_member(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION add_fp_serial_pool(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.add_fp_serial_pool(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION add_inspection_office(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.add_inspection_office(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.add_inspection_office(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION add_subcontractor(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.add_subcontractor(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.add_subcontractor(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION adjust_stock(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.adjust_stock(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.adjust_stock(p jsonb) TO authenticated;
 
 
 --
@@ -8235,6 +10104,14 @@ GRANT ALL ON FUNCTION public.delete_known_network(p_id uuid) TO authenticated;
 
 
 --
+-- Name: FUNCTION delete_stock_loadout(p_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.delete_stock_loadout(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.delete_stock_loadout(p_id uuid) TO authenticated;
+
+
+--
 -- Name: FUNCTION developer_support_counts(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8289,6 +10166,14 @@ GRANT ALL ON FUNCTION public.fp_find_asset(p_value text) TO authenticated;
 
 
 --
+-- Name: FUNCTION fp_history_imports(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_history_imports() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.fp_history_imports() TO authenticated;
+
+
+--
 -- Name: FUNCTION fp_pending_bsi(p_work_order text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8324,6 +10209,21 @@ GRANT ALL ON FUNCTION public.fp_records(p_search text, p_status text, p_limit in
 --
 
 REVOKE ALL ON FUNCTION public.fp_seed_standard_types() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION fp_serial_pool_summary(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_serial_pool_summary() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.fp_serial_pool_summary() TO authenticated;
+
+
+--
+-- Name: FUNCTION fp_serial_pool_use(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fp_serial_pool_use() FROM PUBLIC;
 
 
 --
@@ -8363,6 +10263,14 @@ GRANT ALL ON FUNCTION public.fp_type_catalog() TO authenticated;
 --
 
 GRANT ALL ON FUNCTION public.fp_type_for(p_account uuid, p_key text) TO authenticated;
+
+
+--
+-- Name: FUNCTION import_fp_history(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.import_fp_history(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.import_fp_history(p jsonb) TO authenticated;
 
 
 --
@@ -8485,6 +10393,14 @@ GRANT ALL ON FUNCTION public.my_tag_stock() TO authenticated;
 
 
 --
+-- Name: FUNCTION my_vehicles(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_vehicles() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_vehicles() TO authenticated;
+
+
+--
 -- Name: FUNCTION publish_fp_checks(p_model_id uuid, p_checks jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8542,6 +10458,14 @@ GRANT ALL ON FUNCTION public.record_fp_tag_write(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION record_stock_move(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_stock_move(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_stock_move(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION remove_crew_member(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8574,6 +10498,14 @@ GRANT ALL ON FUNCTION public.require_lead_account() TO authenticated;
 
 
 --
+-- Name: FUNCTION reserve_fp_serials(p_count integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.reserve_fp_serials(p_count integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.reserve_fp_serials(p_count integer) TO authenticated;
+
+
+--
 -- Name: FUNCTION restore_crew_member(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8595,6 +10527,14 @@ GRANT ALL ON FUNCTION public.restore_fp_inspection(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.restore_inspection(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.restore_inspection(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION save_account_part_sets(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_account_part_sets(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_account_part_sets(p jsonb) TO authenticated;
 
 
 --
@@ -8638,6 +10578,54 @@ GRANT ALL ON FUNCTION public.save_known_network(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION save_stock_loadout(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_stock_loadout(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_stock_loadout(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION save_stock_location(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_stock_location(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_stock_location(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION save_stock_settings(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.save_stock_settings(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.save_stock_settings(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_my_truck(p_location uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_my_truck(p_location uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_my_truck(p_location uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_stock_assignees(p_location uuid, p_users uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_stock_assignees(p_location uuid, p_users uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_stock_assignees(p_location uuid, p_users uuid[]) TO authenticated;
+
+
+--
+-- Name: FUNCTION set_stock_par(p_location uuid, p_part text, p_par integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_stock_par(p_location uuid, p_part text, p_par integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_stock_par(p_location uuid, p_part text, p_par integer) TO authenticated;
+
+
+--
 -- Name: FUNCTION set_support_ticket_status(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8659,6 +10647,86 @@ GRANT ALL ON FUNCTION public.set_work_order_archived(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.start_impersonation(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.start_impersonation(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION stock_can_change(p_location uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_can_change(p_location uuid) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_ladder_trigger(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_ladder_trigger() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_lines(p_location uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_lines(p_location uuid) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_location_detail(p_location uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_location_detail(p_location uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.stock_location_detail(p_location uuid) TO authenticated;
+
+
+--
+-- Name: FUNCTION stock_office_location(p_location uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_office_location(p_location uuid) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_overview(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_overview() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.stock_overview() TO authenticated;
+
+
+--
+-- Name: FUNCTION stock_qty_at(p_location uuid, p_key text, p_at timestamp with time zone, p_before_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_qty_at(p_location uuid, p_key text, p_at timestamp with time zone, p_before_id uuid) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_recompute(p_location uuid, p_key text, p_part text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_recompute(p_location uuid, p_key text, p_part text) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_restock_report(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_restock_report() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.stock_restock_report() TO authenticated;
+
+
+--
+-- Name: FUNCTION stock_sync_ladder(p_asset uuid, p_date date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_sync_ladder(p_asset uuid, p_date date) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION stock_write_move(p_location uuid, p_part text, p_reason text, p_delta integer, p_counted integer, p_captured timestamp with time zone, p_client text, p_note text, p_wo text, p_transfer uuid, p_inspection_key text, p_actor uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.stock_write_move(p_location uuid, p_part text, p_reason text, p_delta integer, p_counted integer, p_captured timestamp with time zone, p_client text, p_note text, p_wo text, p_transfer uuid, p_inspection_key text, p_actor uuid) FROM PUBLIC;
 
 
 --
@@ -8694,6 +10762,22 @@ GRANT ALL ON FUNCTION public.team_members() TO authenticated;
 
 
 --
+-- Name: FUNCTION transfer_stock(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.transfer_stock(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.transfer_stock(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION undo_fp_history_import(p_batch text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.undo_fp_history_import(p_batch text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.undo_fp_history_import(p_batch text) TO authenticated;
+
+
+--
 -- Name: FUNCTION update_fp_asset(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -8722,6 +10806,13 @@ GRANT ALL ON FUNCTION public.visible_account_ids() TO authenticated;
 --
 
 GRANT SELECT ON TABLE public.account_members TO authenticated;
+
+
+--
+-- Name: TABLE account_part_sets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.account_part_sets TO authenticated;
 
 
 --
@@ -8826,6 +10917,13 @@ GRANT SELECT ON TABLE public.fp_record_audit TO authenticated;
 
 
 --
+-- Name: TABLE fp_serial_pool; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fp_serial_pool TO authenticated;
+
+
+--
 -- Name: TABLE fp_tag_links; Type: ACL; Schema: public; Owner: -
 --
 
@@ -8880,6 +10978,48 @@ GRANT SELECT ON TABLE public.known_networks TO authenticated;
 
 GRANT SELECT ON TABLE public.ladder_inspections_public TO anon;
 GRANT SELECT ON TABLE public.ladder_inspections_public TO authenticated;
+
+
+--
+-- Name: TABLE stock_assignees; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_assignees TO authenticated;
+
+
+--
+-- Name: TABLE stock_levels; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_levels TO authenticated;
+
+
+--
+-- Name: TABLE stock_loadouts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_loadouts TO authenticated;
+
+
+--
+-- Name: TABLE stock_locations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_locations TO authenticated;
+
+
+--
+-- Name: TABLE stock_moves; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_moves TO authenticated;
+
+
+--
+-- Name: TABLE stock_settings; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.stock_settings TO authenticated;
 
 
 --

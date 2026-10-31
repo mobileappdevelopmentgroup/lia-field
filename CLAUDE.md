@@ -27,11 +27,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The migrations live in `supabase/migrations/`; `supabase/schema.sql` is a
 generated snapshot of what they add up to (`npm run schema` regenerates it,
 `npm run schema:check` fails if it is stale) and `supabase/MIGRATIONS.md` is the
-index. The live database carries **01–22** as of 2026-09-20, and the accounts were
+index. The live database carries **01–38** as of 2026-10-31 (01–22 as of 2026-09-20), and the accounts were
 restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**37 and 38 were applied 2026-10-31.** 37 — spare numbers that are also tags
+(see *Numbers for defective items with no tag*); Lia Office's file picker for
+the issued sheet now sends its `used` list. 38 — the office adds a ladder to a
+work order (`add_inspection_office()`), and `amend/delete/restore_fp_inspection`
+follow an impersonation session. Verified from outside with the publishable
+key: `add_inspection_office`, `add_fp_serial_pool` and the three FP correction
+functions answer 401 `42501`, `inspections` / `fp_inspections` refuse anon, and
+the public certificate view still serves. `inspection_audit` answers anon 200
+with no rows (RLS; no anon policy) — not a leak, but not a 401 either.
+
+**35 was applied 2026-10-14** — fall-protection history import (see
+*Importing fall-protection history*). Verified from outside with the
+publishable key: `import_fp_history`, `undo_fp_history_import` and
+`fp_history_imports` answer 401 `42501`, `fp_inspections` refuses anon, and the
+public certificate view still serves.
+**36 was applied 2026-10-14** — spare numbers for untagged defective items
+(see *Numbers for defective items with no tag*). Verified from outside with the
+publishable key: `reserve_fp_serials`, `add_fp_serial_pool` and
+`fp_serial_pool_summary` answer 401 `42501`, `fp_serial_pool` refuses anon, and
+the public certificate view still serves. No numbers loaded yet.
+
+**34 was applied 2026-10-11** — vehicle inventory (see *Vehicle inventory*
+below). Verified from outside with the publishable key: `my_vehicles`,
+`stock_overview` and 33's `account_part_sets_catalog` answer 401 `42501`, and
+`stock_moves` / `account_part_sets` refuse anon; the public certificate view
+still serves.
+**33 was applied 2026-10-11** — published part sets (`account_part_sets`,
+`save_account_part_sets()`, `account_part_sets_catalog()`), and it re-emits
+`consolidate_to_one_account()` so sets move with an account. Verified from
+outside: the catalogue answers anon "Not authenticated" (Supabase's default anon
+EXECUTE grant — the function refuses itself; 34 revokes anon explicitly) and an
+anon read of the table returns no rows.
 **32 was applied 2026-09-29** — the private `fp-photos` bucket, its storage
 policies and `record_fp_photo()`, so failure photos from 1.14.0 upload. Verified
 from outside with the publishable key: `record_fp_photo` answers 401 `42501`
@@ -135,6 +167,20 @@ npm run schema:check       # Fail if that snapshot is stale
 
 ./supabase/test/run-apply-18-22.sh   # Rehearse a live paste on a database
                                      # built to look like production
+./supabase/test/run-apply-33.sh      # Rehearse 33 the same way, prove no
+                                     # existing row changes, and write
+                                     # supabase/dist/apply-33.sql to paste
+./supabase/test/run-apply-34.sh      # Same for 34 (vehicle inventory) →
+                                     # supabase/dist/apply-34.sql
+./supabase/test/run-apply-35.sh      # Same for 35 (FP history import) →
+                                     # supabase/dist/apply-35.sql
+./supabase/test/run-apply-36.sh      # Same for 36 (spare numbers) →
+                                     # supabase/dist/apply-36.sql
+./supabase/test/run-apply-37.sh      # Same for 37 (spare numbers that are
+                                     # tags) → supabase/dist/apply-37.sql
+./supabase/test/run-apply-38.sh      # Same for 38 (office adds a ladder;
+                                     # FP corrections while acting as a sub)
+                                     # → supabase/dist/apply-38.sql
 ```
 
 `test:sql` needs a local Postgres (`brew services start postgresql@16`); it drops
@@ -443,6 +489,87 @@ company holds — blank ones as number ranges, the rest with what they are on an
 how it last fared. It sees across subcontractors (`can_see`); the phone's
 `my_tag_stock()` deliberately does not. Links open only through main's
 `open:link`, which allows https to our certificate site and `docs.google.com`.
+
+### Vehicle inventory
+
+`supabase/migrations/34_vehicle_inventory.sql`; design and decisions in
+`docs/VEHICLE-INVENTORY-PLAN.md`. Trucks and warehouses (`stock_locations`),
+load-outs, and an **append-only ledger** (`stock_moves`) that is the only way a
+quantity changes — `stock_levels.qty` is derived by `stock_recompute()` and
+nothing else writes it. Rules that are load-bearing:
+
+- **A count is as of when it was taken**: quantity = latest count by
+  `captured_at` + every other move captured after it. An offline count arriving
+  late neither wipes a later load nor lets an earlier use come off twice.
+  `field-app/test/truck.test.mjs` and `test/28_vehicle_inventory_test.sql` assert both.
+- **Phone writes** (`record_stock_move`) are idempotent on `client_id`, allowed
+  only on a truck the user is assigned to, and queued as `stock_move` —
+  *deferrable* (never dropped, never holding up an inspection).
+- **Reads follow `can_see`** (Batavia sees subcontractors' trucks, read-only
+  from its own account); writes follow `require_lead_account()`, so they work
+  while acting as a subcontractor.
+- **Ladder parts off the truck** is a deferred constraint trigger on
+  `inspections`, **off per account** until the office ticks it on the Inventory
+  screen. Keyed to (asset, inspection date), it follows whichever version is
+  current — a correction moves only the difference, a deletion puts the parts
+  back — and it can never stop a ladder being recorded. The truck is whichever
+  one that record already took from, else the collector's "my truck today".
+- No prices anywhere in it.
+
+### Importing fall-protection history
+
+`supabase/migrations/35_fp_history_import.sql`, Lia Office → Advanced → *Fall
+Protection History*, parser in `electron/fp-history.cjs`. A spreadsheet of past
+inspections goes in so the phones know those items the first time they are
+tapped or typed. Load-bearing:
+
+- **The serial is the assigned number** (Batavia's decision, 2026-10-14); the
+  manufacturer's serial is kept in `fp_inspections.mfr_serial` and never matched.
+- **It lands in the account being acted as**, and the phone's catalogue is per
+  account — a subcontractor's history imported from Batavia's own account is
+  invisible to that subcontractor's phones. The screen says which account.
+- **History never displaces field work**: a row for an item that already has a
+  record that day is skipped and reported, not superseded.
+- Credited to the file's inspector (else "Imported history"), never to whoever
+  clicked Import; no checks are invented; due date is the date + 1 year.
+- Pass/fail is never assumed. A file with no result column imports only after
+  the office ticks "every inspection in it passed". Dates are ISO on the wire;
+  the parser reads a/b/yyyy the way the rest of the file says, refuses a file
+  that writes them both ways, and says which reading it used.
+- Each import is a batch (`source = 'import:history:<batch>'`) with an Undo that
+  refuses once a record has been corrected or billed, and cannot reach Nate's
+  2026-09-28 sheet import (a different prefix).
+
+### Numbers for defective items with no tag
+
+`supabase/migrations/36_fp_serial_pool.sql`, `field-app/js/serial-pool.js`, the
+*Spare numbers* card on Lia Office's Fall Protection History screen. Field
+report 2026-10-14: a defective item with no tag needs a number, and spending an
+NFC tag on something going in the bin wastes it. The office pastes the
+company's list of assigned numbers tied to no tag; the phone's **Defective, no
+tag** button opens a new item under the next one, as its serial (no tag label,
+no link). Load-bearing:
+
+- **"Next" is decided ahead of time, not at the tap.** A phone reserves five
+  while it has signal (`reserve_fp_serials`, with every catalogue sync) and
+  spends them offline. A reserved number is never given to anyone else, so two
+  phones in the same plant room cannot both use it. A removed crew member's
+  reservations go back on the next reserve.
+- **Used is derived**: a trigger on `assets` marks a number used when any write
+  path gives an item that serial. The phone marks it spent locally the moment
+  something is recorded under it (`fpCommit`) and keeps it spent until the
+  server stops returning it.
+- Backing out of the item spends nothing. The button is hidden for an account
+  with no numbers loaded.
+- **Leads load their own** (37): *Choose CSV File…* takes the sheet Batavia
+  issues as-is (`electron/spare-numbers.cjs` — no header, the number column is
+  found by its contents) and previews free vs. spent before sending. A row
+  filled in on the sheet goes in **used**, never dropped, so a later paste
+  cannot load it as free.
+- **A spare number may already be one of the lead's tags** — Nate's first list
+  was entirely his 2026-09-28 tag import. Loading takes a number out of blank
+  tag stock (decided 2026-10-15), and a number that is any item's serial *or*
+  tag label goes in used. Otherwise one number reaches two items.
 
 ### Consolidating accounts
 

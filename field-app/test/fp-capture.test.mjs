@@ -30,7 +30,7 @@ const vis = () => p.evaluate(()=>({
 }));
 ok('an FP job shows the FP input bar, not the ladder form', await vis(),
    {input:true, record:false, checks:false, items:true, ladder:false});
-ok('four ways in', await p.$$eval('.fp-way', e=>e.map(x=>x.textContent.trim())), ['Tap','Scan','Type','New']);
+ok('four ways in', await p.$$eval('.fp-way', e=>e.map(x=>x.textContent.trim())), ['Tap & pass','Scan','Type','New']);
 
 // New → straight into the fields
 await p.click('#fp-btn-new'); await p.waitForTimeout(200);
@@ -175,9 +175,25 @@ ok('and small enough to be cheap to keep', stored && stored.bytes <= 200 * 1024,
 ok('and the optional note kept', rec.discard_note, 'Tagged, pulled from truck 14');
 ok('the client sends no discard_reason — the database composes it',
    rec.discard_reason===undefined, true);
+// One at a time, an item reached by a scan goes straight back to the camera
+// for the next one; a typed one does not.
+await p.evaluate(()=>{ window.__scans=0; window.startScan = ()=>{ window.__scans++; }; });
+const passOne = async (serial, via) => {
+  await p.click('#fp-btn-new'); await p.waitForTimeout(150);
+  await p.fill('#fpf-serial', serial);
+  await p.selectOption('#fpf-equipment_type','body_harness'); await p.waitForTimeout(100);
+  await p.click('#fp-btn-done-edit'); await p.waitForTimeout(150);
+  await p.evaluate(v=>{ _fpVia = v; }, via);
+  await p.click('#fp-btn-save'); await p.waitForTimeout(250);
+};
+await passOne('H-9101', 'scan');
+ok('Pass & Next Item on a scanned item reopens the camera', await p.evaluate(()=>window.__scans), 1);
+await passOne('H-9102', null);
+ok('a typed item does not open the camera', await p.evaluate(()=>window.__scans), 1);
+
 ok('the job list counts items, not ladders',
    await p.evaluate(()=>{goScreen('jobs');renderJobList();
-     return document.querySelector('.job-card-meta').textContent.includes('2 items');}), true);
+     return document.querySelector('.job-card-meta').textContent.includes('4 items');}), true);
 
 console.log('\npage errors:', errs.length?errs:'none');
 console.log(fails?`RESULT: ${fails} failure(s)`:'RESULT: all passed');

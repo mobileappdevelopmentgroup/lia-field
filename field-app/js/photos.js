@@ -11,7 +11,10 @@
 //                   the byte and a defect photo does not need 12 MP to show a
 //                   cut strap. The bucket refuses anything over 1 MB anyway.
 //   · put/get/del — the file itself in IndexedDB, which is sized for it; the job
-//                   keeps only the photo's id and size.
+//                   keeps only the photo's id and size. On a phone a copy also
+//                   goes to a file through backup.js, because IndexedDB lives in
+//                   the web view's store and iOS can clear that under the app;
+//                   get() falls back to the file when IndexedDB has lost it.
 //   · upload()    — the queue's sender for 'fp_photo' (see sync.js): the file to
 //                   the private fp-photos bucket under <account>/<id>.jpg, then
 //                   record_fp_photo() files it against its inspection. The copy
@@ -56,9 +59,36 @@
     });
   }
 
-  function put(rec) { return run('readwrite', function (s) { s.put(rec); }).then(function () { return rec; }); }
-  function get(id) { return run('readonly', function (s) { return s.get(id); }); }
-  function del(id) { return run('readwrite', function (s) { s.delete(id); }); }
+  function backup() { return root.LiaBackup || null; }
+
+  function put(rec) {
+    return run('readwrite', function (s) { s.put(rec); })
+      .then(function () { return backup() ? backup().savePhoto(rec) : null; })
+      .then(function () { return rec; });
+  }
+
+  // IndexedDB first; the backup file if IndexedDB has lost it (or will not
+  // open), put back into IndexedDB on the way.
+  function get(id) {
+    function fromFile() {
+      if (!backup()) return null;
+      return backup().loadPhoto(id).then(function (rec) {
+        if (!rec) return null;
+        return run('readwrite', function (s) { s.put(rec); })
+          .catch(function () {}).then(function () { return rec; });
+      });
+    }
+    return run('readonly', function (s) { return s.get(id); })
+      .then(function (rec) { return rec || fromFile(); }, function (err) {
+        return Promise.resolve(fromFile()).then(function (rec) { if (rec) return rec; throw err; });
+      });
+  }
+
+  function del(id) {
+    return run('readwrite', function (s) { s.delete(id); })
+      .then(function () { return backup() ? backup().removePhoto(id) : null; })
+      .then(function () { return null; });
+  }
 
   function loadImage(src) {
     return new Promise(function (resolve, reject) {

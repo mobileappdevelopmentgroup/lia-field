@@ -99,7 +99,7 @@ $('btn-share-csv').addEventListener('click', async () => {
       // Anything else has to be said out loud. A silent no-op here is the bug
       // being fixed: the tech taps, nothing happens, and they assume the file
       // went somewhere.
-      setSaveStatus('Could not save the CSV — ' + (err && err.message || err));
+      showEntryNotice('Could not save the CSV — ' + (err && err.message || err));
       return;
     }
   }

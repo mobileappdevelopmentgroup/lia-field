@@ -148,8 +148,15 @@ ok('a named assignment carries exactly those people',
 
 // ── Closing out ─────────────────────────────────────────────────────────────
 await p.click('#jb-list .jb-item'); await p.waitForTimeout(250);
-p.once('dialog', d => d.accept('Twelve done'));
-await p.click('#btn-jb-close'); await p.waitForTimeout(300);
+// Electron has no prompt(); a test that answered a browser dialog here passed
+// while the packaged app's button did nothing.
+await p.evaluate(() => { window.prompt = () => { throw new Error('prompt() is and will not be supported.'); }; });
+await p.click('#btn-jb-close'); await p.waitForTimeout(200);
+ok('Mark complete asks for the note inline', await p.isVisible('#jb-close-note'), true);
+ok('and nothing is sent until it is confirmed',
+   await p.evaluate(() => window.__calls.filter(c => c[0] === 'close').length), 0);
+await p.fill('#jb-close-note', 'Twelve done');
+await p.click('#btn-jb-close-ok'); await p.waitForTimeout(300);
 ok('marking complete sends the job and the note',
    await p.evaluate(() => window.__calls.filter(c => c[0] === 'close').pop()[1]),
    { job_id: 'j1', note: 'Twelve done' });

@@ -28,7 +28,13 @@ function openJob(id) {
   const assigned = !!_job.assignedId;
   $('job-wo').readOnly = assigned;
   $('job-wo').title = assigned ? 'Set by your lead for this job' : '';
+  $('job-wo').classList.remove('missing');
   setSaveStatus('');
+  showEntryNotice('');
+  // A job reopened with ladders already on it and still no number says so.
+  if ((_job.ladders || []).length) flagMissingWorkOrder();
+  // The favourite set this job was last worked with — a job is a site.
+  if (_job.partSet) setActivePartSet(_job.partSet);
   clearFormAll();
   goScreen('detail');
   applyScopeToDetail(_job);
@@ -80,11 +86,29 @@ function setSaveStatus(text) {
   el.className   = 'save-status' + (text === 'saved' ? ' saved' : '');
 }
 
+// ── Saying why a tap did nothing ────────────────────────────────────────────
+// The save status is a ten-pixel slot in the top bar, for "Saved". Sentences
+// went there too, and at phone width one pushed the job name and work order
+// box clean off the screen: a refused ladder put the cursor in a box nobody
+// could see, raised the keyboard, and said nothing. Every phone, 2026-10-22.
+// A sentence goes here instead — full width, under the top bar.
+function showEntryNotice(text) {
+  const el = $('entry-notice');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? '' : 'none';
+}
+
 $('job-name').addEventListener('input', scheduleSave);
-$('job-wo').addEventListener('input',   scheduleSave);
+$('job-wo').addEventListener('input', () => {
+  if ($('job-wo').value.trim()) { $('job-wo').classList.remove('missing'); showEntryNotice(''); }
+  scheduleSave();
+});
 
 // ── Form clear ────────────────────────────────────────────────────────────────
-function clearEntryForm() {
+// keepParts: Add & Duplicate carries the parts to the next ladder. The four
+// flags are never carried — they record what the customer did to that ladder.
+function clearEntryForm(keepParts) {
   ['fi-serial','fi-loc','fi-desc','fi-part-manual'].forEach(id => { const el=$(id); if(el) el.value=''; });
   const qty = $('fi-part-qty'); if (qty) qty.value = '1';
   _qtyExplicit = false;
@@ -97,7 +121,7 @@ function clearEntryForm() {
     const el = $(id);
     if (el.value.trim()) el.dataset.src = 'carry'; else delete el.dataset.src;
   });
-  _currentParts = new Map();
+  if (!keepParts) _currentParts = new Map();
   _currentFlags = NO_FLAGS();
   renderPartButtons();
   renderSelectedParts();
@@ -154,24 +178,72 @@ $('fi-serial').addEventListener('input', updateSerialWarnState);
 // Room is measured against `visualViewport`, not `innerHeight`: when the
 // keyboard is up, the layout viewport does not change on either platform, so
 // anything measured against it happily places a list behind the keys. Called
-// again on every visualViewport change while a list is open, so the list moves
-// when the keyboard does.
+// again whenever anything moves under an open list (watchAcList), so the list
+// follows the keyboard.
+//
+// The list is placed `position: fixed`, from the measurement, rather than
+// hanging absolutely off its field. Every screen is `overflow: hidden`, so a
+// list that ran past the screen's edge was clipped to nothing — "dropping up
+// and out of the viewport". Fixed, it is only ever where it is put, and it is
+// put inside the visible area: never taller than the room it opens into, and
+// hidden outright when there is not room for one row, rather than spilling
+// behind the keyboard or off the top.
+const AC_MAX_H = 180, AC_MIN_ROOM = 44, AC_GAP = 2, AC_EDGE = 8;
+
 function placeAcList(input, list) {
-  const vv  = window.visualViewport;
-  const top = vv ? vv.offsetTop : 0;
-  const bot = vv ? vv.offsetTop + vv.height : window.innerHeight;
-  const r   = input.getBoundingClientRect();
+  const vv   = window.visualViewport;
+  const vTop = (vv ? vv.offsetTop : 0) + AC_EDGE;
+  const vBot = (vv ? vv.offsetTop + vv.height : window.innerHeight) - AC_EDGE;
+  const r    = input.getBoundingClientRect();
+  const wrap = (list.parentElement || input).getBoundingClientRect();
 
-  const below = bot - r.bottom - 8;
-  const above = r.top - top - 8;
-  const want  = Math.min(list.scrollHeight || 180, 180);
+  const below = vBot - (r.bottom + AC_GAP);
+  const above = (r.top - AC_GAP) - vTop;
+  const want  = Math.min(list.scrollHeight || AC_MAX_H, AC_MAX_H);
 
-  const up = below < want && above > below;
+  const up   = below < want && above > below;
+  const room = Math.max(0, up ? above : below);
+  const h    = Math.min(want, room);
+
   list.classList.toggle('drop-up', up);
-  // Never taller than the space it is in, and never so short it is useless:
-  // at 88px two rows show and the list scrolls, which beats a list that is
-  // present but clipped to nothing.
-  list.style.maxHeight = Math.max(88, Math.min(180, up ? above : below)) + 'px';
+  list.style.position  = 'fixed';
+  list.style.left      = wrap.left + 'px';
+  list.style.width     = wrap.width + 'px';
+  list.style.right     = 'auto';
+  list.style.bottom    = 'auto';
+  list.style.top       = (up ? r.top - AC_GAP - h : r.bottom + AC_GAP) + 'px';
+  list.style.maxHeight = h + 'px';
+  // The field itself has scrolled out of sight, or there is not room for one row.
+  const fieldGone = r.bottom < vTop || r.top > vBot;
+  list.style.visibility = fieldGone || room < AC_MIN_ROOM ? 'hidden' : '';
+}
+
+// Re-place an open list whenever anything moves under it: the keyboard, the
+// visual viewport panning, or a panel scrolling (capture catches every
+// scrolling element, not just the window). Returns the re-placer.
+//
+// `reflow.settle()` keeps re-placing every frame for a short while. The
+// keyboard slides in over ~300 ms and neither platform promises an event at
+// the END of it, so a single measurement taken part way through can find no
+// room, hide the list — and nothing moves it again until the tech drags the
+// screen, which is exactly the "pull down to make the parts list appear"
+// report from the field.
+const AC_SETTLE_MS = 1000;
+
+function watchAcList(input, list) {
+  const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
+  let until = 0;
+  const tick = () => { reflow(); if (performance.now() < until) requestAnimationFrame(tick); };
+  reflow.settle = () => {
+    const idle = performance.now() >= until;
+    until = performance.now() + AC_SETTLE_MS;
+    if (idle) requestAnimationFrame(tick);
+  };
+  window.visualViewport?.addEventListener('resize', reflow.settle);
+  window.visualViewport?.addEventListener('scroll', reflow);
+  window.addEventListener('resize', reflow.settle);
+  document.addEventListener('scroll', reflow, true);
+  return reflow;
 }
 
 // Keep the field the tech is typing in above the keyboard. The keyboard's
@@ -211,16 +283,15 @@ function setupAutocomplete(inputId, listId, options) {
   // While a list is open the keyboard may still be animating in, which moves
   // the input under it. Re-place on every viewport change rather than trusting
   // the measurement taken at the moment of opening.
-  const reflow = () => { if (list.classList.contains('open')) placeAcList(input, list); };
-  window.visualViewport?.addEventListener('resize', reflow);
-  window.visualViewport?.addEventListener('scroll', reflow);
+  const reflow = watchAcList(input, list);
 
   input.addEventListener('input',  () => showList(input.value));
   input.addEventListener('focus',  () => {
     input.select();
     showList(input.value);
+    reflow.settle();
     // Late enough for the keyboard to have started coming up.
-    setTimeout(() => { keepInputVisible(input); reflow(); }, 300);
+    setTimeout(() => { keepInputVisible(input); reflow.settle(); }, 300);
   });
   input.addEventListener('blur',   () => setTimeout(() => list.classList.remove('open'), 200));
   input.addEventListener('keydown', e => {
@@ -249,6 +320,9 @@ setupAutocomplete('fi-type',  'ac-type-list',  TYPE_OPTIONS);
 
 // ── Part buttons ──────────────────────────────────────────────────────────────
 function renderPartButtons() {
+  renderPartSetBar();
+  markPickingField();
+  if (_detailStep) { renderDetailPicker(); return; }
   const grid = $('parts-grid');
   grid.innerHTML = '';
   const favs = getFavoritedParts();
@@ -269,6 +343,119 @@ function renderPartButtons() {
       renderPartButtons(); renderSelectedParts();
     });
     grid.appendChild(btn);
+  });
+}
+
+// ── Brand, type and length from buttons ─────────────────────────────────────
+// A ladder we have never seen needs its brand, type and length for BSI. Typing
+// them meant a keyboard and a suggestion list fighting for half a phone screen.
+// Instead the part buttons are borrowed: brands, then types, then lengths, one
+// tap each, and the parts come back when it is done. "Type it" is there for
+// anything not offered, and Skip leaves a field blank — leaving them blank is
+// still the tech's call.
+let _detailStep = null;    // 'brand' | 'type' | 'length' | null
+const DETAIL_STEPS = [
+  { key: 'brand',  field: 'fi-brand',  label: 'Brand',  options: () => BRAND_OPTIONS },
+  { key: 'type',   field: 'fi-type',   label: 'Type',   options: () => TYPE_OPTIONS },
+  { key: 'length', field: 'fi-length', label: 'Length', options: () => lengthOptions($('fi-type').value) },
+];
+// Extension-style ladders are long; step-style ones are short.
+function lengthOptions(type) {
+  return /extension|straight|hook/i.test(type || '')
+    ? ['8', '10', '12', '14', '16', '20', '24', '28', '32', '36', '40']
+    : ['2', '3', '4', '5', '6', '7', '8', '10', '12', '14', '16', '20'];
+}
+
+// Rings the field the picker is filling and points its placeholder at the
+// buttons, so the tech can see which box the next tap lands in.
+function markPickingField() {
+  DETAIL_STEPS.forEach(s => {
+    const el = $(s.field);
+    if (!el) return;
+    const on = s.key === _detailStep;
+    el.classList.toggle('picking', on);
+    if (el.dataset.ph === undefined) el.dataset.ph = el.placeholder;
+    el.placeholder = on ? 'Pick below ↓' : el.dataset.ph;
+  });
+}
+
+function startDetailPicker() {
+  _detailStep = 'brand';
+  const a = document.activeElement;
+  if (a && typeof a.blur === 'function') a.blur();
+  renderPartButtons();
+}
+function endDetailPicker() {
+  if (!_detailStep) return;
+  _detailStep = null;
+  renderPartButtons();
+}
+function detailStepAfter(key) {
+  const i = DETAIL_STEPS.findIndex(s => s.key === key);
+  return DETAIL_STEPS[i + 1] ? DETAIL_STEPS[i + 1].key : null;
+}
+function detailPick(step, value) {
+  const el = $(step.field);
+  el.value = value;
+  delete el.dataset.src;              // chosen by the tech: his own value
+  _detailStep = detailStepAfter(step.key);
+  renderPartButtons();
+}
+
+function renderDetailPicker() {
+  const step = DETAIL_STEPS.find(s => s.key === _detailStep);
+  const grid = $('parts-grid');
+  grid.innerHTML = '';
+  const current = $(step.field).value.trim().toLowerCase();
+  step.options().forEach(o => {
+    const btn = document.createElement('button');
+    btn.className = 'part-btn detail-btn' + (o.toLowerCase() === current ? ' active' : '');
+    btn.textContent = step.key === 'length' ? o + ' ft' : o;
+    btn.addEventListener('click', () => detailPick(step, o));
+    grid.appendChild(btn);
+  });
+  // Not on the list: the field itself, with the keyboard.
+  const own = document.createElement('button');
+  own.className = 'part-btn detail-btn other';
+  own.textContent = 'Type it…';
+  own.addEventListener('click', () => { const el = $(step.field); _detailStep = null; renderPartButtons(); el.focus(); });
+  grid.appendChild(own);
+}
+
+// One tap between favourite sets, right above the buttons. Hidden while there
+// is only Main. While brand/type/length are being picked it is the picker's
+// header instead: which step, Back, Skip, Done.
+function renderPartSetBar() {
+  const bar = $('part-set-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  if (_detailStep) {
+    const i = DETAIL_STEPS.findIndex(s => s.key === _detailStep);
+    const title = document.createElement('span');
+    title.className = 'detail-step';
+    title.textContent = `${DETAIL_STEPS[i].label} · ${i + 1} of ${DETAIL_STEPS.length}`;
+    bar.appendChild(title);
+    const mk = (text, fn) => {
+      const b = document.createElement('button');
+      b.className = 'part-set-chip';
+      b.textContent = text;
+      b.addEventListener('click', fn);
+      bar.appendChild(b);
+    };
+    if (i > 0) mk('‹ Back', () => { _detailStep = DETAIL_STEPS[i - 1].key; renderPartButtons(); });
+    mk('Skip', () => { _detailStep = detailStepAfter(_detailStep); renderPartButtons(); });
+    mk('Parts ›', endDetailPicker);
+    return;
+  }
+  const sets = listPartSets();
+  if (sets.length < 2) return;
+  const active = activePartSet();
+  sets.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'part-set-chip' + (s.id === active ? ' active' : '');
+    b.textContent = s.name;
+    b.addEventListener('click', () => usePartSet(s.id));
+    bar.appendChild(b);
   });
 }
 
@@ -342,21 +529,113 @@ function renderCustomFieldsForm() {
 // ── Add Ladder / Save Edits ───────────────────────────────────────────────────
 $('btn-add-ladder').addEventListener('click', () => { if (_editingIdx >= 0) saveEdits(); else addLadder(); });
 // Add, then straight back to the camera for the next ladder. If the add was
-// refused — no serial, no work order — the camera stays shut so the tech sees
-// why.
+// refused — no serial — the camera stays shut so the tech sees why.
+//
+// The add must not focus the serial field: that raises the keyboard in the
+// same tap that asks for the camera, and on a phone the two fight over the
+// screen.
 $('btn-add-next').addEventListener('click', () => {
   if (_editingIdx >= 0) return;
-  if (!addLadder()) return;
+  if (!addLadder({ focus: false })) return;
   const a = document.activeElement;
   if (a && typeof a.blur === 'function') a.blur();
   startScan();
 });
+
+// ── Add & Duplicate ─────────────────────────────────────────────────────────
+// A rack of identical ladders getting identical parts. The ladder on the form
+// is added, the camera opens and STAYS open, and every new barcode it reads is
+// added as another ladder with the same parts. Done (the scanner's cancel
+// button) ends it and opens the last ladder added, for editing.
+//
+// What carries is the parts — the thing being duplicated. Brand, type and
+// length come from the lookup exactly as for a typed or scanned serial, so a
+// ladder we know keeps its own record. The four flags are never carried.
+let _ladderBatch = null;   // { parts: Map, added, busy, seen }
+
+function ladderBatchActive() { return !!_ladderBatch; }
+
+$('btn-add-dup').addEventListener('click', () => {
+  if (_editingIdx >= 0 || _ladderBatch) return;
+  const parts = new Map(_currentParts);
+  if (!addLadder({ focus: false, keepParts: true })) return;
+  const a = document.activeElement;
+  if (a && typeof a.blur === 'function') a.blur();
+  _ladderBatch = { parts, added: 1, busy: false, seen: _job.ladders[0].serialNum };
+  $('btn-scan-cancel').textContent = 'Done';
+  // Without a live camera the OS photo picker reads one barcode, and
+  // ladderBatchScanned ends the run after it.
+  Promise.resolve(startScan()).then(live => {
+    if (live && _ladderBatch) batchHint(`Added ${_ladderBatch.seen} — scan the next ladder`);
+  });
+});
+
+function batchHint(text, warn) {
+  const h = $('scan-hint');
+  if (!h) return;
+  h.textContent = text;
+  h.classList.toggle('warn', !!warn);
+}
+
+// The online lookup has no deadline of its own; a rack is not held up for a
+// slow signal. Whatever the device knows is in by then anyway.
+const BATCH_LOOKUP_WAIT_MS = 2500;
+
+async function ladderBatchScanned(value) {
+  const b = _ladderBatch;
+  const sn = String(value || '').trim();
+  if (!b || b.busy || !sn) return;
+  // The decoder reads the same barcode every 400 ms while it is in view.
+  // Say so once, not every tick.
+  if (_job.ladders.some(l => ladderKey(l.serialNum) === ladderKey(sn))) {
+    if (b.seen !== sn) { b.seen = sn; playSound('scanFail'); batchHint(`${sn} is already on this job — scan the next one`, true); }
+    return;
+  }
+  b.seen = sn;
+  // A misread is not added on a run nobody is looking at the form during.
+  if (/\D/.test(sn)) {
+    playSound('scanFail');
+    batchHint(`Read “${sn}” — not a ladder serial. Rescan, or add it by hand after.`, true);
+    return;
+  }
+  b.busy = true;
+  try {
+    $('fi-serial').value = sn;
+    updateSerialWarnState();
+    await Promise.race([lookupLadder(sn), new Promise(r => setTimeout(r, BATCH_LOOKUP_WAIT_MS))]);
+    if (_ladderBatch !== b) return;                      // Done tapped meanwhile
+    _currentParts = new Map(b.parts);
+    if (addLadder({ focus: false, keepParts: true })) {
+      b.added++;
+      batchHint(`Added ${sn} — ${b.added} ladders so far. Scan the next, or Done.`);
+      if (typeof _scanFailCount !== 'undefined') _scanFailCount = 0;
+    } else {
+      batchHint(`${sn} was not added`, true);
+    }
+  } finally {
+    b.busy = false;
+  }
+  // Photo fallback: there is no viewfinder to keep open.
+  if (typeof _scanStream !== 'undefined' && !_scanStream && _ladderBatch === b) endLadderBatch();
+}
+
+function endLadderBatch() {
+  const b = _ladderBatch;
+  _ladderBatch = null;
+  $('btn-scan-cancel').textContent = 'Cancel';
+  if (typeof stopScan === 'function') stopScan();
+  if (!b) return;
+  // The last one scanned, open for editing — it is at the top of the list.
+  if (b.added > 0 && _job && _job.ladders && _job.ladders.length) editLadder(0);
+}
 $('btn-cancel-edit').addEventListener('click', cancelEdit);
 
 function setEditMode(editing) {
   $('btn-add-ladder').textContent = editing ? 'Save Edits' : '+ Add Ladder';
   $('btn-cancel-edit').style.display = editing ? 'block' : 'none';
   $('btn-add-next').style.display = editing ? 'none' : '';
+  $('btn-add-dup').style.display = editing ? 'none' : '';
+  endDetailPicker();
 }
 
 // ── What we know about a scanned serial ─────────────────────────────────────
@@ -457,6 +736,9 @@ function ladderOnline(sn) {
 function showLadderLookup(state, hit) {
   const el = $('fi-lookup');
   if (!el) return;
+  // The picker is for a serial nobody knows. A known one, or the next ladder,
+  // puts the parts back.
+  if (state !== 'miss') endDetailPicker();
   if (!state) { el.style.display = 'none'; el.textContent = ''; return; }
   el.style.display = '';
   el.className = 'ladder-lookup ' + state;
@@ -466,7 +748,13 @@ function showLadderLookup(state, hit) {
     el.textContent = 'Inspected before' + (hit.last ? ` (${hit.last})` : '') +
       (what ? ': ' + what : '') + '. BSI already has its details — the serial is enough.';
   } else {
-    el.textContent = 'Never inspected that we know of — BSI will need its brand, type and length.';
+    el.textContent = 'Never inspected that we know of — BSI will need its brand, type and length. ';
+    const pick = document.createElement('button');
+    pick.className = 'lookup-pick';
+    pick.id = 'btn-pick-details';
+    pick.textContent = 'Pick brand, type & length';
+    pick.addEventListener('click', startDetailPicker);
+    el.appendChild(pick);
   }
 }
 
@@ -502,6 +790,8 @@ function applyScopeToDetail(job) {
   } else if (typeof fpReset === 'function') {
     fpReset();
     if (inProgress && typeof fpRecover === 'function') fpRecover(inProgress);
+    // Items passed with details missing: try their sheets again.
+    if (typeof fpMineAll === 'function') fpMineAll();
   }
   const share = $('btn-share-csv');
   // The ladder CSV shape does not describe a fall protection item.
@@ -612,10 +902,14 @@ function queueLadder(l) {
 }
 
 // A work order is optional on a phone that only logs locally — the CSV carries
-// everything and the tech knows which job it was. Once signed in it is
-// REQUIRED before the first ladder: the record goes to the company's account
-// the moment it is captured, and one without a work order is work nobody can
-// place afterwards. Better to ask for it now than to find it unattached later.
+// everything and the tech knows which job it was. Signed in, the record goes to
+// the company's account the moment it is captured, and one without a work
+// order is work the office cannot place.
+//
+// It is asked for, never demanded. Until 1.15.5 a missing work order refused
+// the ladder, and on 2026-10-22 that stopped every crew at once. The ladder is
+// taken; the red line stays until a number is typed, and typing one re-sends
+// the job's ladders with it attached (requeueJobLadders).
 function needsWorkOrder() {
   if (_job && _job.workOrderNum) return false;
   if (_job && _job.assignedId) return false;          // the lead set it
@@ -623,34 +917,42 @@ function needsWorkOrder() {
   return !!(st && st.syncingNow && st.syncingNow());
 }
 
-function demandWorkOrder() {
+// The outline stays until a number is typed: the input has no border, so the
+// two-second border flash this replaced never showed at all. Not focused: the
+// ladder went in, and the next one starts at the serial.
+function flagMissingWorkOrder() {
   const el = $('job-wo');
-  if (!el) return;
-  el.focus();
-  el.style.borderColor = 'var(--err)';
-  setTimeout(() => { el.style.borderColor = ''; }, 2000);
-  setSaveStatus('Enter the work order number first — signed in, your work uploads to the company and needs one to be placed.');
+  if (!el || !needsWorkOrder()) return;
+  el.classList.add('missing');
+  showEntryNotice('No work order on this job — type it in Work Order # at the top so the office can match these ladders.');
 }
 
-function addLadder() {
+// opts.focus: false when the camera opens next (see btn-add-next).
+// opts.keepParts: the parts stay on the form for the next ladder.
+function addLadder(opts) {
+  const o = opts || {};
   const serial = $('fi-serial').value.trim();
-  if (needsWorkOrder()) { demandWorkOrder(); return false; }
+  // The box, not the last autosave. saveNow runs 800ms after typing stops, so
+  // a number typed and Add tapped at once would go up without it.
+  if (_job && !_job.assignedId && $('job-wo').value.trim() !== (_job.workOrderNum || '')) saveNow();
   if (!serial) {
     const el = $('fi-serial');
     el.focus(); el.style.borderColor = 'var(--err)';
     setTimeout(() => { el.style.borderColor = ''; }, 1200);
     return false;
   }
+  showEntryNotice('');
   if (!_job.ladders) _job.ladders = [];
   const added = buildLadderFromForm();
   added.capturedAt = new Date().toISOString();
   _job.ladders.unshift(added);
   queueLadder(added);
-  clearEntryForm();
+  clearEntryForm(!!o.keepParts);
   renderLadderList();
+  flagMissingWorkOrder();
   scheduleSave();
   playSound('ladder');
-  $('fi-serial').focus();
+  if (o.focus !== false) $('fi-serial').focus();
   return true;
 }
 

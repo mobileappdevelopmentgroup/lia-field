@@ -91,6 +91,10 @@
     // So is the list of blank tags: one company's tags must not be recognised
     // as "ours" by whoever signs in next.
     if (root.LiaTagStock) root.LiaTagStock.clear();
+    // Numbers reserved to this user are not the next sign-in's.
+    if (root.LiaSerialPool) root.LiaSerialPool.clear();
+    // And the trucks: one company's vans are not the next sign-in's.
+    if (root.LiaTruck) root.LiaTruck.clear();
     return client().then(function (sb) {
       if (!sb) return null;
       // The catalogue is account data too, for the same reason.
@@ -122,9 +126,19 @@
       return pullTypes(sb).then(function () {
         return pullParts(sb);
       }).then(function () {
+        // After the parts, so every part a set names is already in the library.
+        return pullPartSets(sb);
+      }).then(function () {
         // The account's blank tags, so a tap on one is recognised as ours
         // rather than as somebody else's link. Never fatal, like the parts.
         return root.LiaTagStock ? root.LiaTagStock.pull(sb) : false;
+      }).then(function () {
+        // Numbers for defective items with no tag (36), reserved to this phone
+        // so it can hand them out offline. Never fatal.
+        return root.LiaSerialPool ? root.LiaSerialPool.pull(sb) : false;
+      }).then(function () {
+        // The trucks this tech is on (34). Never fatal either.
+        return root.LiaTruck ? root.LiaTruck.pull(sb) : false;
       }).then(function () {
         return root.LiaCache.sync(sb, opts || {});
       });
@@ -155,6 +169,17 @@
     return sb.rpc('account_parts_catalog').then(function (r) {
       if (r.error || !r.data) return false;
       return mergeCrewParts(r.data);
+    }).catch(function () { return false; });
+  }
+
+  // The office's named button sets ("Ford plant"). Fetched whole: a set missing
+  // from the answer is one the office took down. A failed fetch — no signal,
+  // or a database without migration 33 — keeps what the phone already had.
+  function pullPartSets(sb) {
+    if (typeof mergePublishedSets !== 'function') return Promise.resolve(false);
+    return sb.rpc('account_part_sets_catalog').then(function (r) {
+      if (r.error || !Array.isArray(r.data)) return false;
+      return mergePublishedSets(r.data);
     }).catch(function () { return false; });
   }
 
@@ -319,6 +344,14 @@
     if (entry.kind === 'support_reply') {
       return sb.rpc('reply_support_ticket', { p: entry.payload });
     }
+    // Truck stock (34): a use, load or count, idempotent on its client_id;
+    // and which truck is the tech's today.
+    if (entry.kind === 'stock_move') {
+      return sb.rpc('record_stock_move', { p: entry.payload });
+    }
+    if (entry.kind === 'stock_truck') {
+      return sb.rpc('set_my_truck', { p_location: entry.payload.location_id });
+    }
     return Promise.resolve({ error: { message: 'Unknown record type: ' + entry.kind } });
   }
 
@@ -343,7 +376,9 @@
   // A photo is deferrable too: it is large, so it is the likeliest thing to
   // fail on a weak signal, and it must never hold up a day of inspections — but
   // it is the evidence for a removal from service, so it is never dropped.
-  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply', 'fp_photo'];
+  // Truck stock too: a count that has not gone up yet must never hold up a
+  // day of inspections, and must never be thrown away either.
+  var DEFERRABLE_KINDS = ['support_ticket', 'support_reply', 'fp_photo', 'stock_move', 'stock_truck'];
   var OPTIONAL_ATTEMPTS = 3;
 
   function isOptional(entry) {
@@ -552,6 +587,10 @@
       // Only redrawn on a real answer — a failed pull must not flicker the
       // list or reset the "as of" line to now.
       if (r && r.ok && typeof root.renderAssignedList === 'function') root.renderAssignedList();
+    });
+    // The trucks, on the same rate limit: they change when somebody loads one.
+    if (root.LiaTruck) root.LiaTruck.refresh().then(function (ok) {
+      if (ok && typeof root.renderTruckCard === 'function') root.renderTruckCard();
     });
   }
 

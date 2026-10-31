@@ -143,9 +143,9 @@ await openSeededJob(p);
 await p.click('#btn-share-csv');
 await p.waitForTimeout(400);
 ok('a write that fails is reported to the tech',
-   await p.$eval('#save-status', e => /could not save the csv/i.test(e.textContent)), true);
+   await p.$eval('#entry-notice', e => /could not save the csv/i.test(e.textContent)), true);
 ok('and names the reason',
-   await p.$eval('#save-status', e => /no space left/i.test(e.textContent)), true);
+   await p.$eval('#entry-notice', e => /no space left/i.test(e.textContent)), true);
 ok('nothing is claimed to have been shared',
    await p.evaluate(() => window.__shared.length), 0);
 ok('no page errors', errs, []);

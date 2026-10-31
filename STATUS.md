@@ -229,6 +229,102 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.4 — 2026-10-14.** Android **versionCode 19** (Play internal), iOS
+**build 20** (TestFlight internal; added to external **Devs** and submitted —
+`WAITING_FOR_BETA_REVIEW`), Lia Office 1.15.4 (mac DMGs arm64 + x64, signed not
+notarized; Windows from CI run `38664245432`, unsigned). Bundles in
+`lia-deliverables/1.15.4/`. From Nate's 2026-10-14 field report.
+- **Delete a line.** A fall-protection line entered twice can be deleted (tap it,
+  Delete, tap again). A ladder's Delete now also takes it out of the upload
+  queue — before, a deleted ladder still uploaded. An uploaded one-off stays and
+  the phone says the office deletes it in Lia Office.
+- **Removal sheet scrolls** to the photo and Confirm buttons, above the keyboard.
+- **Parts popup** keeps re-placing itself while the keyboard opens, rather than
+  hiding until the screen was dragged. Not yet confirmed on a handset.
+- **Fall Protection History** (Lia Office → Advanced): import past inspections
+  from a CSV; Batavia's assigned number is the serial. Migration **35, applied
+  2026-10-14**.
+- **Defective, no tag**: the phone numbers an untagged defective item from the
+  company's list of spare numbers (reserved five per phone, so offline phones
+  never share one); the office pastes the list on the same screen. Migration
+  **36, applied 2026-10-14**. The button appears once the office loads numbers.
+
+**1.15.3 — 2026-10-11.** Android **versionCode 18** (Play internal), iOS
+**build 19** (TestFlight internal, in beta testing), Lia Office 1.15.3 (mac
+DMGs arm64 + x64, signed not notarized; Windows from CI run `38150815338`,
+unsigned). Bundles in `lia-deliverables/1.15.3/`. Phone-only changes; no migration.
+- **Tap-through passes tags not on file.** Instead of being skipped, an unknown
+  item passes and is held on the job as *passed — needs details* (counted, not
+  queued: no type means no checklist). Its tag's Google Sheet is read in the
+  background — type by exact name only, tag number as serial when the sheet has
+  none, maker, model, lot — and the record is completed and queued. Retried on
+  reconnect and on opening the job; anything left shows as **Needs details** on
+  the list and opens to be finished by hand. This reverses the 2026-09-24
+  "links are not followed" decision at the user's request.
+- **Fail last** works on whatever was tapped last, including a needs-details item.
+- **Ladders:** the brand/type/length field being picked is ringed in accent.
+- ⚠️ **Not done: sheet history as real certificates.** The user chose to import
+  a sheet's past inspection as a certificate. That needs migration 35 (the write
+  path records the caller as the inspector) and was deliberately not applied
+  unattended. Until then a sheet's history uploads as an unverified
+  `fp_external` claim, as before.
+- ⚠️ Not yet diagnosed: the iOS "Website NFC Tag — open docs.google.com" banner
+  seen mid-run means the reader session was briefly not live. Needs device logs.
+
+**1.15.2 — 2026-10-11.** Android **versionCode 17** (Play internal), iOS
+**build 18** (TestFlight internal, in beta testing), Lia Office 1.15.2 (mac
+DMGs arm64 + x64, signed not notarized; Windows from CI, unsigned and not yet
+run on a real machine). Bundles in `lia-deliverables/1.15.2/`.
+- **Vehicle inventory, all three phases.** Migration 34 (applied
+  2026-10-11; anon refused on everything new, verified from outside), Lia Office → Inventory
+  (trucks, warehouses, assignees, load-outs, per-truck par, counts and
+  corrections, transfers, history, printable restock list, the automatic-
+  deduction switch), Lia Field → My truck (use / load / count offline, which
+  truck is mine today). See `docs/VEHICLE-INVENTORY-PLAN.md`.
+- **Fall protection: a tap is the pass.** Tap is now *Tap & pass* and starts
+  tap-through; each tap records a pass at once. Fail or Edit info straight
+  after withdraws it first. *View a tag — no inspection* reads a tag without
+  recording anything.
+- **Failure photos are backed up** to files beside the jobs backup.
+
+**1.15.1 — 2026-10-10.** Android **versionCode 16** (Play internal), iOS **build
+17** (TestFlight internal, in beta testing). Testers lost every job on an iOS
+update: the web view's storage was cleared under the app. `field-app/js/backup.js`
+now mirrors jobs, the upload queue, the parts library and settings into two
+alternating files in the app's Library, and restores any key that comes up
+missing at start-up. It protects updates **after** this build is installed —
+jobs already lost are gone — and not a delete-and-reinstall, which removes the
+files too. Failure photos (IndexedDB) are not covered. Bundles in
+`lia-deliverables/1.15.1/`.
+
+**Lia Office 1.15.0** built the same day — mac DMGs (arm64, x64) and the Windows
+installer from CI, in `lia-deliverables/1.15.0/`. It carries the part-set
+publishing screen, which needs migration 33.
+
+**1.15.0 — 2026-10-10.** Android **versionCode 15** (Play internal), iOS **build
+16** (TestFlight internal, in beta testing). Phone only: **Lia Office was not
+rebuilt**, so the screen that publishes part sets is in the source but not yet in
+anybody's hands. Bundles in `lia-deliverables/1.15.0/`.
+**Migration 33 was applied 2026-10-11.** Checked from outside with the
+publishable key: `account_part_sets_catalog` exists and answers anon with its
+own "Not authenticated", and an anon read of `account_part_sets` returns no
+rows. That is Supabase's default anon grant, not a leak — 34 revokes it.
+
+**Ladders.** Add & Scan Next reopens the camera on a phone (the add raised the
+keyboard in the same tap, and a failed `play()` left the camera held). **Add &
+Duplicate** keeps the camera open and adds every new barcode with the same parts;
+Done opens the last one for editing. A serial nobody knows offers brand → type →
+length as one-tap buttons. Suggestion lists stay inside the visible area above
+the keyboard.
+
+**Part sets.** More than one set of quick-tap buttons; Main is still what the
+lead's list writes into, and each job remembers its set. The library box
+searches by part number, then description. Sets the office publishes (33) are
+read-only on the phone — Copy to edit.
+
+**Fall protection.** Pass & Next Item reopens the reader (or camera) the item
+came from.
+
 **1.14.0 — 2026-09-29.** Android **versionCode 14** (Play internal), iOS **build
 15** (TestFlight internal — the group takes every build). Phone only: Lia Office
 has no changes and was not rebuilt. Bundles in `lia-deliverables/1.14.0/`.

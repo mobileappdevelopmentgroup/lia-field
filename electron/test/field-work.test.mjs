@@ -18,6 +18,8 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+const { groupVersions } = createRequire(import.meta.url)('../field-versions.cjs');
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TYPES = { '.html':'text/html', '.js':'text/javascript' };
@@ -64,6 +66,24 @@ const MERGE = { items: [
       brand: 'Louisville', type: 'Step', length: '6', techName: 'Ann', parts: [] } },
 ] };
 
+// Every version of what is on WO-FIXED: A-1 collected, pushed, then corrected;
+// A-2 untouched; A-3 deleted. Built by the same grouping main uses.
+const LROW = (o) => Object.assign({ asset_id: 'x', serial_num: 'A-1', inspection_date: '2026-09-17',
+  version: 1, is_current: true, is_deleted: false, source: 'field', captured_at: '2026-09-17T10:00:00Z',
+  created_at: '2026-09-17T10:05:00Z', bsi_pushed_at: null, collector_name: 'Ann', brand: 'Werner',
+  type: 'Extension', length: '24', notes: null, work_order_id: 'WO-FIXED', parts: [{ name: 'G13', qty: 2 }],
+  lubricated: null, has_leveler: null, has_claw: null, has_vrung: null }, o);
+const ITEMS = groupVersions({
+  ladders: [
+    LROW({ id: '00000000-0000-0000-0000-0000000000a1', is_current: false, bsi_pushed_at: '2026-09-17T12:00:00Z' }),
+    LROW({ id: '00000000-0000-0000-0000-0000000000a2', version: 2, source: 'office_amend', brand: 'Louisville' }),
+    LROW({ id: '00000000-0000-0000-0000-0000000000b1', asset_id: 'y', serial_num: 'A-2', brand: 'Louisville', type: 'Step', length: '6', parts: [] }),
+    LROW({ id: '00000000-0000-0000-0000-0000000000c1', asset_id: 'z', serial_num: 'A-3', is_current: false, is_deleted: true }),
+  ],
+  audits: [{ scope: 'ladder', inspection_id: '00000000-0000-0000-0000-0000000000a2', action: 'amend',
+             reason: 'wrong brand on the tag', actor_name: 'Nate Dobbs', created_at: '2026-09-18T09:00:00Z' }],
+});
+
 const b = await chromium.launch();
 const p = await b.newPage();
 const errs = []; p.on('pageerror', e => errs.push(e.message));
@@ -79,6 +99,11 @@ await p.addInitScript((d) => {
     },
     fieldSetArchived: async (p) => { window.__calls.push({ fn: 'fieldSetArchived', p }); return { ok: true }; },
     fieldAmend: async (p) => { window.__calls.push({ fn: 'fieldAmend', p }); return { ok: true }; },
+    fieldDelete: async (p) => { window.__calls.push({ fn: 'fieldDelete', p }); return { ok: true }; },
+    fieldDeleteItem: async (p) => { window.__calls.push({ fn: 'fieldDeleteItem', p }); return { ok: true }; },
+    fieldRestore: async (p) => { window.__calls.push({ fn: 'fieldRestore', p }); return { ok: true }; },
+    fieldAdd: async (p) => { window.__calls.push({ fn: 'fieldAdd', p }); return { ok: true }; },
+    fieldHistory: async () => ({ ok: true, items: d.ITEMS }),
     mergePull: async () => ({ ok: true, merge: d.MERGE, pulled: 2 }),
     mergeToCsv: async (p) => { window.__calls.push({ fn: 'mergeToCsv', p }); return { ok: true, path: '/tmp/x.csv', rows: 2 }; },
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
@@ -86,7 +111,7 @@ await p.addInitScript((d) => {
     loadHistory: async () => ({ ok: true, groups: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
   };
-}, { LIVE, FILED, MERGE });
+}, { LIVE, FILED, MERGE, ITEMS });
 
 await p.goto(BASE + '/index.html');
 await p.waitForTimeout(400);
@@ -129,30 +154,96 @@ await p.$$eval('#field-wos .fw-row', els =>
   els.find(e => e.querySelector('.fw-wo').textContent === 'WO-FIXED').click());
 await p.waitForTimeout(400);
 
-ok('the records are shown', await p.$$eval('#field-records .fw-rec', e => e.length), 2);
+ok('every item is shown, the deleted one too', await p.$$eval('#field-records .fw-rec', e => e.length), 3);
 ok('the lead is told re-importing will not fix it',
    /will not change a box that is already there/i.test(await p.$eval('#field-head', e => e.textContent)), true);
 ok('Field Work can import into BSI', await p.$$eval('#fw-import', e => e.length), 1);
 ok('and can archive', await p.$$eval('#fw-archive', e => e.length), 1);
-ok('every record can be corrected',
-   await p.$$eval('#field-records button', e => e.length), 2);
 
-// ── A correction has to say why ─────────────────────────────────────────────
-await p.evaluate(() => { window.prompt = () => '   '; });
-await p.click('#field-records button');
-await p.waitForTimeout(200);
-ok('a blank reason is refused',
-   /needs a reason/i.test(await p.$eval('#field-msg', e => e.textContent)), true);
-ok('and nothing was sent',
-   await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAmend').length), 0);
+const recRow = (ser) => `#field-records .fw-rec:has(.fw-rec-ser:text-matches("^${ser}\\\\b"))`;
+const rowAct = (ser, act) => `${recRow(ser)} [data-act="${act}"]`;
+ok('a live item can be edited and deleted',
+   [await p.$$eval(rowAct('A-2', 'edit'), e => e.length), await p.$$eval(rowAct('A-2', 'delete'), e => e.length)], [1, 1]);
+ok('a correction made after BSI is named as one',
+   /Changed after BSI/.test(await p.$eval(recRow('A-1'), e => e.textContent)), true);
+ok('and can be undone', await p.$$eval(rowAct('A-1', 'undo'), e => e.length), 1);
+ok('a field record has no correction to undo', await p.$$eval(rowAct('A-2', 'undo'), e => e.length), 0);
+ok('a deleted item offers Restore, not Edit',
+   [await p.$$eval(rowAct('A-3', 'restore'), e => e.length), await p.$$eval(rowAct('A-3', 'edit'), e => e.length)], [1, 0]);
 
-await p.evaluate(() => { let n = 0; window.prompt = () => (n++ === 0 ? 'wrong brand on the tag' : 'Werner'); });
-await p.click('#field-records button');
+// ── History: what the field collected, what changed, what went to BSI ───────
+await p.click(rowAct('A-1', 'history'));
+await p.waitForTimeout(150);
+const hist = await p.$eval(`${recRow('A-1')} .fw-rec-more`, e => e.textContent);
+ok('history shows the field version', /v1 · Collected in the field/.test(hist), true);
+ok('and the office correction', /v2 · Corrected in the office · CURRENT/.test(hist), true);
+ok('with what changed', /Brand:\s*Werner → Louisville/.test(hist), true);
+ok('why, and who', /Corrected by Nate Dobbs .*wrong brand on the tag/.test(hist), true);
+ok('and which version reached BSI', /Sent to BSI/.test(hist) && /Not sent to BSI/.test(hist), true);
+
+// ── Editing: no prompt(), an inline form ────────────────────────────────────
+await p.evaluate(() => { window.prompt = () => { throw new Error('prompt() is and will not be supported.'); }; });
+await p.click(rowAct('A-2', 'edit'));
+await p.waitForTimeout(150);
+const form = `${recRow('A-2')} .fw-rec-more`;
+ok('Edit opens a form in the row', await p.$$eval(`${form} [data-k="brand"]`, e => e.length), 1);
+await p.fill(`${form} [data-k="brand"]`, 'Werner');
+await p.click(`${form} .fw-save`);
+await p.waitForTimeout(150);
+ok('a blank reason is refused', /reason is required/i.test(await p.$eval('#field-msg', e => e.textContent)), true);
+ok('and nothing was sent', await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAmend').length), 0);
+
+await p.fill(`${form} .fw-reason`, 'wrong brand on the tag');
+await p.fill(`${form} [data-k="parts"]`, 'W44 x2');
+await p.selectOption(`${form} [data-k="has_claw"]`, 'yes');
+await p.click(`${form} .fw-save`);
 await p.waitForTimeout(400);
-ok('a correction with a reason goes through',
-   await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAmend').length), 1);
-ok('carrying the reason to the server',
-   await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldAmend').p.reason), 'wrong brand on the tag');
+const amend = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldAmend'));
+ok('a correction with a reason goes through', !!amend, true);
+ok('carrying the reason', amend && amend.p.reason, 'wrong brand on the tag');
+ok('and only what changed', amend && amend.p.fields, { brand: 'Werner', parts: 'W44 x2', has_claw: true });
+
+// ── Delete, undo, restore ───────────────────────────────────────────────────
+await p.click(rowAct('A-1', 'delete'));
+await p.waitForTimeout(150);
+await p.fill(`${recRow('A-1')} .fw-reason`, 'not on this job');
+await p.click(`${recRow('A-1')} .fw-save`);
+await p.waitForTimeout(400);
+const di = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldDeleteItem'));
+ok('deleting an item takes every live version, newest first',
+   di && di.p.ids, ['00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000a1']);
+
+await p.click(rowAct('A-1', 'undo'));
+await p.waitForTimeout(150);
+await p.fill(`${recRow('A-1')} .fw-reason`, 'corrected the wrong one');
+await p.click(`${recRow('A-1')} .fw-save`);
+await p.waitForTimeout(400);
+ok('undo deletes only the correction',
+   await p.evaluate(() => (window.__calls.find(c => c.fn === 'fieldDelete') || {}).p.inspectionId), '00000000-0000-0000-0000-0000000000a2');
+
+await p.click(rowAct('A-3', 'restore'));
+await p.waitForTimeout(150);
+await p.fill(`${recRow('A-3')} .fw-reason`, 'deleted by mistake');
+await p.click(`${recRow('A-3')} .fw-save`);
+await p.waitForTimeout(400);
+ok('restore brings back the deleted version',
+   await p.evaluate(() => (window.__calls.find(c => c.fn === 'fieldRestore') || {}).p.inspectionId), '00000000-0000-0000-0000-0000000000c1');
+
+// ── Adding a ladder the field never sent ────────────────────────────────────
+ok('Field Work can add a ladder', await p.isVisible('#fw-add-btn'), true);
+await p.click('#fw-add-btn');
+await p.fill('#fwa-serial', 'A-9');
+await p.click('#fwa-save');
+await p.waitForTimeout(150);
+ok('an add needs a reason', await p.evaluate(() => window.__calls.filter(c => c.fn === 'fieldAdd').length), 0);
+await p.fill('#fwa-brand', 'Werner');
+await p.fill('#fwa-parts', 'G13 x2');
+await p.fill('#fwa-reason', 'tech radioed it in');
+await p.click('#fwa-save');
+await p.waitForTimeout(400);
+const add = await p.evaluate(() => window.__calls.find(c => c.fn === 'fieldAdd'));
+ok('the add goes to this work order', add && [add.p.workOrderId, add.p.serialNum, add.p.reason],
+   ['WO-FIXED', 'A-9', 'tech radioed it in']);
 
 // ── Archiving ───────────────────────────────────────────────────────────────
 await p.$$eval('#field-wos .fw-row', els =>
@@ -178,8 +269,11 @@ ok('it says who filed it and when',
    /Filed .*by Nate Dobbs/.test(await p.$eval('#field-head', e => e.textContent)), true);
 ok('there is NO import button — history is read-only',
    await p.$$eval('#fw-import', e => e.length), 0);
-ok('and no way to correct a record here',
-   await p.$$eval('#field-records button', e => e.length), 0);
+ok('and no way to change a record here',
+   await p.$$eval('#field-records [data-act="edit"], #field-records [data-act="delete"], #field-records [data-act="restore"]', e => e.length), 0);
+ok('but the history can still be read',
+   (await p.$$eval('#field-records [data-act="history"]', e => e.length)) > 0, true);
+ok('and nothing can be added', await p.isVisible('#fw-add-btn'), false);
 ok('the one thing it can do is send the work order back',
    await p.$$eval('#fw-unarchive', e => e.length), 1);
 

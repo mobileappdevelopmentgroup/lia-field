@@ -41,6 +41,13 @@ await p.addInitScript(() => {
       { part_number: 'SLS', description: 'SIDE RAIL', favorited: true, default_qty: 2, ord: 1, is_deleted: false },
     ]}),
     partsSave: async (p) => { window.__calls.push({ fn: 'partsSave', p }); return { ok: true, result: { saved: p.parts.length } }; },
+    partSetsList: async () => ({ ok: true, sets: [
+      { id: 'set-1', name: 'Hospital', parts: ['SLS'], ord: 1, mine: true },
+      { id: 'set-u', name: 'Batavia standard', parts: ['G13'], ord: 1, mine: false },
+    ]}),
+    partSetsSave: async (p) => { window.__calls.push({ fn: 'partSetsSave', p });
+      return { ok: true, result: { saved: p.sets.length,
+        sets: p.sets.map((x, i) => ({ id: x.id || 'new-' + i, name: x.name })) } }; },
     fpListTypes: async () => ({ ok: true, types: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
     fieldList: async () => ({ ok: true, workOrders: [] }),
@@ -119,6 +126,53 @@ ok('the lead is told it reaches phones on the next sync, not instantly',
 ok('and is reminded what will not bill',
    /1 part is not in BSI and will not bill/i.test(await p.$eval('#pk-msg', e => e.textContent)), true);
 
+// ── Button sets ─────────────────────────────────────────────────────────────
+ok('the sets are listed beside Main',
+   await p.$$eval('#pk-sets .pk-set', e => e.map(x => x.childNodes[0].textContent)),
+   ['★ Main', 'Hospital', 'Batavia standard']);
+ok('an umbrella\'s set is marked as not this office\'s',
+   await p.$$eval('#pk-sets .pk-set', e => /from your umbrella/.test(e[2].textContent)), true);
+
+await p.click('#pk-set-new');
+await p.fill('#pk-set-name', 'Ford plant');
+await p.click('#pk-set-save'); await p.waitForTimeout(100);
+ok('a new set is made and selected',
+   await p.$eval('#pk-sets .pk-set.on', e => e.childNodes[0].textContent), 'Ford plant');
+ok('and starts with nothing starred',
+   await p.$$eval('#pk-chosen .pk-star.on', e => e.length), 0);
+const starIn = (num) => p.$$eval('#pk-chosen .pk-row', (rows, n) => {
+  rows.find(r => r.querySelector('.pk-num').textContent === n).querySelector('.pk-star').click();
+}, num);
+await starIn('PM36'); await starIn('SLS'); await p.waitForTimeout(100);
+ok('starring puts parts on this set, numbered in the order starred',
+   await p.$$eval('#pk-chosen .pk-row', rows => rows.filter(r => r.querySelector('.pk-star.on'))
+     .map(r => r.querySelector('.pk-num').textContent + '#' + r.querySelector('.pk-slot').textContent)),
+   ['SLS#2', 'PM36#1']);
+ok('without touching Main\'s stars', await p.evaluate(() => _pkChosen.find(x => x.partNumber === 'PM36').favorited), false);
+
+await p.click('#pk-set-new');
+await p.fill('#pk-set-name', 'hospital');
+await p.click('#pk-set-save'); await p.waitForTimeout(100);
+ok('two sets cannot share a name', /already a set called/.test(await p.$eval('#pk-msg', e => e.textContent)), true);
+await p.$$eval('#pk-set-edit button', e => e.find(x => x.textContent === 'Cancel').click());
+
+// Chips: Main, Hospital, Batavia standard (inherited), Ford plant.
+await p.$$eval('#pk-sets .pk-set', e => e[1].click()); await p.waitForTimeout(100);
+await p.$$eval('#pk-set-edit button', e => e.find(x => x.textContent === 'Rename').click());
+await p.fill('#pk-set-name', 'Hospital — east');
+await p.click('#pk-set-save'); await p.waitForTimeout(100);
+
+await p.$$eval('#pk-sets .pk-set', e => e[2].click()); await p.waitForTimeout(100);
+ok('an umbrella\'s set cannot be edited here',
+   await p.$$eval('#pk-chosen .pk-star', e => e.every(x => x.disabled)), true);
+
+await p.click('#btn-publish-parts'); await p.waitForTimeout(300);
+const sets = await p.evaluate(() => window.__calls.filter(c => c.fn === 'partSetsSave').pop().p.sets);
+ok('publishing sends this office\'s own sets, not the umbrella\'s', sets.map(x => x.name), ['Hospital — east', 'Ford plant']);
+ok('a renamed set keeps its id, so phones keep it', sets[0].id, 'set-1');
+ok('a new set goes without one, and its parts in button order', [sets[1].id, sets[1].parts], [null, ['PM36', 'SLS']]);
+ok('and the new set is given the id the server returned', await p.evaluate(() => _pkSets.find(x => x.name === 'Ford plant').id), 'new-1');
+
 // ── Removing ────────────────────────────────────────────────────────────────
 const before = await p.$$eval('#pk-chosen .pk-row', e => e.length);
 await p.$$eval('#pk-chosen .pk-row', rows => {
@@ -128,6 +182,7 @@ await p.$$eval('#pk-chosen .pk-row', rows => {
 await p.waitForTimeout(200);
 ok('a part can be taken off the list',
    await p.$$eval('#pk-chosen .pk-row', e => e.length), before - 1);
+ok('and off every set it was on', await p.evaluate(() => _pkSets.find(x => x.name === 'Ford plant').parts), ['SLS']);
 
 ok('no page errors', errs, []);
 
