@@ -229,6 +229,28 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.6 — 2026-10-31.** Android **versionCode 22** (Play internal), iOS
+**build 23** (TestFlight internal; added to external **Devs** and submitted —
+`WAITING_FOR_BETA_REVIEW`), Lia Office 1.15.6 (mac DMGs arm64 + x64, signed not
+notarized; Windows from CI run `41247065897`, unsigned). Bundles in
+`lia-deliverables/1.15.6/`. Migrations **37 and 38 applied 2026-10-31**.
+- **Correct works in Lia Office** (Mac and Windows). It had never done anything:
+  it used `window.prompt()`, which Electron does not implement. Field Work now
+  edits, deletes, undoes and restores every record inline, and History shows
+  each version — collected in the field, corrected or added in the office, when
+  it reached the server, when it went to BSI — with who changed it and why.
+- **Add a ladder from the office** to a work order (38). Ladders only; fall
+  protection cannot be made up in the office.
+- **Fall-protection corrections work while acting as a subcontractor** (38).
+- **Equipment type "+ New"** and the Job Board's **Mark complete** note had the
+  same prompt() bug; both are inline now.
+- **Manhole** is a ladder type on the phone, sent to BSI as "Mhole".
+- **Spare numbers that are tags** (37): leads load the issued sheet with *Choose
+  CSV File…*.
+
+1.15.5 shipped 2026-10-22 — iOS builds 21–22, Android versionCodes 20–21, no
+Office build. A missing work order no longer refuses a ladder.
+
 **1.15.4 — 2026-10-14.** Android **versionCode 19** (Play internal), iOS
 **build 20** (TestFlight internal; added to external **Devs** and submitted —
 `WAITING_FOR_BETA_REVIEW`), Lia Office 1.15.4 (mac DMGs arm64 + x64, signed not
