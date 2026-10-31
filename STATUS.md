@@ -229,6 +229,17 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.7 — 2026-10-31. Lia Office only** (phone stays 1.15.6). Mac DMGs
+arm64 + x64, signed not notarized; Windows from CI run `41251277476` (64/64
+tests on Windows), unsigned. Commit `9e92e3f`. Bundles in
+`lia-deliverables/1.15.7/`. No migration.
+- **View → Appearance**: Match System / Light / Dark. Dark is unchanged.
+- **Zoom is kept between launches** (⌘+ / ⌘= / ⌘− / ⌘0, pinch), in
+  `userData/display.json`.
+- **Notes are optional** on corrections and office-added ladders; Delete, Undo
+  and Restore ask nothing. Blank sends `(no note)` (the RPCs still require a
+  reason). ⚠️ The menu and zoom were not clicked through before shipping.
+
 **1.15.6 — 2026-10-31.** Android **versionCode 22** (Play internal), iOS
 **build 23** (TestFlight internal; added to external **Devs** and submitted —
 `WAITING_FOR_BETA_REVIEW`), Lia Office 1.15.6 (mac DMGs arm64 + x64, signed not
