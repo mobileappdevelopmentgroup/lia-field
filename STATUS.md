@@ -229,6 +229,24 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.8 — 2026-11-13. Lia Office only** (phone stays 1.15.6; the N/A-serial
+refusal in `3ac8c3e` ships with the next phone build). Mac DMGs arm64 + x64,
+signed not notarized; Windows from CI run `43445804694` (64/64 tests on
+Windows), unsigned. Commit `a42552c`. Bundles in `lia-deliverables/1.15.8/`.
+No migration. **Every office must install it by hand** — there is no updater.
+- **Imports are charged and recorded again.** From `0efa5a8` (2026-09-21) the
+  import-complete handler threw a swallowed ReferenceError (`_billable` was
+  scoped inside a try block), so no import was charged or had its ladders
+  recorded once an office updated; the last charge anywhere was 2026-10-11.
+  Mike's 18 work orders and Nate's since mid-October were never charged
+  (back-charging is the user's call). Separately, 11 of Nate's work orders
+  charged 2026-08-25 → 2026-10-11 have no records; cause not proven.
+- Records are saved by `electron/office-records.cjs`: per-ladder retry, an
+  outbox (`userData/pending-inspections.json`) retried after each import in the
+  same account, and a `[RECORDS]` line in the run log saying what landed.
+- ⚠️ Office-only ladders lost before this (CSV imports with no phone records)
+  are not recovered by it; that tool is next.
+
 **1.15.7 — 2026-10-31. Lia Office only** (phone stays 1.15.6). Mac DMGs
 arm64 + x64, signed not notarized; Windows from CI run `41251277476` (64/64
 tests on Windows), unsigned. Commit `9e92e3f`. Bundles in
