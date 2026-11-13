@@ -927,6 +927,20 @@ function flagMissingWorkOrder() {
   showEntryNotice('No work order on this job — type it in Work Order # at the top so the office can match these ladders.');
 }
 
+// "N/A" and its cousins are refused like a blank (see serial-check.js): the
+// server keys a ladder on its serial, so two ladders saved as "N/A" become one.
+function refuseSerial(serial) {
+  const why = window.LiaSerialCheck && window.LiaSerialCheck.problem(serial);
+  if (!serial || why) {
+    const el = $('fi-serial');
+    el.focus(); el.style.borderColor = 'var(--err)';
+    setTimeout(() => { el.style.borderColor = ''; }, 1200);
+    if (why) showEntryNotice(`“${serial}” is not a serial number. Type the number off the ladder — two ladders saved as “${serial}” would become one record.`);
+    return true;
+  }
+  return false;
+}
+
 // opts.focus: false when the camera opens next (see btn-add-next).
 // opts.keepParts: the parts stay on the form for the next ladder.
 function addLadder(opts) {
@@ -935,12 +949,7 @@ function addLadder(opts) {
   // The box, not the last autosave. saveNow runs 800ms after typing stops, so
   // a number typed and Add tapped at once would go up without it.
   if (_job && !_job.assignedId && $('job-wo').value.trim() !== (_job.workOrderNum || '')) saveNow();
-  if (!serial) {
-    const el = $('fi-serial');
-    el.focus(); el.style.borderColor = 'var(--err)';
-    setTimeout(() => { el.style.borderColor = ''; }, 1200);
-    return false;
-  }
+  if (refuseSerial(serial)) return false;
   showEntryNotice('');
   if (!_job.ladders) _job.ladders = [];
   const added = buildLadderFromForm();
@@ -958,12 +967,7 @@ function addLadder(opts) {
 
 function saveEdits() {
   const serial = $('fi-serial').value.trim();
-  if (!serial) {
-    const el = $('fi-serial');
-    el.focus(); el.style.borderColor = 'var(--err)';
-    setTimeout(() => { el.style.borderColor = ''; }, 1200);
-    return;
-  }
+  if (refuseSerial(serial)) return;
   const existingId = _job.ladders[_editingIdx]?.id;
   const edited = buildLadderFromForm(existingId);
   edited.capturedAt = _job.ladders[_editingIdx]?.capturedAt || new Date().toISOString();

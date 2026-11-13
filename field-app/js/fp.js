@@ -1008,6 +1008,18 @@ function fpMakeItem(rec, type, checks, source) {
   };
 }
 
+// What to do instead of typing "N/A" (serial-check.js). The tag's own number
+// is what Nate's crew already uses for an item with no serial; an untagged
+// defective item takes a spare number.
+function fpPlaceholderHint(serial) {
+  const label = _fpItem && _fpItem.tag_label;
+  const spare = window.LiaSerialPool && window.LiaSerialPool.hasAny();
+  return `“${serial}” is not a serial number — two items saved that way become one record. ` +
+    (label ? `No serial on the item? Use the tag number, ${label}.`
+           : `No serial on the item? Use the number on its tag` +
+             (spare ? ', or Defective, no tag if it has none.' : '.'));
+}
+
 function fpSave() {
   if (!_job || !_fpItem) return;
   const serial = String(_fpItem.serial_raw || '').trim();
@@ -1015,6 +1027,12 @@ function fpSave() {
     _fpEditing = true;
     fpRenderAll();
     fpHint('A serial number is required.', true);
+    return;
+  }
+  if (window.LiaSerialCheck && window.LiaSerialCheck.problem(serial)) {
+    _fpEditing = true;
+    fpRenderAll();
+    fpHint(fpPlaceholderHint(serial), true);
     return;
   }
 
@@ -2133,6 +2151,7 @@ function fpBatchMissing(it) {
   if (!it) return 'nothing on screen';
   if (!fpTypes().byKey(it.equipment_type || it.item_type || '')) return 'no equipment type';
   if (!String(it.serial_raw || '').trim()) return 'no serial number';
+  if (window.LiaSerialCheck && window.LiaSerialCheck.problem(it.serial_raw)) return 'not a serial number';
   return null;
 }
 
