@@ -168,6 +168,8 @@ contextBridge.exposeInMainWorld('api', {
   fpHistoryParse:       (filePath)   => ipcRenderer.invoke('fphist:parse', filePath),
   fpHistoryImport:      (payload)    => ipcRenderer.invoke('fphist:import', payload),
   fpHistoryList:        ()           => ipcRenderer.invoke('fphist:list'),
+  recoverList:          ()           => ipcRenderer.invoke('recover:list'),
+  recoverRecord:        (payload)    => ipcRenderer.invoke('recover:record', payload),
   fpHistoryUndo:        (batch)      => ipcRenderer.invoke('fphist:undo', batch),
   fpPoolSummary:        ()           => ipcRenderer.invoke('fppool:summary'),
   fpPoolAdd:            (payload)    => ipcRenderer.invoke('fppool:add', payload),

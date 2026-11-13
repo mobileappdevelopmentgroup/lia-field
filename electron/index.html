@@ -1221,6 +1221,11 @@
           <div class="mode-name">Log Inspections</div>
           <div class="mode-desc">Upload historical inspection records to the database.</div>
         </div>
+        <div class="mode-card" id="adv-recover">
+          <div class="mode-icon">🩹</div>
+          <div class="mode-name">Recover Past Imports</div>
+          <div class="mode-desc">Imports that went into BSI but whose ladders never reached the certificate site. Reads this computer's run logs.</div>
+        </div>
         <div class="mode-card" id="adv-fphist">
           <div class="mode-icon">🦺</div>
           <div class="mode-name">Fall Protection History</div>
@@ -1787,6 +1792,43 @@
   </div>
 </div>
 
+<!-- ═══════════════ SCREEN: RECOVER PAST IMPORTS ═══════════════
+     From 2026-09-21 until 1.15.8 no import's ladders were recorded (and some
+     before that were lost). The run logs on the computer that did the import
+     are the only copy: electron/past-imports.cjs reads them. Nothing is sent
+     until the office types the work order for a run and presses Record. -->
+<div id="screen-recover" class="screen">
+  <div class="field-topbar">
+    <button class="back-btn" id="btn-recover-home">← Home</button>
+    <span class="field-title">Recover Past Imports</span>
+    <button class="btn-g" id="btn-recover-refresh" style="font-size:12px;padding:6px 14px;">↻ Refresh</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-ttl">Imports run on this computer</div>
+      <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.55;">
+        Until version 1.15.8, ladders imported into BSI were not saved as inspection records, so they do not
+        show on the certificate site. Every import left a log on this computer listing the ladders that went in.
+        For each one still missing, type the <strong style="color:var(--text);">work order</strong> it went into
+        and press Record.
+      </p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55;">
+        Each ladder is recorded as inspected on the day of the import. Ladders that already have a record that
+        day — from a phone, or an earlier recovery — are left alone. Only ladders whose box went into BSI are
+        counted. Run this on every computer that has done imports.
+      </p>
+      <div id="recover-account" style="font-size:12.5px;margin-bottom:12px;"></div>
+      <div id="recover-msg" style="font-size:12.5px;margin-bottom:10px;"></div>
+      <div class="tbl-wrap" style="max-height:none;">
+        <table>
+          <thead><tr><th>Imported</th><th>Went into BSI</th><th>Already recorded</th><th>To record</th><th>Work order</th><th></th></tr></thead>
+          <tbody id="recover-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ SCREEN: FALL PROTECTION HISTORY ═══════════════
      A spreadsheet of past FP inspections → import_fp_history() (35). The serial
      is the assigned number. Nothing is sent until the office has seen how the
@@ -2204,6 +2246,7 @@ function goToDestination(dest) {
   if (dest === 'office')  { showScreen('office');  officeReset(); }
   else if (dest === 'inspect') { showScreen('inspect'); inspectReset(); }
   else if (dest === 'fphist')  { showScreen('fphist');  fpHistReset(); }
+  else if (dest === 'recover') { showScreen('recover'); recoverLoad(); }
   // Work History is Field Work's archived half — the same screen, the same
   // records, read-only, with the one action that sends a work order back.
   else if (dest === 'history') { showScreen('field'); loadFieldWork(true); }
@@ -5420,6 +5463,7 @@ $('home-advanced').addEventListener('click', () => showScreen('advanced'));
 $('btn-adv-home').addEventListener('click',  () => showScreen('home'));
 $('adv-inspect').addEventListener('click', () => requireAuth('inspect'));
 $('adv-fphist').addEventListener('click',  () => requireAuth('fphist'));
+$('adv-recover').addEventListener('click', () => requireAuth('recover'));
 $('btn-fppool-add').addEventListener('click', fpPoolAdd);
 $('btn-fppool-pick').addEventListener('click', fpPoolPick);
 $('btn-fppool-check').addEventListener('click', fpPoolCheckPaste);
@@ -6118,6 +6162,83 @@ window.api.onExited(code => {
   }
   _automationErrored = false;
 });
+
+// ════════════════════════════════════════════════════════════════
+// Recover Past Imports (1.15.9)
+// ════════════════════════════════════════════════════════════════
+
+function recoverWhen(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) +
+         ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+async function recoverLoad() {
+  const name = (_ctx && _ctx.account_name) || 'your company';
+  $('recover-account').innerHTML = (_ctx && _ctx.impersonating)
+    ? `Recording into <strong style="color:var(--warn);">${esc(name)}</strong> — the account you are acting as. ` +
+      `Only recover imports you did for them.`
+    : `Recording into <strong>${esc(name)}</strong>. If an import was for a subcontractor, act as them first ` +
+      `from the home screen — otherwise their ladders land in this account.`;
+  const body = $('recover-body');
+  const msg = $('recover-msg');
+  body.innerHTML = '';
+  msg.textContent = 'Reading the run logs…';
+  const res = await window.api.recoverList();
+  if (!res.ok) { msg.textContent = res.error; return; }
+  const runs = res.runs.filter(r => !r.unreadable);
+  const bad = res.runs.length - runs.length;
+  if (!runs.length) {
+    msg.textContent = `No import logs on this computer (looked in ${res.dir}).`;
+    return;
+  }
+  const open = runs.filter(r => r.todo > 0).length;
+  msg.innerHTML = open
+    ? `<strong>${open}</strong> import${open === 1 ? '' : 's'} with ladders still to record.`
+    : 'Every import on this computer is on record.';
+  if (bad) msg.innerHTML += ` <span style="color:var(--muted);">${bad} log${bad === 1 ? '' : 's'} could not be read.</span>`;
+
+  runs.forEach(r => {
+    const tr = document.createElement('tr');
+    const done = r.recovered;
+    const status = r.todo === 0
+      ? `<span style="color:var(--ok);">✓ On record</span>` +
+        (done ? `<div style="color:var(--muted);font-size:11px;">WO ${esc(done.work_order)}</div>` : '')
+      : '';
+    tr.innerHTML =
+      `<td>${esc(recoverWhen(r.startedAt))}</td>` +
+      `<td>${r.imported}${r.counts.error ? ` <span style="color:var(--muted);">(${r.counts.error} failed)</span>` : ''}</td>` +
+      `<td>${r.already}</td>` +
+      `<td><strong>${r.todo}</strong></td>` +
+      `<td>${r.todo ? `<input class="recover-wo" maxlength="64" placeholder="Work order #" style="width:120px;" value="${esc(done ? done.work_order : '')}">` : status}</td>` +
+      `<td>${r.todo ? `<button class="btn-ok recover-go" style="padding:5px 12px;font-size:12px;">Record ${r.todo}</button>` : ''}` +
+      `<div class="recover-out" style="font-size:11.5px;margin-top:4px;"></div></td>`;
+    if (r.todo) {
+      const btn = tr.querySelector('.recover-go');
+      const input = tr.querySelector('.recover-wo');
+      const out = tr.querySelector('.recover-out');
+      btn.addEventListener('click', async () => {
+        const wo = input.value.trim();
+        if (!wo) { out.textContent = 'Type the work order first.'; input.focus(); return; }
+        btn.disabled = true;
+        out.textContent = 'Recording…';
+        const rr = await window.api.recoverRecord({ name: r.name, workOrderId: wo });
+        btn.disabled = false;
+        if (!rr.ok) { out.textContent = rr.error; return; }
+        if (rr.failed) {
+          out.innerHTML = `<span style="color:var(--warn);">${rr.written} saved, ${rr.failed} could not be: ` +
+                          `${esc((rr.errors || []).join('; '))}. Kept and retried after each import.</span>`;
+          return;
+        }
+        recoverLoad();
+      });
+    }
+    body.appendChild(tr);
+  });
+}
+
+$('btn-recover-home').addEventListener('click', () => showScreen('home'));
+$('btn-recover-refresh').addEventListener('click', () => recoverLoad());
 
 // ════════════════════════════════════════════════════════════════
 // Fall Protection History (35)

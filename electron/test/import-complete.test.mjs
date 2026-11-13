@@ -38,13 +38,26 @@ globalThis.__liaFakeSb = {
   async rpc(name, args) {
     calls.push([name, args]);
     if (name === 'get_my_profile') return { data: { name: 'Nate Dobbs' }, error: null };
-    if (name === 'my_context') return { data: { account_id: 'acct-nate' }, error: null };
+    if (name === 'my_context') return { data: { account_id: 'acct-nate', account_name: 'Nate Dobbs' }, error: null };
     if (name === 'preflight_work_order') return { data: { can_run: true, credits: -1 }, error: null };
     if (name === 'charge_work_order') return { data: { charged: true, credits: -1 }, error: null };
     if (name === 'record_inspections') return { data: args.p.length, error: null };
     return { data: null, error: null };
   },
-  from() { return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: null }) }; },
+  // Reads: `inspections` answers from globalThis.__liaExisting, filtered by
+  // the serials asked for, so "already recorded" is computed for real.
+  from(table) {
+    const q = { table, serials: null,
+      select() { return this; }, eq() { return this; },
+      in(col, list) { this.serials = list; return this; },
+      maybeSingle: async () => ({ data: null }),
+      then(res, rej) {
+        const rows = table === 'inspections'
+          ? (globalThis.__liaExisting || []).filter(r => !this.serials || this.serials.includes(r.serial_num)) : [];
+        return Promise.resolve({ data: rows, error: null }).then(res, rej);
+      } };
+    return q;
+  },
 };
 // getSupabase() does `await import('@supabase/supabase-js')`; send that here.
 register('data:text/javascript,' + encodeURIComponent(`
@@ -131,6 +144,42 @@ ok('no internal error was reported',
 await playRun('98379', false);
 ok('a failed import is neither charged nor recorded',
    names().filter(n => n === 'charge_work_order' || n === 'record_inspections'), []);
+
+// ── Recover Past Imports ─────────────────────────────────────────────────────
+// A run log in this "computer's" Documents/Lia Logs, from an import that was
+// never recorded. One of its ladders was since sent by a phone that day.
+const logs = path.join(tmp, 'Lia Logs');
+fs.mkdirSync(logs, { recursive: true });
+const runName = 'run-2026-09-26T14-05-00.json';
+fs.writeFileSync(path.join(logs, runName), JSON.stringify({ ladderResults: [
+  { serialNum: '1509436', status: 'success' }, { serialNum: '1669421', status: 'partial' },
+  { serialNum: '1700001', status: 'skipped' }, { serialNum: '1700002', status: 'error' } ] }));
+const runDate = require(path.join(HERE, '..', 'office-records.cjs')).localDate(new Date('2026-09-26T14:05:00Z'));
+globalThis.__liaExisting = [{ serial_num: '1509436', inspection_date: runDate }];
+
+calls.length = 0;
+let list = await handlers['recover:list']();
+const row = list.runs && list.runs.find(r => r.name === runName);
+ok('the run is listed with what went in, what is already there and what is missing',
+   row && [row.imported, row.already, row.todo, row.recovered], [2, 1, 1, null]);
+
+ok('a path is refused, not read', (await handlers['recover:record']({}, { name: '../../etc/passwd', workOrderId: '1' })).ok, false);
+ok('no work order, nothing sent', [(await handlers['recover:record']({}, { name: runName, workOrderId: ' ' })).ok,
+   calls.some(c => c[0] === 'record_inspections')], [false, false]);
+
+const rr = await handlers['recover:record']({}, { name: runName, workOrderId: '98742' });
+ok('recording sends only the missing ladder', [rr.ok, rr.written, rr.already], [true, 1, 1]);
+const sentRecs = calls.filter(c => c[0] === 'record_inspections').flatMap(c => c[1].p);
+ok('on the day of the import, under the typed work order, marked recovered',
+   sentRecs.map(x => [x.serial_num, x.inspection_date, x.work_order_id, x.source]),
+   [['1669421', runDate, '98742', 'office:recovered']]);
+
+globalThis.__liaExisting.push({ serial_num: '1669421', inspection_date: runDate });
+list = await handlers['recover:list']();
+const after = list.runs.find(r => r.name === runName);
+ok('afterwards it shows as on record, with the work order it went under',
+   [after.todo, after.recovered && after.recovered.work_order, after.recovered && after.recovered.account],
+   [0, '98742', 'Nate Dobbs']);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} FAILED` : '\nAll import-complete assertions passed.');

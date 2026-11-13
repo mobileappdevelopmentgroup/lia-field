@@ -1256,6 +1256,95 @@ ipcMain.handle('fp:publish-checks', async (_event, modelId, checks) => {
 const officeRecords = require('./office-records.cjs');
 const OUTBOX_FILE = () => path.join(app.getPath('userData'), 'pending-inspections.json');
 
+// ── Recover past imports ────────────────────────────────────────────────────
+// Imports that went into BSI while the record step was broken. The run logs on
+// this computer are the only copy of what they held; past-imports.cjs reads
+// them and says what is assumed. Nothing is sent until the office has typed the
+// work order for a run and pressed Record.
+const pastImports = require('./past-imports.cjs');
+const RECOVERED_FILE = () => path.join(app.getPath('userData'), 'recovered-runs.json');
+
+// Which of these serials already have a record, and on what date. Read
+// through RLS, so it sees what the office may see.
+async function existingInspections(sb, serials) {
+  const out = [];
+  const list = [...new Set(serials)];
+  for (let i = 0; i < list.length; i += 200) {
+    const { data, error } = await sb.from('inspections')
+      .select('serial_num, inspection_date')
+      .in('serial_num', list.slice(i, i + 200))
+      .eq('is_deleted', false);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+  }
+  return out;
+}
+
+async function signedIn() {
+  const sb = await getSupabase();
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) throw new Error('Not logged in — sign in first.');
+  return { sb, session };
+}
+
+ipcMain.handle('recover:list', async () => {
+  try {
+    const dir = getLogsDir();
+    const runs = pastImports.listRuns(dir);
+    const ledger = pastImports.readLedger(RECOVERED_FILE());
+    const { sb } = await signedIn();
+    const existing = await existingInspections(sb, runs.flatMap(r => r.serials || []));
+    return {
+      ok: true, dir,
+      runs: runs.map(r => {
+        if (r.unreadable) return { name: r.name, unreadable: true };
+        const p = pastImports.plan(r, existing);
+        return { name: r.name, startedAt: r.startedAt, date: r.date, total: r.total, counts: r.counts,
+                 imported: r.serials.length, todo: p.todo.length, already: p.already.length,
+                 recovered: ledger[r.name] || null };
+      }),
+    };
+  } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
+});
+
+ipcMain.handle('recover:record', async (_event, payload) => {
+  try {
+    const name = String(payload && payload.name || '');
+    const wo = String(payload && payload.workOrderId || '').trim();
+    // Only a run log's own name, in the logs folder — never a path.
+    if (!pastImports.runTime(name) || path.basename(name) !== name) return { ok: false, error: 'Not a run log.' };
+    if (!wo) return { ok: false, error: 'Type the work order this import went into.' };
+    if (wo.length > 64) return { ok: false, error: 'That work order number is too long (max 64 characters).' };
+
+    const run = pastImports.readRun(path.join(getLogsDir(), name));
+    if (!run || run.unreadable) return { ok: false, error: 'That run log could not be read.' };
+
+    const { sb, session } = await signedIn();
+    const p = pastImports.plan(run, await existingInspections(sb, run.serials));
+    if (!p.todo.length) return { ok: true, written: 0, failed: 0, already: p.already.length, errors: [] };
+
+    let techName = session.user.email || 'Lia Import';
+    try {
+      const { data } = await sb.rpc('get_my_profile');
+      const prof = typeof data === 'string' ? JSON.parse(data) : data;
+      if (prof && prof.name) techName = prof.name;
+    } catch {}
+    let ctx = null;
+    try {
+      const { data } = await sb.rpc('my_context');
+      ctx = typeof data === 'string' ? JSON.parse(data) : data;
+    } catch {}
+
+    const recs = pastImports.recordsFor(run, p.todo, wo, techName);
+    const res = await officeRecords.recordImport(sb, OUTBOX_FILE(), recs, ctx && ctx.account_id);
+    pastImports.markRecovered(RECOVERED_FILE(), name, {
+      work_order: wo, written: res.written, failed: res.failed, already: p.already.length,
+      account: (ctx && ctx.account_name) || null, at: new Date().toISOString(),
+    });
+    return { ok: true, written: res.written, failed: res.failed, already: p.already.length, errors: res.errors };
+  } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
+});
+
 // ── Importing what the field collected, without a CSV in the middle ────────
 // The merge screen could show a lead what his techs captured and then leave
 // him to ask them for a CSV and import that — a round trip through a phone,
