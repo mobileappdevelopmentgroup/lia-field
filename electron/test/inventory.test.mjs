@@ -75,7 +75,7 @@ await p.addInitScript(() => {
     fpListTypes: async () => ({ ok: true, types: [] }), fpListModels: async () => ({ ok: true, models: [] }),
     fieldList: async () => ({ ok: true, workOrders: [] }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
   };
 });

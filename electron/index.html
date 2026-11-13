@@ -5773,6 +5773,26 @@ window.api.onBillingWarning(msg => {
   appendLog(`[BILLING] The import completed, but recording the charge failed: ${msg}`);
 });
 
+// What reached the database. Until 1.15.8 this was never reported, and from
+// August no office import's ladders were saved without anybody seeing it.
+window.api.onRecords(res => {
+  if (!res) return;
+  if (res.crashed) {
+    appendLog(`[RECORDS] ⚠ Could not save the ladder records: ${res.crashed}. They will be retried after the next import.`);
+  } else if (res.expected === 0) {
+    appendLog('[RECORDS] ⚠ No serial numbers were found in this file, so no ladder records were saved.');
+  } else if (!res.failed) {
+    appendLog(`[RECORDS] Saved ${res.written} ladder record${res.written === 1 ? '' : 's'} — they now show on the certificate site.`);
+  } else {
+    appendLog(`[RECORDS] ⚠ Saved ${res.written} of ${res.expected} ladder records. ${res.failed} could not be saved: ` +
+              `${(res.errors || []).join('; ')}. They are kept on this computer and retried after each import.`);
+  }
+  const e = res.earlier;
+  if (e && e.written) appendLog(`[RECORDS] Also saved ${e.written} ladder record${e.written === 1 ? '' : 's'} left over from an earlier import.`);
+  if (e && e.stillFailing) appendLog(`[RECORDS] ⚠ ${e.stillFailing} record${e.stillFailing === 1 ? '' : 's'} from earlier imports still will not save: ${(e.errors || []).join('; ')}.`);
+  if (e && e.otherAccounts) appendLog(`[RECORDS] ${e.otherAccounts} record${e.otherAccounts === 1 ? '' : 's'} from earlier imports belong to another account and will save when you work in that account again.`);
+});
+
 window.api.onCreditError(msg => {
   hideEl('run-card');
   hide('log-section');

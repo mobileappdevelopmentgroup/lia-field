@@ -71,7 +71,7 @@ await p.addInitScript(([withResult, noResult, issued]) => {
     getContext: async () => ({ ok: true, ctx: { role: 'lead', account_name: 'Nate Dobbs', impersonating: true } }),
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
     openCsv: async () => '/Users/x/Desktop/' + window.__file + '.csv',
     fpHistoryParse: async () => parsed[window.__file],

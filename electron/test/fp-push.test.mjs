@@ -58,7 +58,7 @@ await p.addInitScript(({ pending }) => {
     onFpPushComplete: bind('complete'), onFpPushError: bind('error'), onFpPushExited: bind('exited'),
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
     mergeWorkOrders: async () => ({ ok: true, workOrders: [] }),

@@ -41,7 +41,7 @@ await p.addInitScript(() => {
     supportCounts: async () => ({ ok: true, counts: {} }),
     supportSubmit: async (t) => { window.__sent.push(t); return { ok: true, ticket: { id: 't1' } }; },
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     onFpPushLog(){}, onFpPushWaiting(){}, onFpPushPushed(){}, onFpPushComplete(){},
     onFpPushError(){}, onFpPushExited(){},
   };

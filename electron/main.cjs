@@ -8,6 +8,9 @@ const crypto = require('crypto');
 const { fork } = require('child_process');
 
 let mainWindow = null;
+// electron/test/import-complete.test.mjs runs this file outside Electron and
+// needs to hand it a window. Only defined under that test.
+if (process.env.LIA_MAIN_TEST === '1') globalThis.__liaSetMainWindow = (w) => { mainWindow = w; };
 let automationChild = null;
 
 // ── Shared CSV column logic ──────────────────────────────────────────────────
@@ -1247,36 +1250,11 @@ ipcMain.handle('fp:publish-checks', async (_event, modelId, checks) => {
 
 // ── IPC: automation lifecycle ─────────────────────────────────────────────────
 
-// Writes go through the record_inspections RPC rather than a direct upsert.
-// The RPC supersedes an existing record instead of overwriting it, and carries
-// forward any value this write omits — so a re-import can no longer blank out
-// notes a tech typed, and two techs on the same serial no longer erase each
-// other. See supabase/migrations/04_inspections_v2.sql.
-async function recordInspections(sb, rows, workOrderId, techName, source) {
-  const records = rows.map(row => {
-    const rec = { serial_num: row.serial, tech_name: techName, source: source || 'office' };
-    if (workOrderId) rec.work_order_id = workOrderId;
-    if (row.brand)   rec.brand  = row.brand;
-    if (row.type)    rec.type   = row.type;
-    if (row.length)  rec.length = row.length;
-    // inspection_date and next_due_date are left to the RPC: it defaults to
-    // today and today + 1 year.
-    if (row.inspection_date) rec.inspection_date = row.inspection_date;
-    if (row.next_due_date)   rec.next_due_date   = row.next_due_date;
-    if (row.notes)           rec.notes           = row.notes;
-    return rec;
-  });
-
-  let written = 0;
-  const errors = [];
-  for (let i = 0; i < records.length; i += 100) {
-    const batch = records.slice(i, i + 100);
-    const { data, error } = await sb.rpc('record_inspections', { p: batch });
-    if (error) errors.push(error.message);
-    else written += (data ?? batch.length);
-  }
-  return { written, errors };
-}
+// Writes go through record_inspections (supersedes, never overwrites — see
+// supabase/migrations/04_inspections_v2.sql). Everything about saving them —
+// retries, the outbox, reporting — is in office-records.cjs, which says why.
+const officeRecords = require('./office-records.cjs');
+const OUTBOX_FILE = () => path.join(app.getPath('userData'), 'pending-inspections.json');
 
 // ── Importing what the field collected, without a CSV in the middle ────────
 // The merge screen could show a lead what his techs captured and then leave
@@ -1345,7 +1323,11 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
   if (automationChild) { automationChild.kill(); automationChild = null; }
 
   // Populated in the Supabase block; used in the 'complete' handler to auto-log inspections
-  let _sb = null, _techName = 'Lia Import', _serials = [];
+  // Declared here, not where they are set: the 'complete' handler below reads
+  // them. `_billable` was once a const inside the try block, so the handler's
+  // reference threw, the JSON catch swallowed it, and from 2026-09-21 no
+  // import was charged or recorded (see office-records.cjs).
+  let _sb = null, _techName = 'Lia Import', _serials = [], _accountId = null, _billable = false;
 
   // Consume a credit if Supabase is configured
   const cfg = readConfig();
@@ -1361,6 +1343,15 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
         const _p = _prof ? (typeof _prof === 'string' ? JSON.parse(_prof) : _prof) : null;
         _techName = (_p?.name) || _sess.user.email || 'Lia Import';
       }
+
+      // The account these ladders will be recorded under — the subcontractor's
+      // while acting as one. Kept with anything that fails to save, so a retry
+      // goes to the same account (office-records.cjs).
+      try {
+        const { data: _ctx } = await _sb.rpc('my_context');
+        const _c = typeof _ctx === 'string' ? JSON.parse(_ctx) : _ctx;
+        _accountId = (_c && _c.account_id) || null;
+      } catch {}
 
       // Collect rows from the CSV now (file is still present at start time)
       try {
@@ -1394,7 +1385,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
       // made the FIRST blank import charge and every one after it free for
       // ever. So no work order means no work_orders row, no preflight and no
       // charge — not a shared one called "unknown".
-      const _billable = typeof workOrderId === 'string' && workOrderId.trim() !== '';
+      _billable = typeof workOrderId === 'string' && workOrderId.trim() !== '';
       const { data: pre, error } = _billable
         ? await _sb.rpc('preflight_work_order', { p_wo_number: workOrderId })
         : { data: null, error: null };
@@ -1448,9 +1439,13 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
     buffer = lines.pop() ?? '';
     for (const line of lines) {
       if (!line.trim()) continue;
+      // Only the parse is allowed to fail quietly — the runner prints the odd
+      // non-JSON line. A mistake in handling an event must be seen: this catch
+      // once hid a ReferenceError that stopped every charge and record.
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       try {
-        const event = JSON.parse(line);
-        if (!mainWindow || mainWindow.isDestroyed()) return;
         switch (event.type) {
           case 'log':               mainWindow.webContents.send('automation:log', event.message); break;
           case 'waiting-for-ready': mainWindow.webContents.send('automation:waiting-for-ready'); break;
@@ -1460,33 +1455,40 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             mainWindow.show();
             mainWindow.focus();
             app.focus({ steal: true });
-            // Charge and log only for a run that actually succeeded. This used
-            // to fire on every 'complete', so a failed or cancelled run still
-            // wrote inspection records for ladders that were never imported.
-            if (event.success && _sb && _billable) {
+            // Charge and record only for a run that actually succeeded — a
+            // failed or cancelled run must not leave records for ladders that
+            // never went in. The two are independent: a billing failure must
+            // not cost the records, and an import with no work order is not
+            // billed but its ladders are still recorded.
+            if (event.success && _sb) {
+              const send = (ch, v) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, v); };
+              if (_billable) {
+                (async () => {
+                  try {
+                    const { data, error } = await _sb.rpc('charge_work_order', {
+                      p_wo_number: workOrderId,
+                      p_scope: 'ladder',
+                    });
+                    if (error) throw new Error(error.message);
+                    send('automation:credit-ok', typeof data === 'string' ? JSON.parse(data) : data);
+                  } catch (err) {
+                    // The import already landed in BSI, so this is a billing
+                    // problem, not an import failure — say so rather than
+                    // implying the work was lost.
+                    send('automation:billing-warning', String(err));
+                  }
+                })();
+              }
               (async () => {
+                const out = { expected: _serials.length };
                 try {
-                  const { data, error } = await _sb.rpc('charge_work_order', {
-                    p_wo_number: workOrderId,
-                    p_scope: 'ladder',
-                  });
-                  if (error) throw new Error(error.message);
-                  const res = typeof data === 'string' ? JSON.parse(data) : data;
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('automation:credit-ok', res);
-                  }
+                  const recs = officeRecords.toRecords(_serials, workOrderId, _techName, 'office');
+                  Object.assign(out, await officeRecords.recordImport(_sb, OUTBOX_FILE(), recs, _accountId));
+                  out.earlier = await officeRecords.flushOutbox(_sb, OUTBOX_FILE(), _accountId);
                 } catch (err) {
-                  // The import already landed in BSI, so this is a billing
-                  // problem, not an import failure — say so rather than
-                  // implying the work was lost.
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('automation:billing-warning', String(err));
-                  }
+                  out.crashed = String(err && err.message || err);
                 }
-                if (_serials.length > 0) {
-                  await recordInspections(_sb, _serials, workOrderId, _techName, 'office')
-                    .catch(() => {});
-                }
+                send('automation:records', out);
               })();
             }
             break;
@@ -1494,7 +1496,11 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
           case 'paused':            mainWindow.webContents.send('automation:paused');  break;
           case 'resumed':           mainWindow.webContents.send('automation:resumed'); break;
         }
-      } catch { /* ignore non-JSON */ }
+      } catch (err) {
+        console.error('[automation] handling', event && event.type, err);
+        mainWindow.webContents.send('automation:log',
+          `[LIA] ⚠ Internal error after "${event && event.type}": ${err && err.message || err}`);
+      }
     }
   });
 

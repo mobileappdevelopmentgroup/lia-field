@@ -95,7 +95,7 @@ await p.addInitScript(({ umbrella }) => {
     listSubs: async () => ({ ok: true, subs: window.__subs }),
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     onFpPushLog(){}, onFpPushWaiting(){}, onFpPushPushed(){}, onFpPushComplete(){},
     onFpPushError(){}, onFpPushExited(){},
     loadHistory: async () => ({ ok: true, groups: [] }),

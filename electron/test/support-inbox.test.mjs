@@ -73,7 +73,7 @@ async function boot(isDeveloper) {
       supportSetStatus: async (id, s) => { window.__calls.push(['status', id, s]); return { ok: true }; },
       supportMarkRead: async (id) => { window.__calls.push(['read', id]); return { ok: true }; },
       onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-      onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+      onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
       loadHistory: async () => ({ ok: true, groups: [] }),
       fpListModels: async () => ({ ok: true, models: [] }),
       mergeWorkOrders: async () => ({ ok: true, workOrders: [] }),

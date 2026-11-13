@@ -155,6 +155,7 @@ contextBridge.exposeInMainWorld('api', {
   onCreditOk:        (cb) => on('automation:credit-ok',         (_e, res)    => cb(res)),
   onPreflight:       (cb) => on('automation:preflight',          (_e, res)    => cb(res)),
   onBillingWarning:  (cb) => on('automation:billing-warning',    (_e, msg)    => cb(msg)),
+  onRecords:         (cb) => on('automation:records',           (_e, res)    => cb(res)),
   onCreditError:     (cb) => on('automation:credit-error',      (_e, msg)    => cb(msg)),
   onPaused:          (cb) => on('automation:paused',            ()           => cb()),
   onResumed:         (cb) => on('automation:resumed',           ()           => cb()),

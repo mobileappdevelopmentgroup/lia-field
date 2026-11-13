@@ -1,0 +1,137 @@
+// The end of a Lia Office ladder import, run through the real electron/main.cjs.
+//
+// From 2026-09-21 the 'complete' handler read `_billable`, a const declared
+// inside a try block it could not see. The ReferenceError was swallowed by a
+// catch meant for non-JSON lines, so no import was charged or recorded, and
+// nothing on screen said so. Unit tests of the helpers could not have caught
+// it — this loads main.cjs itself with Electron, the runner process and
+// Supabase faked, plays a finished run into it, and checks what reached the
+// "server" and what the screen was told.
+//
+// Pure Node: `node electron/test/import-complete.test.mjs`.
+import { createRequire, register } from 'module';
+import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+let fails = 0;
+const ok = (l, g, w) => { const good = JSON.stringify(g) === JSON.stringify(w); if (!good) fails++;
+  console.log((good ? 'ok  ' : `FAIL ${l}: want ${JSON.stringify(w)} got ${JSON.stringify(g)} — `) + l); };
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lia-complete-'));
+const csv = path.join(tmp, 'wo.csv');
+fs.writeFileSync(csv, 'Row#,Serial #,Location ID,Brand,Type,Length,Description\n' +
+                      '1,1509436,1,LG,Ext,28,\n2,1669421,1,LG,Ext,28,\n');
+
+// ── The fake server ──────────────────────────────────────────────────────────
+const calls = [];
+globalThis.__liaFakeSb = {
+  auth: {
+    getSession: async () => ({ data: { session: { user: { email: 'nate@example.com' } } } }),
+    setSession: async () => ({ data: {}, error: null }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+  },
+  async rpc(name, args) {
+    calls.push([name, args]);
+    if (name === 'get_my_profile') return { data: { name: 'Nate Dobbs' }, error: null };
+    if (name === 'my_context') return { data: { account_id: 'acct-nate' }, error: null };
+    if (name === 'preflight_work_order') return { data: { can_run: true, credits: -1 }, error: null };
+    if (name === 'charge_work_order') return { data: { charged: true, credits: -1 }, error: null };
+    if (name === 'record_inspections') return { data: args.p.length, error: null };
+    return { data: null, error: null };
+  },
+  from() { return { select() { return this; }, eq() { return this; }, maybeSingle: async () => ({ data: null }) }; },
+};
+// getSupabase() does `await import('@supabase/supabase-js')`; send that here.
+register('data:text/javascript,' + encodeURIComponent(`
+  export async function resolve(spec, ctx, next) {
+    if (spec === '@supabase/supabase-js')
+      return { url: 'data:text/javascript,export const createClient = () => globalThis.__liaFakeSb;', shortCircuit: true };
+    return next(spec, ctx);
+  }`), pathToFileURL(HERE + '/'));
+
+// ── Fake Electron and a fake runner process ─────────────────────────────────
+const handlers = {};
+const sent = [];
+const win = {
+  isDestroyed: () => false, show() {}, focus() {}, loadFile() {}, on() {}, once() {},
+  webContents: { send: (ch, v) => sent.push([ch, v]), on() {}, setZoomFactor() {}, getZoomFactor: () => 1 },
+};
+const anything = () => new Proxy(function () {}, {
+  get: (t, k) => (k === 'then' ? undefined : anything()),
+  apply: () => anything(),
+  construct: () => anything(),
+});
+const electron = {
+  app: new Proxy({
+    getPath: () => tmp, isPackaged: false, whenReady: () => new Promise(() => {}),
+    on() {}, focus() {}, getVersion: () => 'test',
+  }, { get: (t, k) => (k in t ? t[k] : anything()) }),
+  ipcMain: { on: (ch, fn) => { handlers[ch] = fn; }, handle: (ch, fn) => { handlers[ch] = fn; }, removeHandler() {} },
+  BrowserWindow: anything(), dialog: anything(), session: anything(), shell: anything(),
+  Menu: anything(), nativeTheme: anything(),
+};
+let child;
+const Module = require('module');
+const realLoad = Module._load;
+Module._load = function (req, parent, isMain) {
+  if (req === 'electron') return electron;
+  if (req === 'child_process') return { fork: () => {
+    child = new EventEmitter();
+    child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.stdin = { write() {} }; child.kill = () => {};
+    return child;
+  } };
+  return realLoad.apply(this, arguments);
+};
+
+process.env.LIA_MAIN_TEST = '1';
+process.resourcesPath = tmp;   // Electron sets this; plain Node does not
+require(path.join(HERE, '..', 'main.cjs'));
+Module._load = realLoad;
+
+// main only talks to the window it created; give it ours.
+const mainSrc = fs.readFileSync(path.join(HERE, '..', 'main.cjs'), 'utf8');
+ok('main keeps its window in `mainWindow`', /let mainWindow\b/.test(mainSrc), true);
+
+// ── Play a run ───────────────────────────────────────────────────────────────
+async function playRun(workOrderId, success) {
+  calls.length = 0; sent.length = 0; child = null;
+  await handlers['automation:start']({ sender: win.webContents }, csv, workOrderId);
+  for (let i = 0; i < 50 && !child; i++) await new Promise(r => setTimeout(r, 10));
+  if (!child) throw new Error('the runner was never started');
+  child.stdout.emit('data', Buffer.from('not json at all\n'));
+  child.stdout.emit('data', Buffer.from(JSON.stringify({ type: 'complete', success }) + '\n'));
+  for (let i = 0; i < 100 && !sent.some(s => s[0] === 'automation:records') && success; i++)
+    await new Promise(r => setTimeout(r, 10));
+}
+
+// main.cjs sets mainWindow when the app is ready, which this harness never
+// is. The handler checks it before sending, so hand it the fake window
+// through the one hook main exposes for tests.
+if (typeof globalThis.__liaSetMainWindow === 'function') globalThis.__liaSetMainWindow(win);
+else { console.log('FAIL main.cjs does not expose __liaSetMainWindow for tests'); fails++; }
+
+await playRun('98378', true);
+const names = () => calls.map(c => c[0]);
+ok('a finished import is charged', names().includes('charge_work_order'), true);
+ok('and its ladders are recorded', names().includes('record_inspections'), true);
+const recs = (calls.find(c => c[0] === 'record_inspections') || [, { p: [] }])[1].p;
+ok('both ladders, on that work order', recs.map(r => [r.serial_num, r.work_order_id]),
+   [['1509436', '98378'], ['1669421', '98378']]);
+const rec = sent.find(s => s[0] === 'automation:records');
+ok('the screen is told what was saved', rec && [rec[1].written, rec[1].failed], [2, 0]);
+ok('no internal error was reported',
+   sent.filter(s => s[0] === 'automation:log' && /Internal error/.test(s[1])).map(s => s[1]), []);
+
+await playRun('98379', false);
+ok('a failed import is neither charged nor recorded',
+   names().filter(n => n === 'charge_work_order' || n === 'record_inspections'), []);
+
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log(fails ? `\n${fails} FAILED` : '\nAll import-complete assertions passed.');
+process.exit(fails ? 1 : 0);

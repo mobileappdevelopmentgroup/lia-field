@@ -65,7 +65,7 @@ await p.addInitScript(({ jobs, team }) => {
     jobsDelete: async (pl) => { window.__calls.push(['del', pl]); return { ok: true, result: 1 }; },
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     onFpPushLog(){}, onFpPushWaiting(){}, onFpPushPushed(){}, onFpPushComplete(){},
     onFpPushError(){}, onFpPushExited(){},
     loadHistory: async () => ({ ok: true, groups: [] }),

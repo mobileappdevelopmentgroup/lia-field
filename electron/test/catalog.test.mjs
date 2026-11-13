@@ -79,7 +79,7 @@ await p.addInitScript(() => {
     fpSaveModel: async (m) => { if (!m.id) { m.id = 'm3'; models.push(m); } return { ok: true, id: m.id }; },
     fpPublishChecks: async (id, checks) => { window.__published.push({ id, checks }); return { ok: true, version: 4 }; },
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
   };
 });

@@ -65,7 +65,7 @@ await p.addInitScript((m) => {
     ]}),
     mergePull: async () => ({ ok: true, merge: m, pulled: 9 }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
   };

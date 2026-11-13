@@ -65,7 +65,7 @@ await p.addInitScript((summary) => {
     viewsMyNetwork: async () => ({ ok: true, network: { suggested_cidr: '203.0.113.0/24' } }),
     supportAmIDeveloper: async () => ({ ok: true, developer: false }),
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
     mergeWorkOrders: async () => ({ ok: true, workOrders: [] }),

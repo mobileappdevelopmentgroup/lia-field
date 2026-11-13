@@ -107,7 +107,7 @@ await p.addInitScript((d) => {
     mergePull: async () => ({ ok: true, merge: d.MERGE, pulled: 2 }),
     mergeToCsv: async (p) => { window.__calls.push({ fn: 'mergeToCsv', p }); return { ok: true, path: '/tmp/x.csv', rows: 2 }; },
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
-    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onCreditError(){}, onPaused(){}, onResumed(){},
+    onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
     fpListModels: async () => ({ ok: true, models: [] }),
   };
