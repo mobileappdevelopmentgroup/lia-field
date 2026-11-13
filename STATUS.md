@@ -229,6 +229,21 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.9 — 2026-11-13. Lia Office only.** Mac DMGs arm64 + x64, signed not
+notarized; Windows from CI run `43449791566` (64/64 on Windows), unsigned.
+Commit `ccfee22`. Bundles in `lia-deliverables/1.15.9/`. No migration.
+Supersedes 1.15.8 — hand out this one.
+- **Advanced → Recover Past Imports** (`electron/past-imports.cjs`): reads the
+  run logs in `~/Documents/Lia Logs` on the computer that did the imports and
+  records the ladders whose box went into BSI but never reached the database.
+  The office types each run's work order; ladders are dated the local day of
+  the run, a ladder already recorded that day is skipped, source
+  `office:recovered`, saved into the account being worked in (act as the
+  subcontractor first for their imports). Must be run on **every** computer
+  that has done imports. Nate's 11 charged-but-empty work orders (98378, 98419,
+  98432, 98539, 98549, 98552, 98668, 98742, 98763, 98764, 98927) are the
+  known targets.
+
 **1.15.8 — 2026-11-13. Lia Office only** (phone stays 1.15.6; the N/A-serial
 refusal in `3ac8c3e` ships with the next phone build). Mac DMGs arm64 + x64,
 signed not notarized; Windows from CI run `43445804694` (64/64 tests on
