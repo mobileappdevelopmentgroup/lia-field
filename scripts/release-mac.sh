@@ -34,8 +34,12 @@ npm run build:all
 npx electron-builder --mac --publish always
 
 for app in dist/mac-arm64/Lia.app dist/mac/Lia.app; do
-  codesign -dv --verbose=2 "$app" 2>&1 | grep -q 'Authority=Developer ID Application' || die "$app is not Developer ID signed."
-  spctl -a -t exec -vv "$app" 2>&1 | grep -q 'source=Notarized Developer ID' || die "$app is not notarized."
+  # Captured first: `cmd | grep -q` under pipefail fails when grep stops
+  # reading early and the command dies of SIGPIPE (it flagged a good build).
+  sig=$(codesign -dv --verbose=2 "$app" 2>&1 || true)
+  gk=$(spctl -a -t exec -vv "$app" 2>&1 || true)
+  grep -q 'Authority=Developer ID Application' <<<"$sig" || die "$app is not Developer ID signed."
+  grep -q 'source=Notarized Developer ID' <<<"$gk" || die "$app is not notarized."
   echo "✓ $app — Developer ID, notarized"
 done
 

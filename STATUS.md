@@ -229,6 +229,15 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.11 — 2026-11-13. Lia Office only — automatic updates.** Published as
+GitHub release `v1.15.11` (commit `42cb7ea`): Mac DMG + zip arm64 and x64,
+**Developer ID signed and notarized** (first time; was Apple Distribution);
+Windows from CI run `43555385793`, unsigned. Copies in
+`lia-deliverables/1.15.11/`. No migration. **The last hand install** — from
+here offices update themselves (`electron/updater.cjs`; how to release is
+docs/RELEASE.md, *Automatic updates*). Developer ID cert expires 2027-12-14;
+a renewal from the same team still satisfies Squirrel.
+
 **1.15.10 — 2026-11-13. Lia Office only.** Mac DMGs arm64 + x64, signed not
 notarized; Windows from CI run `43552919143`, unsigned. Commit `69ed9bd`.
 Bundles in `lia-deliverables/1.15.10/`. No migration. Supersedes 1.15.9.
