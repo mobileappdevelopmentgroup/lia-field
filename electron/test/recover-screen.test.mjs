@@ -47,6 +47,9 @@ await p.addInitScript(() => {
     onLog(){}, onWaitingForReady(){}, onDiff(){}, onComplete(){}, onError(){}, onExited(){},
     onCreditOk(){}, onPreflight(){}, onBillingWarning(){}, onRecords(){}, onCreditError(){}, onPaused(){}, onResumed(){},
     loadHistory: async () => ({ ok: true, groups: [] }),
+    onUpdateReady(cb) { window.__updateReady = cb; },
+    updateStatus: async () => ({ enabled: true, ready: null }),
+    updateInstall: async () => ({ ok: false, error: 'An import is running — Lia will update when it is finished and closed.' }),
     recoverList: async () => ({ ok: true, dir: '/Users/nate/Documents/Lia Logs', runs: window.__runs }),
     recoverRecord: async (payload) => {
       window.__sent.push(payload);
@@ -88,6 +91,16 @@ ok('with one, that run is sent under it', await p.evaluate(() => window.__sent),
 ok('and it then shows as on record, with its work order',
    await p.$eval('#recover-body tr', tr => /On record/.test(tr.textContent) && /WO 98927/.test(tr.textContent)), true);
 ok('nothing left to record', await p.$eval('#recover-msg', e => e.textContent.trim()).then(t => /Every import/.test(t)), true);
+
+// ── The update banner ────────────────────────────────────────────────────────
+ok('no update, no banner', await p.$eval('#update-banner', e => e.style.display), 'none');
+await p.evaluate(() => window.__updateReady({ version: '1.15.12' }));
+ok('a downloaded update is offered, naming the version',
+   await p.$eval('#update-banner', e => e.style.display !== 'none' && /Lia 1\.15\.12/.test(e.textContent)), true);
+await p.click('#btn-update-now'); await p.waitForTimeout(150);
+ok('a refused restart says why', await p.$eval('#update-out', e => e.textContent), 'An import is running — Lia will update when it is finished and closed.');
+await p.click('#btn-update-later');
+ok('Later puts it away', await p.$eval('#update-banner', e => e.style.display), 'none');
 
 ok('no page errors', errs, []);
 await b.close(); server.close();

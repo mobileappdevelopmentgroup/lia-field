@@ -188,10 +188,32 @@ app.whenReady().then(() => {
   nativeTheme.themeSource = display.theme;
   buildMenu();
   createWindow();
+  startUpdater();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// ── Automatic updates (electron/updater.cjs) ────────────────────────────────
+// Loaded inside a try: a missing or broken updater must not stop Lia starting.
+let updater = null;
+function startUpdater() {
+  try {
+    const { autoUpdater } = require('electron-updater');
+    updater = require('./updater.cjs').createUpdater({
+      autoUpdater, app,
+      isBusy: () => !!automationChild || !!fpChild,
+      send: (ch, v) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ch, v); },
+      log: (m) => console.log(m),
+    });
+    updater.start();
+  } catch (err) {
+    console.error('[updater] not started:', err);
+    updater = null;
+  }
+}
+ipcMain.handle('update:status', () => (updater ? updater.status() : { enabled: false }));
+ipcMain.handle('update:install', () => (updater ? updater.install() : { ok: false, error: 'Updates are not available in this copy of Lia.' }));
 
 app.on('window-all-closed', () => {
   if (automationChild) { automationChild.kill(); automationChild = null; }

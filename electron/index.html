@@ -858,6 +858,18 @@
   </div>
 </div>
 
+<!-- A downloaded update waiting to install (electron/updater.cjs). Hidden until then. -->
+<div id="update-banner" role="status" style="display:none;position:fixed;right:16px;bottom:16px;z-index:900;
+     max-width:420px;background:var(--surf2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;
+     font-size:12.5px;box-shadow:0 6px 24px rgba(0,0,0,.25);">
+  <div id="update-text" style="margin-bottom:8px;"></div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="btn-ok" id="btn-update-now" style="padding:5px 12px;font-size:12px;">Restart now</button>
+    <button class="btn-g" id="btn-update-later" style="padding:5px 12px;font-size:12px;">Later</button>
+    <span id="update-out" style="color:var(--muted);font-size:11.5px;"></span>
+  </div>
+</div>
+
 <!-- Whose account am I working in. Hidden unless it is somebody else's. -->
 <div id="ctx-banner">
   <span id="ctx-text"></span>
@@ -6733,6 +6745,36 @@ async function loadHistory() {
     body.appendChild(div);
   });
 }
+
+// ════════════════════════════════════════════════════════════════
+// Automatic updates (1.15.11)
+// ════════════════════════════════════════════════════════════════
+// Main downloads updates by itself and installs them when Lia is quit. This
+// only offers to do it now. Any failure leaves the app exactly as it was.
+function showUpdateReady(info) {
+  try {
+    const b = $('update-banner');
+    if (!b || !info || !info.version) return;
+    $('update-text').innerHTML = `<strong>Lia ${esc(info.version)}</strong> is ready. ` +
+      `It installs the next time Lia is closed, or restart now.`;
+    $('update-out').textContent = '';
+    b.style.display = 'block';
+  } catch (err) { console.warn('[update]', err); }
+}
+try {
+  if (typeof window.api.onUpdateReady === 'function') window.api.onUpdateReady(showUpdateReady);
+  if (typeof window.api.updateStatus === 'function') {
+    window.api.updateStatus().then(st => { if (st && st.ready) showUpdateReady({ version: st.ready }); })
+      .catch(err => console.warn('[update]', err));
+  }
+  $('btn-update-later').addEventListener('click', () => { $('update-banner').style.display = 'none'; });
+  $('btn-update-now').addEventListener('click', async () => {
+    try {
+      const res = await window.api.updateInstall();
+      if (!res || !res.ok) $('update-out').textContent = (res && res.error) || 'Could not restart.';
+    } catch (err) { $('update-out').textContent = 'Could not restart.'; }
+  });
+} catch (err) { console.warn('[update]', err); }
 </script>
 
 </body>

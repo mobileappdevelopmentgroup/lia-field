@@ -237,6 +237,9 @@ globalThis.__liaCtxError = null;
 auto = await handlers['recover:auto']();
 ok('and the next one runs normally', auto.ok, true);
 
+ok('an unpackaged app has no updater, and says so without failing',
+   [await handlers['update:status'](), (await handlers['update:install']()).ok], [{ enabled: false }, false]);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} FAILED` : '\nAll import-complete assertions passed.');
 process.exit(fails ? 1 : 0);

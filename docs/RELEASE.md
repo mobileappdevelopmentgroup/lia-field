@@ -173,6 +173,43 @@ at the root of this repo — the `.aab`, the `.ipa`, the DMGs, the Windows
 installer. It is gitignored. It replaced `~/Desktop/Lia-Deliverables/` on
 2026-09-29 so the builds sit beside the code they came from, in one place.
 
+## Automatic updates (Lia Office 1.15.11+)
+
+From 1.15.11 Lia Office updates itself (`electron/updater.cjs`). It checks
+GitHub Releases on `mobileappdevelopmentgroup/lia-field` 15 s after launch and
+every 4 h, downloads in the background (sha512-checked), and installs when Lia
+is next quit, or at once if the office presses **Restart now** (refused during
+an import). Offices on 1.15.10 or older must install 1.15.11 by hand, once.
+
+**A release is a DRAFT until you publish it**, and the updater cannot see a
+draft. So nothing reaches an office until both builds are in and checked.
+
+```bash
+# 1. bump package.json, commit, push (org account), then tag that commit:
+git tag v1.15.12 && git push origin v1.15.12
+#    → the tag push runs the Windows CI build, which uploads to the draft.
+# 2. Mac: signs (Developer ID), notarizes (ASC API key), uploads to the draft,
+#    and refuses if the cert is missing or the tag is not HEAD:
+npm run release:mac
+# 3. check the draft has both latest.yml and latest-mac.yml, then roll out:
+gh release view v1.15.12
+gh release edit v1.15.12 --draft=false --latest
+```
+
+**Never publish a Mac build signed with anything but Developer ID.** Squirrel
+only installs an update signed like the running app, so the identity the first
+updater build carried is the one every later build must carry. `release-mac.sh`
+checks for it; `npm run electron:build` alone would fall back to the App Store
+"Apple Distribution" identity.
+
+The Developer ID Application certificate can only be created by the Account
+Holder, in the web portal (the API answers 403). Its private key is
+`~/.lia-signing/devid.key` (mode 600, never in a repo); `devid.csr` beside it is
+the request to upload.
+
+To pull a bad release: `gh release edit vX --draft=true` stops new downloads at
+once; offices that already have it need a higher version published over it.
+
 ## 6. macOS → DMG
 
 ```bash

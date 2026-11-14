@@ -14,6 +14,15 @@ on:
         description: 'Branch or tag to build'
         required: false
         default: 'master'
+      publish:
+        description: 'Upload to the draft GitHub release v<version> (automatic updates)'
+        type: boolean
+        required: false
+        default: false
+
+# Publishing uploads to a release on this repo.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -89,7 +98,18 @@ jobs:
           if [ -z "$CSC_LINK" ]; then
             echo "::warning::No signing certificate configured — installer will be UNSIGNED and will trigger a SmartScreen warning."
           fi
-          npm run electron:build:win
+          # A pushed v* tag, or a manual run with publish ticked, uploads the
+          # installer and latest.yml to the DRAFT release for that version.
+          # Offices only see it once the draft is published by hand. Anything
+          # else must never publish: with a publish config and GH_TOKEN set,
+          # electron-builder would otherwise decide for itself.
+          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ github.event.inputs.publish }}" = "true" ]; then
+            npm run build:all
+            npx electron-builder --win nsis --publish always
+          else
+            npm run build:all
+            npx electron-builder --win nsis --publish never
+          fi
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
