@@ -229,6 +229,32 @@ claim tags that were never written. On iOS a dismissed or refused write now
 says so at once instead of hanging for a minute. That last fix is on iOS only;
 Android 12 carries the same JS without it, which changes nothing on Android.
 
+**1.15.10 — 2026-11-13. Lia Office only.** Mac DMGs arm64 + x64, signed not
+notarized; Windows from CI run `43552919143`, unsigned. Commit `69ed9bd`.
+Bundles in `lia-deliverables/1.15.10/`. No migration. Supersedes 1.15.9.
+- **Import logs are checked against the database automatically** (`recover:auto`
+  in `electron/main.cjs`, rules in `past-imports.decide()`): every time the
+  office loads its account (launch, sign-in, act-as on/off) the run logs on that
+  computer are compared with the database and missing ladders are recorded, no
+  clicks. Each log now carries `lia: {workOrderId, accountId, accountName,
+  techName}` (passed to the runner as `LIA_RUN_META`), so new logs recover in
+  full, into the account they name only.
+- **Older logs** (no work order in them): recorded with a **blank work order**
+  (user's decision, 2026-11-13; fill it in later in Field Work), only from
+  2026-08-25 on (`AUTO_FROM`), and never into an umbrella account (Batavia's
+  logs could be any subcontractor's). Those wait on Recover Past Imports.
+- A record of the ladder within a day of the run counts as already there,
+  **deleted ones included**: the test imports removed 2026-11-12 do not come
+  back. The Recover screen uses the same rule.
+- Fails quietly by design: stands aside while an import runs, times out after
+  two minutes, and a failure is one console line. Outbox and ledger writes
+  are serialized (`serially()`).
+
+**Lia Field 1.15.9 — 2026-11-13.** iOS **build 24** (TestFlight internal; added
+to external **Devs** and submitted, `WAITING_FOR_BETA_REVIEW`), Android
+**versionCode 23** (Play internal). Commit `47d96c7`. Bundles in
+`lia-deliverables/1.15.9/phone/`. Carries the N/A-serial refusal (`3ac8c3e`).
+
 **1.15.9 — 2026-11-13. Lia Office only.** Mac DMGs arm64 + x64, signed not
 notarized; Windows from CI run `43449791566` (64/64 on Windows), unsigned.
 Commit `ccfee22`. Bundles in `lia-deliverables/1.15.9/`. No migration.
