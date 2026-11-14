@@ -1264,16 +1264,27 @@ const OUTBOX_FILE = () => path.join(app.getPath('userData'), 'pending-inspection
 const pastImports = require('./past-imports.cjs');
 const RECOVERED_FILE = () => path.join(app.getPath('userData'), 'recovered-runs.json');
 
-// Which of these serials already have a record, and on what date. Read
-// through RLS, so it sees what the office may see.
+// One writer at a time for the outbox and the recovered-runs ledger: both are
+// read, changed and written back, and an import finishing while the automatic
+// check runs would otherwise lose one side's entries. A failure in one job
+// never blocks the next.
+let _serialTail = Promise.resolve();
+function serially(fn) {
+  const run = _serialTail.then(fn, fn);
+  _serialTail = run.catch(() => {});
+  return run;
+}
+
+// Which of these serials have a record, and on what date — deleted ones too,
+// so a record somebody removed is not put back. Read through RLS, so it sees
+// what the office may see.
 async function existingInspections(sb, serials) {
   const out = [];
   const list = [...new Set(serials)];
   for (let i = 0; i < list.length; i += 200) {
     const { data, error } = await sb.from('inspections')
       .select('serial_num, inspection_date')
-      .in('serial_num', list.slice(i, i + 200))
-      .eq('is_deleted', false);
+      .in('serial_num', list.slice(i, i + 200));
     if (error) throw new Error(error.message);
     out.push(...(data || []));
   }
@@ -1301,6 +1312,7 @@ ipcMain.handle('recover:list', async () => {
         const p = pastImports.plan(r, existing);
         return { name: r.name, startedAt: r.startedAt, date: r.date, total: r.total, counts: r.counts,
                  imported: r.serials.length, todo: p.todo.length, already: p.already.length,
+                 workOrderId: r.meta ? r.meta.workOrderId : null,
                  recovered: ledger[r.name] || null };
       }),
     };
@@ -1336,13 +1348,97 @@ ipcMain.handle('recover:record', async (_event, payload) => {
     } catch {}
 
     const recs = pastImports.recordsFor(run, p.todo, wo, techName);
-    const res = await officeRecords.recordImport(sb, OUTBOX_FILE(), recs, ctx && ctx.account_id);
-    pastImports.markRecovered(RECOVERED_FILE(), name, {
-      work_order: wo, written: res.written, failed: res.failed, already: p.already.length,
-      account: (ctx && ctx.account_name) || null, at: new Date().toISOString(),
+    const res = await serially(async () => {
+      const r = await officeRecords.recordImport(sb, OUTBOX_FILE(), recs, ctx && ctx.account_id);
+      pastImports.markRecovered(RECOVERED_FILE(), name, {
+        work_order: wo, written: r.written, failed: r.failed, already: p.already.length,
+        account: (ctx && ctx.account_name) || null, at: new Date().toISOString(),
+      });
+      return r;
     });
     return { ok: true, written: res.written, failed: res.failed, already: p.already.length, errors: res.errors };
   } catch (err) { return { ok: false, error: String(err && err.message || err) }; }
+});
+
+// ── The automatic check ─────────────────────────────────────────────────────
+// Every time the renderer loads the account (launch, sign-in, acting as
+// somebody or stopping), the run logs on this computer are compared with the
+// database and whatever went into BSI but is not on record is recorded —
+// nobody presses anything. past-imports.decide() says which runs it may
+// touch; the rest wait on the Recover screen.
+//
+// It must never get in the way: it runs after the window is up, does nothing
+// while an import is running, gives up after two minutes, and every failure
+// ends as { ok: false, error } and a console line. The ledger keeps a run it
+// has settled from being read against the database again.
+const AUTO_TIMEOUT_MS = 120000;
+let _autoRunning = null;
+
+async function autoRecover() {
+  if (automationChild) return { ok: true, skipped: 'import running' };
+  const sb = await getSupabase();
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return { ok: true, skipped: 'signed out' };
+  const { data, error } = await sb.rpc('my_context');
+  if (error) throw new Error(error.message);
+  const ctx = typeof data === 'string' ? JSON.parse(data) : data;
+
+  const ledger = pastImports.readLedger(RECOVERED_FILE());
+  const runs = pastImports.listRuns(getLogsDir())
+    .filter(r => !r.unreadable && r.serials.length)
+    .filter(r => !(ledger[r.name] && !ledger[r.name].failed))
+    .map(r => ({ run: r, d: pastImports.decide(r, ctx) }));
+  const out = { ok: true, checked: runs.length, runs: 0, written: 0, failed: 0, waiting: 0, errors: [] };
+  const go = runs.filter(x => x.d.go);
+  out.waiting = runs.length - go.length;
+  if (!go.length) return out;
+
+  let techName = session.user.email || 'Lia Import';
+  try {
+    const { data: prof } = await sb.rpc('get_my_profile');
+    const p = typeof prof === 'string' ? JSON.parse(prof) : prof;
+    if (p && p.name) techName = p.name;
+  } catch {}
+
+  const existing = await existingInspections(sb, go.flatMap(x => x.run.serials));
+  for (const { run, d } of go) {
+    if (automationChild) break;                    // an import started; stop here
+    const p = pastImports.plan(run, existing);
+    const who = (run.meta && run.meta.techName) || techName;
+    await serially(async () => {
+      let r = { written: 0, failed: 0, errors: [] };
+      if (p.todo.length) {
+        r = await officeRecords.recordImport(sb, OUTBOX_FILE(),
+          pastImports.recordsFor(run, p.todo, d.workOrderId, who), ctx.account_id);
+        out.runs++; out.written += r.written; out.failed += r.failed; out.errors.push(...(r.errors || []));
+      }
+      pastImports.markRecovered(RECOVERED_FILE(), run.name, {
+        work_order: d.workOrderId, written: r.written, failed: r.failed, already: p.already.length,
+        account: ctx.account_name || null, auto: true, at: new Date().toISOString(),
+      });
+    });
+  }
+  return out;
+}
+
+ipcMain.handle('recover:auto', async () => {
+  if (_autoRunning) return { ok: true, skipped: 'already running' };
+  let timer;
+  _autoRunning = Promise.race([
+    autoRecover(),
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('timed out')), AUTO_TIMEOUT_MS); }),
+  ]);
+  try {
+    const res = await _autoRunning;
+    if (res.written || res.failed) console.log('[recover:auto]', JSON.stringify(res));
+    return res;
+  } catch (err) {
+    console.error('[recover:auto] failed:', err);
+    return { ok: false, error: String(err && err.message || err) };
+  } finally {
+    clearTimeout(timer);
+    _autoRunning = null;
+  }
 });
 
 // ── Importing what the field collected, without a CSV in the middle ────────
@@ -1416,7 +1512,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
   // them. `_billable` was once a const inside the try block, so the handler's
   // reference threw, the JSON catch swallowed it, and from 2026-09-21 no
   // import was charged or recorded (see office-records.cjs).
-  let _sb = null, _techName = 'Lia Import', _serials = [], _accountId = null, _billable = false;
+  let _sb = null, _techName = 'Lia Import', _serials = [], _accountId = null, _accountName = null, _billable = false;
 
   // Consume a credit if Supabase is configured
   const cfg = readConfig();
@@ -1440,6 +1536,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
         const { data: _ctx } = await _sb.rpc('my_context');
         const _c = typeof _ctx === 'string' ? JSON.parse(_ctx) : _ctx;
         _accountId = (_c && _c.account_id) || null;
+        _accountName = (_c && _c.account_name) || null;
       } catch {}
 
       // Collect rows from the CSV now (file is still present at start time)
@@ -1517,6 +1614,12 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
       PLAYWRIGHT_BROWSERS_PATH: getPlaywrightBrowsersPath(),
       BATAVIA_LOGS_DIR: getLogsDir(),
       NODE_PATH: nodePath,
+      // Saved in the run log, so the import can be checked against the
+      // database later without anyone retyping it (past-imports.cjs).
+      LIA_RUN_META: JSON.stringify({
+        workOrderId: typeof workOrderId === 'string' ? workOrderId.trim() : '',
+        accountId: _accountId, accountName: _accountName, techName: _techName,
+      }),
     },
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
@@ -1568,7 +1671,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
                   }
                 })();
               }
-              (async () => {
+              serially(async () => {
                 const out = { expected: _serials.length };
                 try {
                   const recs = officeRecords.toRecords(_serials, workOrderId, _techName, 'office');
@@ -1578,7 +1681,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
                   out.crashed = String(err && err.message || err);
                 }
                 send('automation:records', out);
-              })();
+              });
             }
             break;
           case 'error':             mainWindow.webContents.send('automation:error', event.message); break;

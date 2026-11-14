@@ -60,6 +60,34 @@ ok('recorded on the run\'s day, the typed work order, marked as recovered',
    recs.map(x => [x.serial_num, x.inspection_date, x.work_order_id, x.source, x.tech_name]),
    [['1669421', r.date, '98742', 'office:recovered', 'Nate Dobbs']]);
 
+// ── Within a day, and deleted ones count ────────────────────────────────────
+const shift = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+ok('a record the day before or after counts (an older Lia dated imports in UTC); two days off does not',
+   P.plan(r, [{ serial_num: '1509436', inspection_date: shift(r.date, 1) },
+              { serial_num: '1669421', inspection_date: shift(r.date, -2) }]), { todo: ['1669421'], already: ['1509436'] });
+
+// ── What a 1.15.10 log says about itself ────────────────────────────────────
+write('run-2026-11-20T15-00-00.json', { ladderResults: [lad('2000001', 'success')],
+  lia: { workOrderId: ' 99001 ', accountId: 'acct-nate', accountName: 'Nate Dobbs', techName: 'Nate' } });
+write('run-2026-11-20T16-00-00.json', { ladderResults: [lad('2000002', 'success')], lia: { workOrderId: '1' } });
+const withMeta = P.readRun(path.join(dir, 'run-2026-11-20T15-00-00.json'));
+ok('the work order and account come from the log', withMeta.meta,
+   { workOrderId: '99001', accountId: 'acct-nate', accountName: 'Nate Dobbs', techName: 'Nate' });
+ok('a log with no account is treated as an old one', P.readRun(path.join(dir, 'run-2026-11-20T16-00-00.json')).meta, null);
+ok('an old log has none', r.meta, null);
+
+// ── What the automatic check may record ──────────────────────────────────────
+const nate = { account_id: 'acct-nate' }, batavia = { account_id: 'acct-b', acting_is_umbrella: true };
+const old = { serials: ['1'], date: '2026-10-05', meta: null };
+ok('a log that names its account: only into that account', [P.decide(withMeta, nate), P.decide(withMeta, { account_id: 'acct-mike' })],
+   [{ go: true, workOrderId: '99001' }, { go: false, why: 'other-account' }]);
+ok('even an umbrella acting as that account', P.decide(withMeta, { account_id: 'acct-nate', acting_is_umbrella: false }).go, true);
+ok('an old log in the lost window: into a lead account, with no work order', P.decide(old, nate), { go: true, workOrderId: '' });
+ok('but not into an umbrella, which cannot tell whose it was', P.decide(old, batavia), { go: false, why: 'umbrella' });
+ok('an old log from before records went missing waits for the screen',
+   P.decide({ ...old, date: '2026-08-24' }, nate), { go: false, why: 'before-window' });
+ok('signed out or unreadable: nothing', [P.decide(old, null).go, P.decide({ unreadable: true }, nate).go], [false, false]);
+
 // ── Done on this computer ────────────────────────────────────────────────────
 const led = path.join(dir, 'state', 'recovered-runs.json');
 ok('nothing recovered yet', P.readLedger(led), {});

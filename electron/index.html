@@ -1809,12 +1809,13 @@
       <p style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.55;">
         Until version 1.15.8, ladders imported into BSI were not saved as inspection records, so they do not
         show on the certificate site. Every import left a log on this computer listing the ladders that went in.
-        For each one still missing, type the <strong style="color:var(--text);">work order</strong> it went into
-        and press Record.
+        Lia now checks those logs against the database each time it starts and records what is missing by
+        itself. Older imports it could not place are listed here: type the
+        <strong style="color:var(--text);">work order</strong> it went into and press Record.
       </p>
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.55;">
-        Each ladder is recorded as inspected on the day of the import. Ladders that already have a record that
-        day — from a phone, or an earlier recovery — are left alone. Only ladders whose box went into BSI are
+        Each ladder is recorded as inspected on the day of the import. Ladders that already have a record
+        within a day of it — from a phone, an earlier recovery, or one somebody deleted — are left alone. Only ladders whose box went into BSI are
         counted. Run this on every computer that has done imports.
       </p>
       <div id="recover-account" style="font-size:12.5px;margin-bottom:12px;"></div>
@@ -5317,6 +5318,24 @@ async function loadContext() {
   const res = await window.api.getContext();
   _ctx = (res && res.ok) ? res.ctx : null;
   renderContext();
+  if (_ctx) autoRecoverKick();
+}
+
+// Compare this computer's import logs with the database and record what is
+// missing (main.cjs, recover:auto). Fire and forget: whatever happens here —
+// an older preload without it, no network, a server error — the rest of the
+// app carries on, and the only trace is a console line.
+let _autoRecoverLast = null;
+async function autoRecoverKick() {
+  try {
+    if (typeof window.api.recoverAuto !== 'function') return;
+    const res = await window.api.recoverAuto();
+    _autoRecoverLast = res || null;
+    if (!res || !res.ok) { console.warn('[recover:auto]', res && res.error); return; }
+    if (res.runs && $('screen-recover') && $('screen-recover').classList.contains('active')) recoverLoad();
+  } catch (err) {
+    console.warn('[recover:auto]', err);
+  }
 }
 
 function renderContext() {
@@ -6203,14 +6222,17 @@ async function recoverLoad() {
     const done = r.recovered;
     const status = r.todo === 0
       ? `<span style="color:var(--ok);">✓ On record</span>` +
-        (done ? `<div style="color:var(--muted);font-size:11px;">WO ${esc(done.work_order)}</div>` : '')
+        (done && done.work_order ? `<div style="color:var(--muted);font-size:11px;">WO ${esc(done.work_order)}</div>` : '') +
+        (done && done.auto ? `<div style="color:var(--muted);font-size:11px;">Recorded automatically` +
+          (done.work_order ? '' : ' · no work order') + `</div>` : '')
       : '';
+    const woPrefill = (done && done.work_order) || r.workOrderId || '';
     tr.innerHTML =
       `<td>${esc(recoverWhen(r.startedAt))}</td>` +
       `<td>${r.imported}${r.counts.error ? ` <span style="color:var(--muted);">(${r.counts.error} failed)</span>` : ''}</td>` +
       `<td>${r.already}</td>` +
       `<td><strong>${r.todo}</strong></td>` +
-      `<td>${r.todo ? `<input class="recover-wo" maxlength="64" placeholder="Work order #" style="width:120px;" value="${esc(done ? done.work_order : '')}">` : status}</td>` +
+      `<td>${r.todo ? `<input class="recover-wo" maxlength="64" placeholder="Work order #" style="width:120px;" value="${esc(woPrefill)}">` : status}</td>` +
       `<td>${r.todo ? `<button class="btn-ok recover-go" style="padding:5px 12px;font-size:12px;">Record ${r.todo}</button>` : ''}` +
       `<div class="recover-out" style="font-size:11.5px;margin-top:4px;"></div></td>`;
     if (r.todo) {

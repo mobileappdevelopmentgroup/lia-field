@@ -6,7 +6,7 @@ import fs from 'fs';
 import { run } from './runner.js';
 import { runFpPush } from './fp-runner.js';
 import { setPaused } from './automation.js';
-import type { DiffResult, DiffChoice } from './types.js';
+import type { DiffResult, DiffChoice, RunMeta } from './types.js';
 import type { FpInspectionForBsi } from './core/fp-bsi.js';
 
 // ── stdio interception ────────────────────────────────────────────────────────
@@ -84,6 +84,19 @@ async function waitForDiffChoice(diff: DiffResult): Promise<DiffChoice> {
 
 const logsDir = process.env['BATAVIA_LOGS_DIR'];
 
+// Which work order and account this import is for, from Lia Office. Saved in
+// the run log so a later check can record the ladders without asking. A bad
+// value is dropped rather than failing the import.
+function runMeta(): RunMeta | undefined {
+  try {
+    const m = JSON.parse(process.env['LIA_RUN_META'] || 'null');
+    if (!m || typeof m !== 'object') return undefined;
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 200) : null);
+    return { workOrderId: str(m.workOrderId) || '', accountId: str(m.accountId),
+             accountName: str(m.accountName), techName: str(m.techName) };
+  } catch { return undefined; }
+}
+
 // Two jobs share this process: the ladder CSV import, and pushing fall
 // protection records onto a work order. The fall protection payload arrives as
 // a FILE rather than on argv — a few hundred records is far past what a command
@@ -125,7 +138,7 @@ if (process.argv[2] === '--fp') {
     process.exit(1);
   }
 
-  run(csvPath, { waitForAnalyzeReady, waitForDiffChoice }, logsDir)
+  run(csvPath, { waitForAnalyzeReady, waitForDiffChoice }, logsDir, runMeta())
     .then((result) => {
       send({ type: 'complete', ...result });
     })

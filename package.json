@@ -1,6 +1,6 @@
 {
   "name": "lia-ladder-import-assistant",
-  "version": "1.15.9",
+  "version": "1.15.10",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",

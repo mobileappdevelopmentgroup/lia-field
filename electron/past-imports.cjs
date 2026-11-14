@@ -8,8 +8,11 @@
 // them: every run writes `~/Documents/Lia Logs/run-<UTC time>.json`, listing
 // each ladder's serial and whether its box went in. That is what this reads.
 //
-// What a run log does NOT carry, and how each gap is filled:
-//   * the work order — the office types it, per run, before anything is sent;
+// What a run log from before 1.15.10 does NOT carry, and how each gap is filled
+// (from 1.15.10 the log carries the work order and account in `lia`):
+//   * the work order — the office types it on the Recover screen, or the
+//     automatic check records it blank (decided 2026-11-13) for Field Work to
+//     fill in later;
 //   * the inspection date — the run's own date, in local time (an import is
 //     done the day the techs hand the sheet in, usually the day of the work);
 //   * brand / type / length — not needed: record_inspection carries forward
@@ -70,7 +73,18 @@ function readRun(file) {
     total: results.length,
     counts,
     serials,          // went into BSI, once each
+    meta: readMeta(j.lia),
   };
+}
+
+// What Lia Office 1.15.10+ wrote about the import, or null for an older log.
+function readMeta(m) {
+  if (!m || typeof m !== 'object') return null;
+  const str = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const accountId = str(m.accountId);
+  if (!accountId) return null;      // without the account it cannot be placed
+  return { workOrderId: (str(m.workOrderId) || '').slice(0, 64), accountId,
+           accountName: str(m.accountName), techName: str(m.techName) };
 }
 
 // Every run log in `dir`, newest first. Missing folder → none.
@@ -83,14 +97,54 @@ function listRuns(dir) {
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-// `existing`: rows { serial_num, inspection_date } already in the database.
-// Splits a run's ladders into those still to record and those already there
-// (any record of that ladder on that date counts — a phone may have sent it).
+// `existing`: rows { serial_num, inspection_date } already in the database,
+// deleted ones included. Splits a run's ladders into those still to record
+// and those already there. A record of that ladder within a day of the run
+// counts: a phone may have sent it, an older Lia Office dated it in UTC, and
+// one somebody DELETED must stay deleted — test imports were removed by hand.
+function shiftDate(iso, days) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 function plan(run, existing) {
   const have = new Set((existing || []).map(e => serialKey(e.serial_num) + '|' + e.inspection_date));
+  const days = [shiftDate(run.date, -1), run.date, shiftDate(run.date, 1)];
   const todo = [], already = [];
-  for (const s of run.serials || []) (have.has(serialKey(s) + '|' + run.date) ? already : todo).push(s);
+  for (const s of run.serials || []) {
+    const k = serialKey(s);
+    (days.some(d => have.has(k + '|' + d)) ? already : todo).push(s);
+  }
   return { todo, already };
+}
+
+// ── The automatic check ──────────────────────────────────────────────────────
+// Records were lost from here on (11 of Nate's work orders from 2026-08-25,
+// every import from 2026-09-21). An older log without a work order is left to
+// the Recover screen: records were being saved then, and a gap that old is as
+// likely to be a test import as a lost one.
+const AUTO_FROM = '2026-08-25';
+
+// May the check record this run, signed in as `ctx` (my_context)? It writes
+// into whatever account is being acted as, so a run is recorded only where it
+// belongs:
+//   * a log that names its account — only while that account is the one in
+//     use (Batavia acting as Nate picks up Batavia's imports for Nate);
+//   * an older log — into the account in use, unless that is an umbrella:
+//     an umbrella's imports were mostly for a subcontractor, and which one is
+//     not in the log. Those wait for the Recover screen.
+// → { go: true, workOrderId } or { go: false, why }
+function decide(run, ctx) {
+  if (!run || run.unreadable) return { go: false, why: 'unreadable' };
+  if (!ctx || !ctx.account_id) return { go: false, why: 'no-account' };
+  if (run.meta) {
+    return run.meta.accountId === ctx.account_id
+      ? { go: true, workOrderId: run.meta.workOrderId }
+      : { go: false, why: 'other-account' };
+  }
+  if (run.date < AUTO_FROM) return { go: false, why: 'before-window' };
+  if (ctx.acting_is_umbrella) return { go: false, why: 'umbrella' };
+  return { go: true, workOrderId: '' };
 }
 
 // The payloads for the ladders still to record.
@@ -119,4 +173,4 @@ function markRecovered(file, runName, info) {
   return led;
 }
 
-module.exports = { runTime, readRun, listRuns, plan, recordsFor, readLedger, markRecovered, serialKey };
+module.exports = { runTime, readRun, listRuns, plan, decide, AUTO_FROM, recordsFor, readLedger, markRecovered, serialKey };

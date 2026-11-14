@@ -9,7 +9,7 @@ import {
 } from './automation.js';
 import { buildSummary, printSummary, writeJsonLog } from './reporter.js';
 import { runVerificationLoop } from './verify.js';
-import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice, FlaggedLadder, WorkOrderBox } from './types.js';
+import type { LadderRecord, LadderResult, RunSummary, AutomationOptions, DiffResult, DiffChoice, FlaggedLadder, WorkOrderBox, RunMeta } from './types.js';
 
 const PM36_FLAG_THRESHOLD = 90;   // flag if total > $90 AND box contains PM36
 const HIGH_COST_THRESHOLD  = 250;  // flag any box with total > $250
@@ -39,6 +39,7 @@ export async function run(
   csvPath: string,
   callbacks: RunCallbacks,
   logsDir?: string,
+  meta?: RunMeta,
 ): Promise<RunResult> {
   console.log('\n╔══════════════════════════════════════════════════╗');
   console.log('║       LIA — Ladder Import Assistant              ║');
@@ -172,6 +173,7 @@ export async function run(
   const durationMs = Date.now() - startTime;
   const summary = buildSummary(ladderResults, durationMs);
   summary.verification = verification;
+  if (meta) summary.lia = meta;
 
   // Compare final work-order state vs CSV — flag any parts in BSI not present in CSV.
   try {

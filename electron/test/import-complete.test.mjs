@@ -38,7 +38,10 @@ globalThis.__liaFakeSb = {
   async rpc(name, args) {
     calls.push([name, args]);
     if (name === 'get_my_profile') return { data: { name: 'Nate Dobbs' }, error: null };
-    if (name === 'my_context') return { data: { account_id: 'acct-nate', account_name: 'Nate Dobbs' }, error: null };
+    if (name === 'my_context') {
+      if (globalThis.__liaCtxError) return { data: null, error: { message: globalThis.__liaCtxError } };
+      return { data: globalThis.__liaCtx || { account_id: 'acct-nate', account_name: 'Nate Dobbs' }, error: null };
+    }
     if (name === 'preflight_work_order') return { data: { can_run: true, credits: -1 }, error: null };
     if (name === 'charge_work_order') return { data: { charged: true, credits: -1 }, error: null };
     if (name === 'record_inspections') return { data: args.p.length, error: null };
@@ -88,12 +91,13 @@ const electron = {
   BrowserWindow: anything(), dialog: anything(), session: anything(), shell: anything(),
   Menu: anything(), nativeTheme: anything(),
 };
-let child;
+let child, forkEnv;
 const Module = require('module');
 const realLoad = Module._load;
 Module._load = function (req, parent, isMain) {
   if (req === 'electron') return electron;
-  if (req === 'child_process') return { fork: () => {
+  if (req === 'child_process') return { fork: (_p, _a, opts) => {
+    forkEnv = opts && opts.env;
     child = new EventEmitter();
     child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
     child.stdin = { write() {} }; child.kill = () => {};
@@ -136,6 +140,8 @@ ok('and its ladders are recorded', names().includes('record_inspections'), true)
 const recs = (calls.find(c => c[0] === 'record_inspections') || [, { p: [] }])[1].p;
 ok('both ladders, on that work order', recs.map(r => [r.serial_num, r.work_order_id]),
    [['1509436', '98378'], ['1669421', '98378']]);
+ok('the runner is told the work order and account, to save in its log',
+   JSON.parse(forkEnv.LIA_RUN_META), { workOrderId: '98378', accountId: 'acct-nate', accountName: 'Nate Dobbs', techName: 'Nate Dobbs' });
 const rec = sent.find(s => s[0] === 'automation:records');
 ok('the screen is told what was saved', rec && [rec[1].written, rec[1].failed], [2, 0]);
 ok('no internal error was reported',
@@ -180,6 +186,56 @@ const after = list.runs.find(r => r.name === runName);
 ok('afterwards it shows as on record, with the work order it went under',
    [after.todo, after.recovered && after.recovered.work_order, after.recovered && after.recovered.account],
    [0, '98742', 'Nate Dobbs']);
+
+// ── The automatic check ──────────────────────────────────────────────────────
+const lad = (serialNum) => ({ serialNum, status: 'success' });
+const meta = (accountId, workOrderId) => ({ accountId, workOrderId, accountName: 'x', techName: 'Office Tech' });
+fs.writeFileSync(path.join(logs, 'run-2026-11-20T15-00-00.json'),       // new log, this account
+  JSON.stringify({ ladderResults: [lad('2000001')], lia: meta('acct-nate', '99001') }));
+fs.writeFileSync(path.join(logs, 'run-2026-11-20T16-00-00.json'),       // new log, another account
+  JSON.stringify({ ladderResults: [lad('2000002')], lia: meta('acct-mike', '99002') }));
+fs.writeFileSync(path.join(logs, 'run-2026-10-05T15-00-00.json'),       // old log, in the lost window
+  JSON.stringify({ ladderResults: [lad('2000003'), lad('2000004')] }));
+fs.writeFileSync(path.join(logs, 'run-2026-06-13T15-00-00.json'),       // old log, before it
+  JSON.stringify({ ladderResults: [lad('2000005')] }));
+const d1005 = require(path.join(HERE, '..', 'office-records.cjs')).localDate(new Date('2026-10-05T15:00:00Z'));
+// 2000004 was deleted by hand (a test import) the day after; it must stay deleted.
+const next = new Date(d1005 + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 1);
+globalThis.__liaExisting.push({ serial_num: '2000004', inspection_date: next.toISOString().slice(0, 10), is_deleted: true });
+
+calls.length = 0;
+ok('while an import is running the check stands aside', (await handlers['recover:auto']()).skipped, 'import running');
+child.emit('exit', 0);                 // the last run's runner finishes
+
+const autoSent = () => calls.filter(c => c[0] === 'record_inspections').flatMap(c => c[1].p)
+  .map(x => [x.serial_num, x.work_order_id || '', x.tech_name]).sort();
+calls.length = 0;
+let auto = await handlers['recover:auto']();
+ok('the check records only what belongs to the account in use, and nothing deleted or too old',
+   autoSent(), [['2000001', '99001', 'Office Tech'], ['2000003', '', 'Nate Dobbs']]);
+ok('and says what it did', [auto.ok, auto.runs, auto.written, auto.waiting], [true, 2, 2, 2]);
+
+calls.length = 0;
+auto = await handlers['recover:auto']();
+ok('a second check does not go over settled runs again', [autoSent(), auto.checked], [[], 2]);
+
+globalThis.__liaCtx = { account_id: 'acct-mike', account_name: 'Michael' };
+calls.length = 0;
+auto = await handlers['recover:auto']();
+ok('acting as the other account picks up its import', autoSent(), [['2000002', '99002', 'Office Tech']]);
+
+globalThis.__liaCtx = { account_id: 'acct-batavia', account_name: 'Batavia', acting_is_umbrella: true };
+fs.writeFileSync(path.join(logs, 'run-2026-10-06T15-00-00.json'), JSON.stringify({ ladderResults: [lad('2000006')] }));
+calls.length = 0;
+await handlers['recover:auto']();
+ok('an umbrella does not take an old log it cannot place', autoSent(), []);
+
+globalThis.__liaCtxError = 'network down';
+auto = await handlers['recover:auto']();
+ok('a failing check reports it and throws nothing', [auto.ok, auto.error], [false, 'network down']);
+globalThis.__liaCtxError = null;
+auto = await handlers['recover:auto']();
+ok('and the next one runs normally', auto.ok, true);
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} FAILED` : '\nAll import-complete assertions passed.');

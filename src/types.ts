@@ -77,6 +77,16 @@ export interface RunSummary {
   extraOnWorkOrder?: ExtraPartEntry[]; // parts in BSI boxes not found in CSV
   flaggedLadders?: FlaggedLadder[];   // high-cost or PM36+cost red flags
   verification?: VerificationReport;  // post-import CSV vs work-order check
+  lia?: RunMeta;                      // who/what the import was for (1.15.10+)
+}
+
+// Written into the run log so the import can be checked against the database
+// later without anybody retyping it: electron/past-imports.cjs reads it.
+export interface RunMeta {
+  workOrderId: string;
+  accountId: string | null;
+  accountName: string | null;
+  techName: string | null;
 }
 
 // ── Diff / idempotent re-run types ───────────────────────────────────────────
