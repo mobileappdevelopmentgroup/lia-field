@@ -216,10 +216,21 @@ details .ans p { margin: 0 0 8px; }
   .print-only { display: block !important; }
 }
 .print-only { display: none; font-size: 12px; color: var(--muted); padding: 0 0 8px; }
+/* Training preview: loud on screen and on paper. */
+#preview-bar { background: #6d28d9; color: #fff; text-align: center; font-size: 13px; padding: 8px 16px; line-height: 1.35; }
+#preview-bar[hidden] { display: none; }
+body.preview #result { position: relative; }
+body.preview #result::after { content: 'TEST — NOT A REAL CERTIFICATE'; position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; pointer-events: none; transform: rotate(-24deg);
+  font: 800 34px/1.1 system-ui, sans-serif; color: rgba(109, 40, 217, .16); text-align: center; letter-spacing: .04em; }
+@media print { #preview-bar[hidden] { display: none !important; } #preview-bar { display: block; } }
 </style>
 </head>
 <body>
 
+<div id="preview-bar" hidden>
+  <b>TEST CERTIFICATES</b> — a training account. These are not real inspection records, and nothing here is on the public site.
+</div>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="/" aria-label="Equipment Inspection Records — home">
@@ -330,7 +341,27 @@ const SUPABASE_URL = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
 const REST = SUPABASE_URL + '/rest/v1/';
 
+// ── Training preview (migration 41) ─────────────────────────────────────────
+// ?preview=<64 hex> shows a TRAINING account's certificates, which the public
+// views never contain. The same rows come from set-returning RPCs that take the
+// token; PostgREST filters them exactly as it filters a view, so every query
+// below is unchanged. The page says TEST everywhere, prints TEST, and records
+// no visits.
+const PREVIEW = (() => {
+  const t = (new URLSearchParams(location.search).get('preview') || '').trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(t) ? t : '';
+})();
+const PREVIEW_RPC = {
+  ladder_inspections_public: 'rpc/training_ladder_inspections',
+  fall_protection_public: 'rpc/training_fall_protection',
+  fall_protection_checks_public: 'rpc/training_fall_protection_checks',
+};
+
 async function get(view, params) {
+  if (PREVIEW && PREVIEW_RPC[view]) {
+    params = 'p_token=' + PREVIEW + '&' + params;
+    view = PREVIEW_RPC[view];
+  }
   const res = await fetch(REST + view + '?' + params, { headers: { apikey: SUPABASE_KEY, Accept: 'application/json' } });
   if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
   return res.json();
@@ -507,7 +538,7 @@ async function fpChecks(item) {
 // outside visits, and counting them would drown the signal.
 const SRC_APP = new URLSearchParams(location.search).get('src') === 'app';
 function reportView(info) {
-  if (SRC_APP) return;
+  if (SRC_APP || PREVIEW) return;
   try {
     fetch(REST + 'rpc/record_certificate_view', {
       method: 'POST',
@@ -576,6 +607,7 @@ function setUrl(params, push) {
   u.search = '';
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
   if (SRC_APP) u.searchParams.set('src', 'app');
+  if (PREVIEW) u.searchParams.set('preview', PREVIEW);
   history.pushState(null, '', u.pathname + u.search);
 }
 
@@ -732,7 +764,7 @@ function downloadCsv(woId, items) {
   const lines = [head].concat(items.map(i => [woId, i.kind === 'fp' ? 'Fall protection' : 'Ladder', i.serial, i.latest.tag_label || '',
     describe(i), i.latest.inspection_date || '', i.status === 'destroyed' || i.status === 'failed' ? '' : (i.latest.next_due_date || ''),
     STATUS[i.status].label, i.status === 'destroyed' ? (i.latest.destroy_reason || '') : i.status === 'failed' ? (i.latest.discard_reason || '') : '',
-    i.ref || '', i.ref ? location.origin + '/?t=' + i.ref : '']));
+    i.ref || '', i.ref ? location.origin + '/?t=' + i.ref + (PREVIEW ? '&preview=' + PREVIEW : '') : '']));
   const blob = new Blob(['\ufeff' + lines.map(l => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -830,6 +862,13 @@ async function fromUrl(push) {
   } else if (wo) await search(wo, { push });
   else if (s || q) await search(s || q, { push });
   else { $('result').innerHTML = ''; clearMsg(); }
+}
+if (PREVIEW) {
+  document.body.classList.add('preview');
+  $('preview-bar').hidden = false;
+  document.title = 'TEST — ' + document.title;
+  const home = document.querySelector('a.brand');
+  if (home) home.href = '/?preview=' + PREVIEW;
 }
 window.addEventListener('popstate', () => fromUrl(false));
 fromUrl(false);

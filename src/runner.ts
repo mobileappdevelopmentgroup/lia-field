@@ -191,12 +191,12 @@ export async function run(
         const inCsv = csvParts
           ? [...csvParts].some(t => t === pu || pu.includes(t) || t.includes(pu))
           : false;
-        if (!inCsv) extra.push({ boxSerial: box.serialNum, partNum: p });
+        if (!inCsv) extra.push({ boxSerial: box.serialNum, partNum: p, boxNumber: box.boxNumber });
       }
     }
     if (extra.length > 0) {
       console.log(`\n[EXTRA] ${extra.length} part(s) on work order not in CSV:`);
-      for (const e of extra) console.log(`  SN ${e.boxSerial}: ${e.partNum}`);
+      for (const e of extra) console.log(`  ${e.boxNumber ? `Box ${e.boxNumber} · ` : ''}SN ${e.boxSerial}: ${e.partNum}`);
       summary.extraOnWorkOrder = extra;
     }
 

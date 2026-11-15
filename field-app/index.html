@@ -66,6 +66,16 @@
     .screen { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
     .screen.active { display: flex; }
 
+    /* ── Training account bar (training.js, migration 41) ── */
+    /* It takes the notch padding, so the topbar beneath it gives its up. */
+    #training-bar { flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+                    padding: calc(var(--safe-t) + 5px) 12px 5px; background: #6d28d9; color: #fff;
+                    font-size: 12px; font-weight: 700; line-height: 1.3; }
+    #training-bar span { flex: 1; min-width: 0; }
+    #training-bar a { color: #fff; font-weight: 700; white-space: nowrap; border: 1px solid rgba(255,255,255,.5);
+                      border-radius: 6px; padding: 4px 9px; text-decoration: none; }
+    body.is-training .topbar { padding-top: 0; height: 50px; }
+
     /* ── Shared topbar ── */
     .topbar { background: var(--surf); border-bottom: 1px solid var(--border); flex-shrink: 0;
               padding: 0 12px; padding-top: var(--safe-t); height: calc(50px + var(--safe-t));
@@ -1600,6 +1610,7 @@
 <script src="./js/help.js"></script>
 <script src="./js/support.js"></script>
 <script src="./js/assignments.js"></script>
+<script src="./js/training.js"></script>
 <script src="./js/tag-write.js"></script>
 <script src="./js/help-ui.js"></script>
 <script src="./js/export.js"></script>

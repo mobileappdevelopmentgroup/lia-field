@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 40
+-- Migrations included: 41
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -293,6 +293,32 @@ BEGIN
     END IF;
     SELECT parent_account_id INTO v_at FROM public.accounts WHERE id = v_at;
   END LOOP;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: accounts_training_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.accounts_training_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_parent_training boolean;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.is_training IS DISTINCT FROM OLD.is_training THEN
+    RAISE EXCEPTION 'An account is created as a training account or never is — is_training cannot be changed'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.parent_account_id IS NOT NULL THEN
+    SELECT is_training INTO v_parent_training FROM public.accounts WHERE id = NEW.parent_account_id;
+    IF v_parent_training IS DISTINCT FROM NEW.is_training THEN
+      RAISE EXCEPTION 'A training account and a real account cannot sit under one another'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -3656,6 +3682,18 @@ $$;
 
 
 --
+-- Name: is_training_account(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_training_account(p_account uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT coalesce((SELECT is_training FROM public.accounts WHERE id = p_account), false);
+$$;
+
+
+--
 -- Name: job_board(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3944,7 +3982,6 @@ CREATE FUNCTION public.my_context() RETURNS json
                          WHERE user_id = auth.uid() AND removed_at IS NULL),
     'is_umbrella',     (SELECT a.parent_account_id IS NULL
                           FROM public.accounts a WHERE a.id = public.my_real_account_id()),
-    -- Does the account being worked in have subcontractors of its own?
     'acting_is_umbrella', EXISTS (SELECT 1 FROM public.accounts
                                    WHERE parent_account_id = public.my_account_id()),
     'can_act_as',      coalesce((
@@ -3955,7 +3992,15 @@ CREATE FUNCTION public.my_context() RETURNS json
           AND EXISTS (SELECT 1 FROM public.account_members m
                        WHERE m.user_id = auth.uid() AND m.role = 'lead'
                          AND m.removed_at IS NULL)
-     ), '[]'::json)
+     ), '[]'::json),
+    -- 41
+    'is_training',     coalesce((SELECT is_training FROM public.accounts WHERE id = public.my_account_id()), false),
+    'training_preview_token', (SELECT training_preview_token FROM public.accounts
+                                WHERE id = public.my_account_id() AND is_training),
+    'training_bsi_work_orders', (SELECT to_json(training_bsi_work_orders) FROM public.accounts
+                                  WHERE id = public.my_account_id() AND is_training),
+    'training_expires_at', (SELECT training_expires_at FROM public.accounts
+                             WHERE id = public.my_account_id() AND is_training)
   );
 $$;
 
@@ -4192,17 +4237,32 @@ DECLARE
   v_credits    integer;
   v_key        text;
   v_charged    boolean := false;
+  v_training   boolean;
+  v_allowed    text[];
 BEGIN
   IF v_user_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
   v_key := public.wo_key(p_wo_number);
   IF v_key = '' THEN RAISE EXCEPTION 'A work order number is required'; END IF;
 
-  -- Follows the account being acted as; identical when not impersonating.
   v_account_id := public.my_account_id();
   IF v_account_id IS NULL THEN RAISE EXCEPTION 'No account — contact your administrator'; END IF;
 
-  SELECT credits INTO v_credits FROM public.accounts WHERE id = v_account_id;
+  SELECT credits, is_training, training_bsi_work_orders
+    INTO v_credits, v_training, v_allowed
+    FROM public.accounts WHERE id = v_account_id;
+
+  -- 41: training parts must only ever land on a training work order in BSI.
+  IF v_training AND NOT EXISTS (SELECT 1 FROM unnest(v_allowed) w WHERE public.wo_key(w) = v_key) THEN
+    RETURN json_build_object(
+      'credits', v_credits, 'already_charged', false, 'free', true, 'can_run', false,
+      'training', true,
+      'reason', CASE WHEN coalesce(array_length(v_allowed, 1), 0) = 0
+                  THEN 'This is a training account and no BSI training work order is set for it. Ask the developer to add one.'
+                  ELSE 'This is a training account. It can only import into its BSI training work order: '
+                       || array_to_string(v_allowed, ', ') || '.'
+                END);
+  END IF;
 
   SELECT (charged_at IS NOT NULL) INTO v_charged
   FROM public.work_orders WHERE account_id = v_account_id AND wo_key = v_key;
@@ -4210,9 +4270,9 @@ BEGIN
   RETURN json_build_object(
     'credits',         v_credits,
     'already_charged', COALESCE(v_charged, false),
-    -- true when this import will not cost anything: already paid, or unlimited
     'free',            COALESCE(v_charged, false) OR v_credits = -1,
-    'can_run',         COALESCE(v_charged, false) OR v_credits = -1 OR v_credits > 0
+    'can_run',         COALESCE(v_charged, false) OR v_credits = -1 OR v_credits > 0,
+    'training',        coalesce(v_training, false)
   );
 END;
 $$;
@@ -4315,12 +4375,7 @@ BEGIN
 
   IF v_ip IS NOT NULL THEN
     SELECT * INTO v_net FROM public.known_networks
-     -- <<= not <<. The strict operator excludes the network address itself, so
-     -- labelling one machine as 198.51.100.9/32 would never match 198.51.100.9
-     -- — the single most obvious thing anyone would try.
      WHERE v_ip <<= cidr
-     -- The most specific matching network wins, so a single machine can be
-     -- labelled inside a broader office range.
      ORDER BY masklen(cidr) DESC
      LIMIT 1;
     IF FOUND THEN
@@ -4329,20 +4384,21 @@ BEGIN
     END IF;
   END IF;
 
-  -- No named network. A phone is more likely a tech in front of the item than
-  -- somebody at a desk — a hint, and reported as such rather than as fact.
   IF v_viewer = 'unknown' AND v_class IN ('mobile', 'tablet') THEN
     v_viewer := 'field';
   END IF;
 
-  -- Tie it to the item so a report can say which items get looked at. Resolved
-  -- here rather than trusted from the client, which is a public page.
   IF v_ref IS NOT NULL THEN
     SELECT * INTO v_asset FROM public.assets WHERE public_ref = v_ref;
   END IF;
+  -- 41: a training item is never a visit.
+  IF v_asset.id IS NOT NULL AND public.is_training_account(v_asset.account_id) THEN RETURN; END IF;
   IF v_asset.id IS NULL AND v_serial IS NOT NULL THEN
     SELECT * INTO v_asset FROM public.assets
      WHERE serial_key = public.serial_key(v_serial)
+       -- 41: a real serial typed on the public site is the real item, never a
+       -- training copy of it.
+       AND NOT public.is_training_account(account_id)
      ORDER BY created_at LIMIT 1;
   END IF;
 
@@ -6664,6 +6720,791 @@ $$;
 
 
 --
+-- Name: training_accounts(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_accounts() RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  PERFORM public.training_require_developer(auth.uid());
+  RETURN coalesce((
+    SELECT json_agg(json_build_object(
+      'account_id', r.id,
+      'name', r.name,
+      'created_at', r.created_at,
+      'expires_at', r.training_expires_at,
+      'expired', r.training_expires_at < now(),
+      'bsi_work_orders', to_json(r.training_bsi_work_orders),
+      'preview_token', r.training_preview_token,
+      'accounts', (SELECT json_agg(json_build_object('account_id', a.id, 'name', a.name,
+                                                     'is_root', a.id = r.id) ORDER BY a.id <> r.id, a.name)
+                     FROM public.accounts a JOIN public.account_descendants(r.id) d ON d.account_id = a.id),
+      'members', coalesce((SELECT json_agg(json_build_object('user_id', m.user_id, 'email', u.email,
+                                                     'name', u.name, 'role', m.role,
+                                                     'account_name', a.name) ORDER BY a.id <> r.id, m.role, u.email)
+                     FROM public.account_members m
+                     JOIN public.users u ON u.id = m.user_id
+                     JOIN public.accounts a ON a.id = m.account_id
+                     JOIN public.account_descendants(r.id) d ON d.account_id = m.account_id), '[]'::json),
+      'ladders', (SELECT count(*) FROM public.inspections i
+                   JOIN public.account_descendants(r.id) d ON d.account_id = i.account_id
+                  WHERE i.is_current AND NOT i.is_deleted),
+      'fp', (SELECT count(*) FROM public.fp_inspections i
+              JOIN public.account_descendants(r.id) d ON d.account_id = i.account_id
+             WHERE i.is_current AND NOT i.is_deleted)
+    ) ORDER BY r.created_at DESC)
+    FROM public.accounts r
+    WHERE r.is_training AND r.parent_account_id IS NULL
+  ), '[]'::json);
+END;
+$$;
+
+
+--
+-- Name: training_add_member(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_add_member(p_actor uuid, p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_account uuid := (p->>'account_id')::uuid;
+  v_user    uuid := (p->>'user_id')::uuid;
+  v_role    text := coalesce(nullif(p->>'role', ''), 'tech');
+  v_name    text := nullif(btrim(coalesce(p->>'name', '')), '');
+  v_email   text;
+BEGIN
+  PERFORM public.training_require_developer(p_actor);
+  IF NOT public.is_training_account(v_account) THEN
+    RAISE EXCEPTION 'Not a training account' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF v_role NOT IN ('lead', 'tech') THEN RAISE EXCEPTION 'Role is lead or tech'; END IF;
+  SELECT lower(email) INTO v_email FROM auth.users WHERE id = v_user;
+  IF v_email IS NULL THEN RAISE EXCEPTION 'No such login'; END IF;
+  IF v_email NOT LIKE '%@' || public.training_login_domain() THEN
+    RAISE EXCEPTION 'Training accounts only take generated logins (@%)', public.training_login_domain();
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.account_members WHERE user_id = v_user) THEN
+    RAISE EXCEPTION 'That login is already on an account';
+  END IF;
+
+  INSERT INTO public.users (id, email, name, credits)
+  VALUES (v_user, v_email, v_name, 0)
+  ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+
+  INSERT INTO public.account_members (user_id, account_id, role, desktop_access, rep_number, invited_by)
+  VALUES (v_user, v_account, v_role, v_role = 'lead',
+          CASE WHEN v_role = 'lead' THEN coalesce(nullif(p->>'rep_number', ''), 'TRAIN') END,
+          p_actor);
+
+  RETURN json_build_object('user_id', v_user, 'account_id', v_account, 'role', v_role, 'email', v_email);
+END;
+$$;
+
+
+--
+-- Name: training_create(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_create(p_actor uuid, p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_name    text := btrim(coalesce(p->>'name', ''));
+  v_days    int  := coalesce(nullif(p->>'expires_days', '')::int, 14);
+  v_wos     text[];
+  v_token   text := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  v_expires timestamptz;
+  v_root    uuid;
+  v_crew    uuid;
+BEGIN
+  PERFORM public.training_require_developer(p_actor);
+  IF v_name = '' THEN RAISE EXCEPTION 'A name is required (e.g. "Batavia demo")'; END IF;
+  IF length(v_name) > 60 THEN RAISE EXCEPTION 'Keep the name under 60 characters'; END IF;
+  IF v_days < 1 OR v_days > 90 THEN RAISE EXCEPTION 'A training account lasts 1–90 days'; END IF;
+  v_expires := now() + make_interval(days => v_days);
+
+  v_wos := public.training_work_order_list(p->'bsi_work_orders');
+
+  INSERT INTO public.accounts (name, credits, is_training, training_expires_at,
+                               training_bsi_work_orders, training_preview_token, training_created_by)
+  VALUES ('Training: ' || v_name, -1, true, v_expires, v_wos, v_token, p_actor)
+  RETURNING id INTO v_root;
+
+  INSERT INTO public.accounts (name, credits, parent_account_id, is_training, training_expires_at,
+                               training_bsi_work_orders, training_preview_token, training_created_by)
+  VALUES ('Training crew: ' || v_name, -1, v_root, true, v_expires, v_wos, v_token, p_actor)
+  RETURNING id INTO v_crew;
+
+  RETURN json_build_object('account_id', v_root, 'crew_account_id', v_crew,
+                           'name', 'Training: ' || v_name, 'expires_at', v_expires,
+                           'bsi_work_orders', to_json(v_wos), 'preview_token', v_token);
+END;
+$$;
+
+
+--
+-- Name: training_erase(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_erase(p_actor uuid, p_account uuid) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_fam    uuid[];
+  v_users  uuid[];
+  v_name   text;
+  v_id     uuid;
+  v_counts jsonb := '{}'::jsonb;
+  v_n      int;
+  v_left   int;
+BEGIN
+  PERFORM public.training_require_developer(p_actor);
+  SELECT name INTO v_name FROM public.accounts WHERE id = p_account;
+  IF v_name IS NULL THEN RAISE EXCEPTION 'No such account'; END IF;
+
+  SELECT array_agg(account_id) INTO v_fam FROM public.account_descendants(p_account);
+  IF EXISTS (SELECT 1 FROM public.accounts WHERE id = ANY (v_fam) AND NOT is_training) THEN
+    RAISE EXCEPTION 'Refused: % is not a training account (or has a real account beneath it). Nothing was erased.', v_name
+      USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- Only generated logins are ever deleted; anybody else on the account (it
+  -- should never happen) just loses the membership with it.
+  SELECT coalesce(array_agg(m.user_id), '{}') INTO v_users
+    FROM public.account_members m
+    JOIN auth.users u ON u.id = m.user_id
+   WHERE m.account_id = ANY (v_fam)
+     AND lower(u.email) LIKE '%@' || public.training_login_domain();
+
+  -- Tables that do not cascade from accounts, or reference other rows that are
+  -- going, first.
+  DELETE FROM public.usage_log              WHERE account_id = ANY (v_fam);
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_counts := v_counts || jsonb_build_object('usage_log', v_n);
+  DELETE FROM public.support_tickets        WHERE account_id = ANY (v_fam);
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_counts := v_counts || jsonb_build_object('support_tickets', v_n);
+  DELETE FROM public.impersonation_sessions WHERE account_id = ANY (v_fam) OR actor_account = ANY (v_fam);
+  DELETE FROM public.inspections            WHERE account_id = ANY (v_fam)
+                                               OR asset_id IN (SELECT id FROM public.assets WHERE account_id = ANY (v_fam));
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_counts := v_counts || jsonb_build_object('inspections', v_n);
+  DELETE FROM public.fp_inspections         WHERE account_id = ANY (v_fam)
+                                               OR asset_id IN (SELECT id FROM public.assets WHERE account_id = ANY (v_fam));
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_counts := v_counts || jsonb_build_object('fp_inspections', v_n);
+  DELETE FROM public.inspection_photos      WHERE account_id = ANY (v_fam);
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_counts := v_counts || jsonb_build_object('photos', v_n);
+
+  -- The accounts themselves, deepest first (a parent is ON DELETE RESTRICT).
+  -- Everything else cascades with them.
+  LOOP
+    DELETE FROM public.accounts a
+     WHERE a.id = ANY (v_fam)
+       AND NOT EXISTS (SELECT 1 FROM public.accounts c WHERE c.parent_account_id = a.id);
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    SELECT count(*) INTO v_left FROM public.accounts WHERE id = ANY (v_fam);
+    EXIT WHEN v_left = 0 OR v_n = 0;
+  END LOOP;
+  IF v_left > 0 THEN RAISE EXCEPTION 'Could not erase every account in the family'; END IF;
+  v_counts := v_counts || jsonb_build_object('accounts', array_length(v_fam, 1));
+
+  INSERT INTO public.training_erasures (name, account_ids, user_ids, erased_by, rows_deleted)
+  VALUES (v_name, v_fam, v_users, p_actor, v_counts)
+  RETURNING id INTO v_id;
+
+  RETURN json_build_object('erasure_id', v_id, 'name', v_name, 'account_ids', to_json(v_fam),
+                           'user_ids', to_json(v_users), 'rows_deleted', v_counts);
+END;
+$$;
+
+
+--
+-- Name: training_erase_finished(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_erase_finished(p_actor uuid, p_erasure uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  PERFORM public.training_require_developer(p_actor);
+  UPDATE public.training_erasures SET finished_at = now() WHERE id = p_erasure AND finished_at IS NULL;
+END;
+$$;
+
+
+--
+-- Name: accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.accounts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    plan text DEFAULT 'pay-per-use'::text NOT NULL,
+    credits integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    parent_account_id uuid,
+    is_training boolean DEFAULT false NOT NULL,
+    training_expires_at timestamp with time zone,
+    training_bsi_work_orders text[] DEFAULT '{}'::text[] NOT NULL,
+    training_preview_token text,
+    training_created_by uuid,
+    CONSTRAINT accounts_parent_not_self CHECK (((parent_account_id IS NULL) OR (parent_account_id <> id)))
+);
+
+
+--
+-- Name: COLUMN accounts.is_training; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.accounts.is_training IS 'Training/test account: never on a public certificate, never billed, erasable. Set at creation only.';
+
+
+--
+-- Name: assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.assets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid,
+    kind text DEFAULT 'ladder'::text NOT NULL,
+    serial_raw text NOT NULL,
+    serial_key text NOT NULL,
+    public_ref text DEFAULT public.gen_public_ref() NOT NULL,
+    nfc_tag_uid text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tag_url text,
+    tag_url_key text GENERATED ALWAYS AS (public.fp_tag_url_key(tag_url)) STORED,
+    tag_label text,
+    tag_label_key text GENERATED ALWAYS AS (public.serial_key(tag_label)) STORED,
+    CONSTRAINT assets_kind_check CHECK ((kind = ANY (ARRAY['ladder'::text, 'fall_protection'::text])))
+);
+
+
+--
+-- Name: fp_inspections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fp_inspections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    asset_id uuid NOT NULL,
+    work_order_id text,
+    work_order_uuid uuid,
+    inspection_date date DEFAULT CURRENT_DATE NOT NULL,
+    next_due_date date,
+    rep_number text,
+    tech_user_id uuid,
+    collected_by uuid,
+    collector_name text,
+    model_id uuid,
+    item_type text,
+    description text,
+    manufacturer text,
+    model text,
+    lot_number text,
+    mfg_month integer,
+    mfg_year integer,
+    status text,
+    nfc_tag_serial text,
+    template_id uuid,
+    template_version integer,
+    overall_pass boolean DEFAULT true NOT NULL,
+    discard_reason text,
+    discard_note text,
+    version integer DEFAULT 1 NOT NULL,
+    supersedes uuid,
+    is_current boolean DEFAULT true NOT NULL,
+    is_deleted boolean DEFAULT false NOT NULL,
+    source text,
+    captured_at timestamp with time zone,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    equipment_type_id uuid,
+    tag_url text,
+    bsi_pushed_at timestamp with time zone,
+    bsi_box_ref text,
+    rep_name text,
+    verified_by text,
+    impersonation_id uuid,
+    mfr_serial text,
+    CONSTRAINT fp_discard_requires_reason CHECK ((overall_pass OR (discard_reason IS NOT NULL))),
+    CONSTRAINT fp_inspections_mfg_month_check CHECK (((mfg_month IS NULL) OR ((mfg_month >= 1) AND (mfg_month <= 12)))),
+    CONSTRAINT fp_inspections_mfg_year_check CHECK (((mfg_year IS NULL) OR ((mfg_year >= 1900) AND (mfg_year <= 2200)))),
+    CONSTRAINT fp_status_allowed CHECK (((status IS NULL) OR (status = ANY (ARRAY['pass'::text, 'fail'::text, 'inspection overdue'::text]))))
+);
+
+
+--
+-- Name: COLUMN fp_inspections.item_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.item_type IS 'Display text, denormalized from the equipment type at capture time so a certificate keeps saying what the item was inspected as even if the type is later renamed.';
+
+
+--
+-- Name: COLUMN fp_inspections.discard_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.discard_reason IS 'Composed from the failed checks by record_fp_inspection. Not typed by the tech.';
+
+
+--
+-- Name: COLUMN fp_inspections.discard_note; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.discard_note IS 'Optional free text the tech adds alongside the photo.';
+
+
+--
+-- Name: COLUMN fp_inspections.mfr_serial; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fp_inspections.mfr_serial IS 'The manufacturer''s serial, when it is not the number the item is known by. Kept for reference; never used to find an item.';
+
+
+--
+-- Name: fall_protection_all; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.fall_protection_all AS
+ SELECT a.serial_raw AS serial_num,
+    a.serial_key,
+    a.public_ref,
+    a.tag_url,
+    a.tag_label,
+    a.tag_label_key,
+    i.inspection_date,
+    i.next_due_date,
+    COALESCE(i.rep_name, i.collector_name) AS tech_name,
+    i.rep_name,
+    i.rep_number,
+    i.verified_by,
+    i.manufacturer,
+    i.model,
+    i.item_type,
+    i.description,
+    i.lot_number,
+    i.mfg_month,
+    i.mfg_year,
+    i.status,
+    i.overall_pass,
+    i.discard_reason,
+    i.work_order_id,
+    i.created_at,
+    public.certificate_url(a.public_ref, 'fall_protection'::text) AS certificate_url,
+    public.fp_tag_url(a.public_ref, a.serial_raw) AS tag_write_url,
+    a.account_id,
+    a.tag_url_key
+   FROM (public.assets a
+     JOIN public.fp_inspections i ON (((i.asset_id = a.id) AND i.is_current AND (NOT i.is_deleted))))
+  WHERE (a.kind = 'fall_protection'::text);
+
+
+--
+-- Name: fall_protection_public; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.fall_protection_public AS
+ SELECT serial_num,
+    serial_key,
+    public_ref,
+    tag_url,
+    tag_label,
+    tag_label_key,
+    inspection_date,
+    next_due_date,
+    tech_name,
+    rep_name,
+    rep_number,
+    verified_by,
+    manufacturer,
+    model,
+    item_type,
+    description,
+    lot_number,
+    mfg_month,
+    mfg_year,
+    status,
+    overall_pass,
+    discard_reason,
+    work_order_id,
+    created_at,
+    certificate_url,
+    tag_write_url,
+    tag_url_key
+   FROM public.fall_protection_all v
+  WHERE (NOT (EXISTS ( SELECT 1
+           FROM public.accounts t
+          WHERE ((t.id = v.account_id) AND t.is_training))));
+
+
+--
+-- Name: training_fall_protection(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_fall_protection(p_token text) RETURNS SETOF public.fall_protection_public
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT v.serial_num, v.serial_key, v.public_ref, v.tag_url, v.tag_label, v.tag_label_key,
+         v.inspection_date, v.next_due_date, v.tech_name, v.rep_name, v.rep_number,
+         v.verified_by, v.manufacturer, v.model, v.item_type, v.description,
+         v.lot_number, v.mfg_month, v.mfg_year, v.status, v.overall_pass,
+         v.discard_reason, v.work_order_id, v.created_at, v.certificate_url, v.tag_write_url,
+         -- Appended: the phone looks a third-party tag link up by its canonical
+         -- form (fp.js fpLookupOnline). tag_url is already public; this is it normalised.
+         v.tag_url_key
+    FROM public.fall_protection_all v
+    JOIN public.accounts t ON t.id = v.account_id
+   WHERE t.is_training
+     AND length(coalesce(p_token, '')) >= 32
+     AND t.training_preview_token = p_token;
+$$;
+
+
+--
+-- Name: fp_inspection_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fp_inspection_checks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    fp_inspection_id uuid NOT NULL,
+    ord integer DEFAULT 0 NOT NULL,
+    code text,
+    prompt text NOT NULL,
+    result boolean,
+    source text DEFAULT 'template'::text NOT NULL,
+    note text,
+    answer boolean,
+    answer_style text DEFAULT 'pass_fail'::text NOT NULL,
+    pass_answer boolean DEFAULT true NOT NULL,
+    CONSTRAINT fp_inspection_answer_style CHECK ((answer_style = ANY (ARRAY['pass_fail'::text, 'yes_no'::text]))),
+    CONSTRAINT fp_inspection_checks_source_check CHECK ((source = ANY (ARRAY['template'::text, 'adhoc'::text])))
+);
+
+
+--
+-- Name: fall_protection_checks_all; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.fall_protection_checks_all AS
+ SELECT a.public_ref,
+    i.inspection_date,
+    c.ord,
+    c.prompt,
+    c.answer_style,
+    c.answer,
+        CASE
+            WHEN (c.answer IS NULL) THEN NULL::text
+            WHEN (c.answer_style = 'yes_no'::text) THEN
+            CASE
+                WHEN c.answer THEN 'Yes'::text
+                ELSE 'No'::text
+            END
+            ELSE
+            CASE
+                WHEN c.answer THEN 'Pass'::text
+                ELSE 'Fail'::text
+            END
+        END AS answer_label,
+    c.result,
+    a.account_id
+   FROM ((public.fp_inspection_checks c
+     JOIN public.fp_inspections i ON ((i.id = c.fp_inspection_id)))
+     JOIN public.assets a ON ((a.id = i.asset_id)))
+  WHERE (i.is_current AND (NOT i.is_deleted));
+
+
+--
+-- Name: fall_protection_checks_public; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.fall_protection_checks_public AS
+ SELECT public_ref,
+    inspection_date,
+    ord,
+    prompt,
+    answer_style,
+    answer,
+    answer_label,
+    result
+   FROM public.fall_protection_checks_all v
+  WHERE (NOT (EXISTS ( SELECT 1
+           FROM public.accounts t
+          WHERE ((t.id = v.account_id) AND t.is_training))))
+  ORDER BY public_ref, inspection_date DESC, ord;
+
+
+--
+-- Name: training_fall_protection_checks(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_fall_protection_checks(p_token text) RETURNS SETOF public.fall_protection_checks_public
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT v.public_ref, v.inspection_date, v.ord, v.prompt, v.answer_style,
+         v.answer, v.answer_label, v.result
+    FROM public.fall_protection_checks_all v
+    JOIN public.accounts t ON t.id = v.account_id
+   WHERE t.is_training
+     AND length(coalesce(p_token, '')) >= 32
+     AND t.training_preview_token = p_token;
+$$;
+
+
+--
+-- Name: inspections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inspections (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    serial_num text NOT NULL,
+    inspection_date date NOT NULL,
+    tech_name text NOT NULL,
+    work_order_id text,
+    next_due_date date,
+    notes text,
+    brand text,
+    type text,
+    length text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    account_id uuid,
+    asset_id uuid,
+    work_order_uuid uuid,
+    tech_user_id uuid,
+    version integer DEFAULT 1 NOT NULL,
+    supersedes uuid,
+    is_current boolean DEFAULT true NOT NULL,
+    is_deleted boolean DEFAULT false NOT NULL,
+    source text,
+    captured_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    lubricated boolean,
+    has_leveler boolean,
+    has_claw boolean,
+    has_vrung boolean,
+    rep_number text,
+    collected_by uuid,
+    collector_name text,
+    rep_name text,
+    verified_by text,
+    impersonation_id uuid,
+    parts jsonb,
+    bsi_pushed_at timestamp with time zone,
+    bsi_box_ref text
+);
+
+
+--
+-- Name: COLUMN inspections.parts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inspections.parts IS 'Parts tapped in the field: [{"name","qty"}]. Fed into the BSI import.';
+
+
+--
+-- Name: COLUMN inspections.bsi_pushed_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inspections.bsi_pushed_at IS 'When this exact record landed in BSI. Per record, not per work order: a work order gains ladders after it is imported, and those have not been billed.';
+
+
+--
+-- Name: ladder_inspections_all; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ladder_inspections_all AS
+ SELECT COALESCE(a.serial_raw, i.serial_num) AS serial_num,
+    a.serial_key,
+    i.inspection_date,
+    COALESCE(i.rep_name, i.tech_name) AS tech_name,
+    i.rep_name,
+    i.rep_number,
+    i.verified_by,
+    i.next_due_date,
+    i.work_order_id,
+    i.notes,
+    i.brand,
+    i.type,
+    i.length,
+    i.created_at,
+    a.public_ref,
+    i.version,
+    i.lubricated,
+    i.has_leveler,
+    i.has_claw,
+    i.has_vrung,
+    public.certificate_url(a.public_ref, a.kind) AS certificate_url,
+    (public.ladder_destroy_reason(i.parts) IS NOT NULL) AS destroyed,
+    public.ladder_destroy_reason(i.parts) AS destroy_reason,
+    a.tag_label,
+    a.tag_label_key,
+    COALESCE(i.account_id, a.account_id) AS account_id
+   FROM (public.inspections i
+     LEFT JOIN public.assets a ON ((a.id = i.asset_id)))
+  WHERE (i.is_current AND (NOT i.is_deleted));
+
+
+--
+-- Name: ladder_inspections_public; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.ladder_inspections_public AS
+ SELECT serial_num,
+    serial_key,
+    inspection_date,
+    tech_name,
+    rep_name,
+    rep_number,
+    verified_by,
+    next_due_date,
+    work_order_id,
+    notes,
+    brand,
+    type,
+    length,
+    created_at,
+    public_ref,
+    version,
+    lubricated,
+    has_leveler,
+    has_claw,
+    has_vrung,
+    certificate_url,
+    destroyed,
+    destroy_reason,
+    tag_label,
+    tag_label_key
+   FROM public.ladder_inspections_all v
+  WHERE (NOT (EXISTS ( SELECT 1
+           FROM public.accounts t
+          WHERE ((t.id = v.account_id) AND t.is_training))))
+  ORDER BY serial_num, inspection_date DESC;
+
+
+--
+-- Name: training_ladder_inspections(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_ladder_inspections(p_token text) RETURNS SETOF public.ladder_inspections_public
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  SELECT v.serial_num, v.serial_key, v.inspection_date, v.tech_name, v.rep_name,
+         v.rep_number, v.verified_by, v.next_due_date, v.work_order_id, v.notes,
+         v.brand, v.type, v.length, v.created_at, v.public_ref, v.version,
+         v.lubricated, v.has_leveler, v.has_claw, v.has_vrung, v.certificate_url,
+         v.destroyed, v.destroy_reason, v.tag_label, v.tag_label_key
+    FROM public.ladder_inspections_all v
+    JOIN public.accounts t ON t.id = v.account_id
+   WHERE t.is_training
+     AND length(coalesce(p_token, '')) >= 32
+     AND t.training_preview_token = p_token;
+$$;
+
+
+--
+-- Name: training_login_domain(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_login_domain() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT 'training.mobileappdevelopmentgroup.com'::text $$;
+
+
+--
+-- Name: training_pending_erasures(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_pending_erasures(p_actor uuid) RETURNS json
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  PERFORM public.training_require_developer(p_actor);
+  RETURN coalesce((SELECT json_agg(json_build_object('erasure_id', id, 'name', name,
+                     'account_ids', account_ids, 'user_ids', user_ids, 'erased_at', erased_at)
+                     ORDER BY erased_at)
+                     FROM public.training_erasures WHERE finished_at IS NULL), '[]'::json);
+END;
+$$;
+
+
+--
+-- Name: training_require_developer(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_require_developer(p_actor uuid) RETURNS void
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  IF p_actor IS NULL OR NOT coalesce((SELECT is_developer FROM public.users WHERE id = p_actor), false) THEN
+    RAISE EXCEPTION 'Only the developer can manage training accounts' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+END;
+$$;
+
+
+--
+-- Name: training_update(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_update(p jsonb) RETURNS json
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  v_root uuid := (p->>'account_id')::uuid;
+  v_days int  := nullif(p->>'expires_days', '')::int;
+  v_wos  text[];
+BEGIN
+  PERFORM public.training_require_developer(auth.uid());
+  IF NOT public.is_training_account(v_root) THEN
+    RAISE EXCEPTION 'Not a training account' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF v_days IS NOT NULL AND (v_days < 1 OR v_days > 90) THEN
+    RAISE EXCEPTION 'A training account lasts 1–90 days';
+  END IF;
+  IF p ? 'bsi_work_orders' THEN
+    v_wos := public.training_work_order_list(p->'bsi_work_orders');
+  END IF;
+  UPDATE public.accounts a
+     SET training_expires_at = CASE WHEN v_days IS NULL THEN a.training_expires_at
+                                    ELSE now() + make_interval(days => v_days) END,
+         training_bsi_work_orders = coalesce(v_wos, a.training_bsi_work_orders)
+    FROM public.account_descendants(v_root) d
+   WHERE a.id = d.account_id;
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+
+--
+-- Name: training_work_order_list(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.training_work_order_list(p jsonb) RETURNS text[]
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$
+  SELECT coalesce(array_agg(w ORDER BY n), '{}')
+    FROM (SELECT DISTINCT ON (public.wo_key(x)) btrim(x) AS w, n
+            FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(p) = 'array' THEN p ELSE '[]'::jsonb END)
+                   WITH ORDINALITY AS t(x, n)
+           WHERE btrim(x) <> '' AND public.wo_key(x) <> ''
+           ORDER BY public.wo_key(x), n) s;
+$$;
+
+
+--
 -- Name: transfer_stock(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6913,21 +7754,6 @@ CREATE TABLE public.account_parts (
 
 
 --
--- Name: accounts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.accounts (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    name text NOT NULL,
-    plan text DEFAULT 'pay-per-use'::text NOT NULL,
-    credits integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    parent_account_id uuid,
-    CONSTRAINT accounts_parent_not_self CHECK (((parent_account_id IS NULL) OR (parent_account_id <> id)))
-);
-
-
---
 -- Name: app_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6935,28 +7761,6 @@ CREATE TABLE public.app_settings (
     key text NOT NULL,
     value text NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: assets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.assets (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    account_id uuid,
-    kind text DEFAULT 'ladder'::text NOT NULL,
-    serial_raw text NOT NULL,
-    serial_key text NOT NULL,
-    public_ref text DEFAULT public.gen_public_ref() NOT NULL,
-    nfc_tag_uid text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    tag_url text,
-    tag_url_key text GENERATED ALWAYS AS (public.fp_tag_url_key(tag_url)) STORED,
-    tag_label text,
-    tag_label_key text GENERATED ALWAYS AS (public.serial_key(tag_label)) STORED,
-    CONSTRAINT assets_kind_check CHECK ((kind = ANY (ARRAY['ladder'::text, 'fall_protection'::text])))
 );
 
 
@@ -6988,178 +7792,6 @@ CREATE TABLE public.certificate_views (
     CONSTRAINT certificate_views_lookup_by_check CHECK ((lookup_by = ANY (ARRAY['ref'::text, 'serial'::text]))),
     CONSTRAINT certificate_views_viewer_kind_check CHECK ((viewer_kind = ANY (ARRAY['office'::text, 'field'::text, 'customer'::text, 'other'::text, 'unknown'::text])))
 );
-
-
---
--- Name: fp_inspection_checks; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.fp_inspection_checks (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    fp_inspection_id uuid NOT NULL,
-    ord integer DEFAULT 0 NOT NULL,
-    code text,
-    prompt text NOT NULL,
-    result boolean,
-    source text DEFAULT 'template'::text NOT NULL,
-    note text,
-    answer boolean,
-    answer_style text DEFAULT 'pass_fail'::text NOT NULL,
-    pass_answer boolean DEFAULT true NOT NULL,
-    CONSTRAINT fp_inspection_answer_style CHECK ((answer_style = ANY (ARRAY['pass_fail'::text, 'yes_no'::text]))),
-    CONSTRAINT fp_inspection_checks_source_check CHECK ((source = ANY (ARRAY['template'::text, 'adhoc'::text])))
-);
-
-
---
--- Name: fp_inspections; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.fp_inspections (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    account_id uuid NOT NULL,
-    asset_id uuid NOT NULL,
-    work_order_id text,
-    work_order_uuid uuid,
-    inspection_date date DEFAULT CURRENT_DATE NOT NULL,
-    next_due_date date,
-    rep_number text,
-    tech_user_id uuid,
-    collected_by uuid,
-    collector_name text,
-    model_id uuid,
-    item_type text,
-    description text,
-    manufacturer text,
-    model text,
-    lot_number text,
-    mfg_month integer,
-    mfg_year integer,
-    status text,
-    nfc_tag_serial text,
-    template_id uuid,
-    template_version integer,
-    overall_pass boolean DEFAULT true NOT NULL,
-    discard_reason text,
-    discard_note text,
-    version integer DEFAULT 1 NOT NULL,
-    supersedes uuid,
-    is_current boolean DEFAULT true NOT NULL,
-    is_deleted boolean DEFAULT false NOT NULL,
-    source text,
-    captured_at timestamp with time zone,
-    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    equipment_type_id uuid,
-    tag_url text,
-    bsi_pushed_at timestamp with time zone,
-    bsi_box_ref text,
-    rep_name text,
-    verified_by text,
-    impersonation_id uuid,
-    mfr_serial text,
-    CONSTRAINT fp_discard_requires_reason CHECK ((overall_pass OR (discard_reason IS NOT NULL))),
-    CONSTRAINT fp_inspections_mfg_month_check CHECK (((mfg_month IS NULL) OR ((mfg_month >= 1) AND (mfg_month <= 12)))),
-    CONSTRAINT fp_inspections_mfg_year_check CHECK (((mfg_year IS NULL) OR ((mfg_year >= 1900) AND (mfg_year <= 2200)))),
-    CONSTRAINT fp_status_allowed CHECK (((status IS NULL) OR (status = ANY (ARRAY['pass'::text, 'fail'::text, 'inspection overdue'::text]))))
-);
-
-
---
--- Name: COLUMN fp_inspections.item_type; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.fp_inspections.item_type IS 'Display text, denormalized from the equipment type at capture time so a certificate keeps saying what the item was inspected as even if the type is later renamed.';
-
-
---
--- Name: COLUMN fp_inspections.discard_reason; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.fp_inspections.discard_reason IS 'Composed from the failed checks by record_fp_inspection. Not typed by the tech.';
-
-
---
--- Name: COLUMN fp_inspections.discard_note; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.fp_inspections.discard_note IS 'Optional free text the tech adds alongside the photo.';
-
-
---
--- Name: COLUMN fp_inspections.mfr_serial; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.fp_inspections.mfr_serial IS 'The manufacturer''s serial, when it is not the number the item is known by. Kept for reference; never used to find an item.';
-
-
---
--- Name: fall_protection_checks_public; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.fall_protection_checks_public AS
- SELECT a.public_ref,
-    i.inspection_date,
-    c.ord,
-    c.prompt,
-    c.answer_style,
-    c.answer,
-        CASE
-            WHEN (c.answer IS NULL) THEN NULL::text
-            WHEN (c.answer_style = 'yes_no'::text) THEN
-            CASE
-                WHEN c.answer THEN 'Yes'::text
-                ELSE 'No'::text
-            END
-            ELSE
-            CASE
-                WHEN c.answer THEN 'Pass'::text
-                ELSE 'Fail'::text
-            END
-        END AS answer_label,
-    c.result
-   FROM ((public.fp_inspection_checks c
-     JOIN public.fp_inspections i ON ((i.id = c.fp_inspection_id)))
-     JOIN public.assets a ON ((a.id = i.asset_id)))
-  WHERE (i.is_current AND (NOT i.is_deleted))
-  ORDER BY a.public_ref, i.inspection_date DESC, c.ord;
-
-
---
--- Name: fall_protection_public; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.fall_protection_public AS
- SELECT a.serial_raw AS serial_num,
-    a.serial_key,
-    a.public_ref,
-    a.tag_url,
-    a.tag_label,
-    a.tag_label_key,
-    i.inspection_date,
-    i.next_due_date,
-    COALESCE(i.rep_name, i.collector_name) AS tech_name,
-    i.rep_name,
-    i.rep_number,
-    i.verified_by,
-    i.manufacturer,
-    i.model,
-    i.item_type,
-    i.description,
-    i.lot_number,
-    i.mfg_month,
-    i.mfg_year,
-    i.status,
-    i.overall_pass,
-    i.discard_reason,
-    i.work_order_id,
-    i.created_at,
-    public.certificate_url(a.public_ref, 'fall_protection'::text) AS certificate_url,
-    public.fp_tag_url(a.public_ref, a.serial_raw) AS tag_write_url
-   FROM (public.assets a
-     JOIN public.fp_inspections i ON (((i.asset_id = a.id) AND i.is_current AND (NOT i.is_deleted))))
-  WHERE (a.kind = 'fall_protection'::text);
 
 
 --
@@ -7404,63 +8036,6 @@ CREATE TABLE public.inspection_photos (
 
 
 --
--- Name: inspections; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.inspections (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    serial_num text NOT NULL,
-    inspection_date date NOT NULL,
-    tech_name text NOT NULL,
-    work_order_id text,
-    next_due_date date,
-    notes text,
-    brand text,
-    type text,
-    length text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    account_id uuid,
-    asset_id uuid,
-    work_order_uuid uuid,
-    tech_user_id uuid,
-    version integer DEFAULT 1 NOT NULL,
-    supersedes uuid,
-    is_current boolean DEFAULT true NOT NULL,
-    is_deleted boolean DEFAULT false NOT NULL,
-    source text,
-    captured_at timestamp with time zone,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    lubricated boolean,
-    has_leveler boolean,
-    has_claw boolean,
-    has_vrung boolean,
-    rep_number text,
-    collected_by uuid,
-    collector_name text,
-    rep_name text,
-    verified_by text,
-    impersonation_id uuid,
-    parts jsonb,
-    bsi_pushed_at timestamp with time zone,
-    bsi_box_ref text
-);
-
-
---
--- Name: COLUMN inspections.parts; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.inspections.parts IS 'Parts tapped in the field: [{"name","qty"}]. Fed into the BSI import.';
-
-
---
--- Name: COLUMN inspections.bsi_pushed_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.inspections.bsi_pushed_at IS 'When this exact record landed in BSI. Per record, not per work order: a work order gains ladders after it is imported, and those have not been billed.';
-
-
---
 -- Name: job_assignees; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7514,42 +8089,6 @@ CREATE TABLE public.known_networks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT known_networks_kind_check CHECK ((kind = ANY (ARRAY['office'::text, 'field'::text, 'customer'::text, 'other'::text])))
 );
-
-
---
--- Name: ladder_inspections_public; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.ladder_inspections_public AS
- SELECT COALESCE(a.serial_raw, i.serial_num) AS serial_num,
-    a.serial_key,
-    i.inspection_date,
-    COALESCE(i.rep_name, i.tech_name) AS tech_name,
-    i.rep_name,
-    i.rep_number,
-    i.verified_by,
-    i.next_due_date,
-    i.work_order_id,
-    i.notes,
-    i.brand,
-    i.type,
-    i.length,
-    i.created_at,
-    a.public_ref,
-    i.version,
-    i.lubricated,
-    i.has_leveler,
-    i.has_claw,
-    i.has_vrung,
-    public.certificate_url(a.public_ref, a.kind) AS certificate_url,
-    (public.ladder_destroy_reason(i.parts) IS NOT NULL) AS destroyed,
-    public.ladder_destroy_reason(i.parts) AS destroy_reason,
-    a.tag_label,
-    a.tag_label_key
-   FROM (public.inspections i
-     LEFT JOIN public.assets a ON ((a.id = i.asset_id)))
-  WHERE (i.is_current AND (NOT i.is_deleted))
-  ORDER BY i.serial_num, i.inspection_date DESC;
 
 
 --
@@ -7705,6 +8244,22 @@ CREATE TABLE public.support_tickets (
     CONSTRAINT support_tickets_kind_check CHECK ((kind = ANY (ARRAY['bug'::text, 'suggestion'::text, 'question'::text, 'other'::text]))),
     CONSTRAINT support_tickets_severity_check CHECK ((severity = ANY (ARRAY['blocking'::text, 'annoying'::text, 'idea'::text]))),
     CONSTRAINT support_tickets_status_check CHECK ((status = ANY (ARRAY['new'::text, 'open'::text, 'answered'::text, 'resolved'::text, 'wont_fix'::text])))
+);
+
+
+--
+-- Name: training_erasures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.training_erasures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    account_ids uuid[] NOT NULL,
+    user_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    erased_by uuid,
+    erased_at timestamp with time zone DEFAULT now() NOT NULL,
+    rows_deleted jsonb,
+    finished_at timestamp with time zone
 );
 
 
@@ -8101,6 +8656,14 @@ ALTER TABLE ONLY public.support_tickets
 
 
 --
+-- Name: training_erasures training_erasures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_erasures
+    ADD CONSTRAINT training_erasures_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: usage_log usage_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8180,6 +8743,13 @@ CREATE UNIQUE INDEX account_parts_uq ON public.account_parts USING btree (accoun
 --
 
 CREATE INDEX accounts_parent_idx ON public.accounts USING btree (parent_account_id) WHERE (parent_account_id IS NOT NULL);
+
+
+--
+-- Name: accounts_training_token_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX accounts_training_token_idx ON public.accounts USING btree (training_preview_token) WHERE (training_preview_token IS NOT NULL);
 
 
 --
@@ -8705,6 +9275,13 @@ CREATE INDEX work_orders_charged_idx ON public.work_orders USING btree (charged_
 --
 
 CREATE TRIGGER accounts_no_cycle_trg BEFORE INSERT OR UPDATE OF parent_account_id ON public.accounts FOR EACH ROW WHEN ((new.parent_account_id IS NOT NULL)) EXECUTE FUNCTION public.accounts_no_cycle();
+
+
+--
+-- Name: accounts accounts_training_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER accounts_training_guard BEFORE INSERT OR UPDATE OF is_training, parent_account_id ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.accounts_training_guard();
 
 
 --
@@ -9944,6 +10521,12 @@ CREATE POLICY support_tickets_read ON public.support_tickets FOR SELECT TO authe
 
 
 --
+-- Name: training_erasures; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.training_erasures ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: usage_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -10409,6 +10992,13 @@ GRANT ALL ON FUNCTION public.is_developer() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.is_impersonating() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.is_impersonating() TO authenticated;
+
+
+--
+-- Name: FUNCTION is_training_account(p_account uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.is_training_account(p_account uuid) TO authenticated;
 
 
 --
@@ -10900,6 +11490,152 @@ GRANT ALL ON FUNCTION public.team_members() TO authenticated;
 
 
 --
+-- Name: FUNCTION training_accounts(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_accounts() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_accounts() TO authenticated;
+
+
+--
+-- Name: FUNCTION training_add_member(p_actor uuid, p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_add_member(p_actor uuid, p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_add_member(p_actor uuid, p jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION training_create(p_actor uuid, p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_create(p_actor uuid, p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_create(p_actor uuid, p jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION training_erase(p_actor uuid, p_account uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_erase(p_actor uuid, p_account uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_erase(p_actor uuid, p_account uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION training_erase_finished(p_actor uuid, p_erasure uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_erase_finished(p_actor uuid, p_erasure uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_erase_finished(p_actor uuid, p_erasure uuid) TO service_role;
+
+
+--
+-- Name: TABLE accounts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.accounts TO authenticated;
+
+
+--
+-- Name: TABLE assets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.assets TO authenticated;
+
+
+--
+-- Name: TABLE fp_inspections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fp_inspections TO authenticated;
+
+
+--
+-- Name: TABLE fall_protection_public; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fall_protection_public TO anon;
+GRANT SELECT ON TABLE public.fall_protection_public TO authenticated;
+
+
+--
+-- Name: FUNCTION training_fall_protection(p_token text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.training_fall_protection(p_token text) TO anon;
+GRANT ALL ON FUNCTION public.training_fall_protection(p_token text) TO authenticated;
+
+
+--
+-- Name: TABLE fp_inspection_checks; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fp_inspection_checks TO authenticated;
+
+
+--
+-- Name: TABLE fall_protection_checks_public; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.fall_protection_checks_public TO anon;
+GRANT SELECT ON TABLE public.fall_protection_checks_public TO authenticated;
+
+
+--
+-- Name: FUNCTION training_fall_protection_checks(p_token text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.training_fall_protection_checks(p_token text) TO anon;
+GRANT ALL ON FUNCTION public.training_fall_protection_checks(p_token text) TO authenticated;
+
+
+--
+-- Name: TABLE inspections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.inspections TO authenticated;
+
+
+--
+-- Name: TABLE ladder_inspections_public; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.ladder_inspections_public TO anon;
+GRANT SELECT ON TABLE public.ladder_inspections_public TO authenticated;
+
+
+--
+-- Name: FUNCTION training_ladder_inspections(p_token text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.training_ladder_inspections(p_token text) TO anon;
+GRANT ALL ON FUNCTION public.training_ladder_inspections(p_token text) TO authenticated;
+
+
+--
+-- Name: FUNCTION training_pending_erasures(p_actor uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_pending_erasures(p_actor uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_pending_erasures(p_actor uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION training_require_developer(p_actor uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_require_developer(p_actor uuid) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION training_update(p jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.training_update(p jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.training_update(p jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION transfer_stock(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10961,13 +11697,6 @@ GRANT SELECT ON TABLE public.account_parts TO authenticated;
 
 
 --
--- Name: TABLE accounts; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.accounts TO authenticated;
-
-
---
 -- Name: TABLE app_settings; Type: ACL; Schema: public; Owner: -
 --
 
@@ -10976,47 +11705,10 @@ GRANT SELECT ON TABLE public.app_settings TO authenticated;
 
 
 --
--- Name: TABLE assets; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.assets TO authenticated;
-
-
---
 -- Name: TABLE certificate_views; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT ON TABLE public.certificate_views TO authenticated;
-
-
---
--- Name: TABLE fp_inspection_checks; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.fp_inspection_checks TO authenticated;
-
-
---
--- Name: TABLE fp_inspections; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.fp_inspections TO authenticated;
-
-
---
--- Name: TABLE fall_protection_checks_public; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.fall_protection_checks_public TO anon;
-GRANT SELECT ON TABLE public.fall_protection_checks_public TO authenticated;
-
-
---
--- Name: TABLE fall_protection_public; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.fall_protection_public TO anon;
-GRANT SELECT ON TABLE public.fall_protection_public TO authenticated;
 
 
 --
@@ -11097,25 +11789,10 @@ GRANT SELECT ON TABLE public.inspection_photos TO authenticated;
 
 
 --
--- Name: TABLE inspections; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.inspections TO authenticated;
-
-
---
 -- Name: TABLE known_networks; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT ON TABLE public.known_networks TO authenticated;
-
-
---
--- Name: TABLE ladder_inspections_public; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.ladder_inspections_public TO anon;
-GRANT SELECT ON TABLE public.ladder_inspections_public TO authenticated;
 
 
 --

@@ -170,6 +170,9 @@
   // carries on with the list it already had. A tech standing in a plant room
   // must not be looking at a spinner because the office network is down.
   function refreshAssignments() {
+    // Training account or not — the purple bar (training.js). Same rules: not
+    // awaited, cannot fail.
+    if (window.LiaTraining) window.LiaTraining.refresh();
     if (!window.LiaAssignments) return;
     window.LiaAssignments.refresh().then(function () {
       if (typeof renderAssignedList === 'function') renderAssignedList();

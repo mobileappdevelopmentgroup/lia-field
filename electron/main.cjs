@@ -1113,6 +1113,71 @@ ipcMain.handle('invite:send', async (_event, invite) => {
   } catch (err) { return { ok: false, error: String(err) }; }
 });
 
+// ── Training and test accounts (developer only) ─────────────────────────────
+// Migration 41. Listing and editing are RPCs that check is_developer
+// themselves. Creating and erasing go through the training-accounts Edge
+// Function, because they create and delete logins (service role). Passwords
+// come back once, from 'create', and are never stored here.
+async function invokeTraining(body) {
+  const sb = await getSupabase();
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return { ok: false, error: 'Sign in first.' };
+  const { data, error } = await sb.functions.invoke('training-accounts', { body });
+  if (error) {
+    let detail = error.message;
+    try {
+      const b = await error.context?.json?.();
+      if (b && b.error) detail = b.error;
+    } catch (_) { /* keep error.message */ }
+    return { ok: false, error: detail };
+  }
+  if (data && data.error && data.ok !== true) return { ok: false, error: data.error, result: data };
+  return { ok: true, result: data };
+}
+
+ipcMain.handle('training:list', async () => {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.rpc('training_accounts');
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, accounts: typeof data === 'string' ? JSON.parse(data) : (data || []) };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('training:create', async (_event, opts) => {
+  try {
+    return await invokeTraining({
+      action: 'create',
+      name: opts && opts.name,
+      techs: opts && opts.techs,
+      expires_days: opts && opts.expiresDays,
+      bsi_work_orders: (opts && opts.bsiWorkOrders) || [],
+    });
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('training:update', async (_event, opts) => {
+  try {
+    const sb = await getSupabase();
+    const p = { account_id: opts && opts.accountId };
+    if (opts && opts.expiresDays) p.expires_days = opts.expiresDays;
+    if (opts && Array.isArray(opts.bsiWorkOrders)) p.bsi_work_orders = opts.bsiWorkOrders;
+    const { error } = await sb.rpc('training_update', { p });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('training:erase', async (_event, accountId) => {
+  try { return await invokeTraining({ action: 'erase', account_id: accountId }); }
+  catch (err) { return { ok: false, error: String(err) }; }
+});
+
+ipcMain.handle('training:finish', async () => {
+  try { return await invokeTraining({ action: 'finish' }); }
+  catch (err) { return { ok: false, error: String(err) }; }
+});
+
 ipcMain.handle('team:remove', async (_event, opts) => {
   try {
     const sb = await getSupabase();
@@ -1534,7 +1599,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
   // them. `_billable` was once a const inside the try block, so the handler's
   // reference threw, the JSON catch swallowed it, and from 2026-09-21 no
   // import was charged or recorded (see office-records.cjs).
-  let _sb = null, _techName = 'Lia Import', _serials = [], _accountId = null, _accountName = null, _billable = false;
+  let _sb = null, _techName = 'Lia Import', _serials = [], _accountId = null, _accountName = null, _billable = false, _training = false;
 
   // Consume a credit if Supabase is configured
   const cfg = readConfig();
@@ -1559,7 +1624,20 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
         const _c = typeof _ctx === 'string' ? JSON.parse(_ctx) : _ctx;
         _accountId = (_c && _c.account_id) || null;
         _accountName = (_c && _c.account_name) || null;
+        _training = !!(_c && _c.is_training);
       } catch {}
+
+      // A training account may only put parts into its BSI training work
+      // order (migration 41). With no work order there is no preflight to
+      // refuse it, so refuse here: a blank work order on a live BSI job is
+      // exactly how training parts would end up on a customer's bill.
+      if (_training && !(typeof workOrderId === 'string' && workOrderId.trim() !== '')) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('automation:credit-error',
+            'This is a training account: enter its BSI training work order number before importing.');
+        }
+        return;
+      }
 
       // Collect rows from the CSV now (file is still present at start time)
       try {
@@ -1611,7 +1689,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
       if (preflight && preflight.can_run === false) {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('automation:credit-error',
-            'No import credits remaining — contact your administrator.');
+            preflight.reason || 'No import credits remaining — contact your administrator.');
         }
         return;
       }

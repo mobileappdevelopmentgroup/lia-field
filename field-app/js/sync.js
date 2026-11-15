@@ -88,6 +88,8 @@
     // server, or a build whose client would not construct, must still not leave
     // one company's job list on the phone for whoever signs in next.
     try { localStorage.removeItem('lia-assigned-jobs'); } catch (_) {}
+    // Training or not is the signed-in account's, not the next person's.
+    if (root.LiaTraining) root.LiaTraining.clear();
     // So is the list of blank tags: one company's tags must not be recognised
     // as "ours" by whoever signs in next.
     if (root.LiaTagStock) root.LiaTagStock.clear();
@@ -583,6 +585,7 @@
     if (!root.LiaAssignments) return;
     if (Date.now() - _assignmentsAt < ASSIGNMENT_INTERVAL) return;
     _assignmentsAt = Date.now();
+    if (root.LiaTraining) root.LiaTraining.refresh();
     root.LiaAssignments.refresh().then(function (r) {
       // Only redrawn on a real answer — a failed pull must not flicker the
       // list or reset the "as of" line to now.

@@ -47,6 +47,7 @@ export interface LadderResult {
 export interface ExtraPartEntry {
   boxSerial: string;   // serial number of the box that has the extra part
   partNum: string;     // part number found in BSI but not in CSV
+  boxNumber?: string;  // BSI's "Box #", so the office can go straight to it
 }
 
 export interface VerificationGap {
@@ -94,6 +95,7 @@ export interface RunMeta {
 export interface WorkOrderBox {
   selector: string;    // e.g. "#box-3"
   serialNum: string;   // from #boxserialnumberh-{N} input value
+  boxNumber?: string;  // the "Box #" BSI shows at the top left of the box (may differ from N)
   partNums: string[];  // part numbers from table rows (e.g. ["M23","R28L","RC"])
   totalCost?: number;  // dollar total shown by BSI for this box, if scraped
 }

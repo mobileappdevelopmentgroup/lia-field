@@ -122,6 +122,29 @@
                          cursor: pointer; }
     #ctx-banner button:hover { background: rgba(0,0,0,.4); }
 
+    /* ── Training account banner (migration 41) ─────────────────────────── */
+    /* Loud for the same reason as the acting banner: a trainee must never be
+       unsure whether what they are doing reaches a customer or a bill. */
+    #training-banner { display: none; align-items: center; gap: 10px; flex-shrink: 0;
+                       padding: 7px 16px; background: #6d28d9; color: #fff;
+                       font-size: 12px; font-weight: 600; }
+    #training-banner.on { display: flex; }
+    #training-banner span:last-child { font-weight: 400; opacity: .9; }
+    .tr-family { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; background: var(--surf); }
+    .tr-family.expired { border-color: var(--warn); }
+    .tr-family h4 { margin: 0 0 4px; font-size: 14px; }
+    .tr-meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .tr-members { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 6px 0 10px; line-height: 1.6; }
+    .tr-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .tr-actions button { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+                         background: transparent; color: var(--text); cursor: pointer; }
+    .tr-actions button.danger { border-color: var(--err); color: var(--err); }
+    .tr-actions input { font-size: 12px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+                        background: var(--bg); color: var(--text); width: 160px; }
+    .tr-creds { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+    .tr-creds td, .tr-creds th { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    .tr-creds td.mono { font-family: var(--mono); user-select: all; }
+
     /* ── Act-as panel ───────────────────────────────────────────────────── */
     #ctx-panel, #team-remove-panel { display: none; position: fixed; inset: 0; z-index: 50;
                  background: rgba(0,0,0,.55); align-items: center; justify-content: center; }
@@ -871,6 +894,10 @@
 </div>
 
 <!-- Whose account am I working in. Hidden unless it is somebody else's. -->
+<div id="training-banner">
+  <span>TRAINING ACCOUNT</span>
+  <span id="training-banner-text">Nothing here reaches a public certificate or a bill.</span>
+</div>
 <div id="ctx-banner">
   <span id="ctx-text"></span>
   <span id="ctx-reason"></span>
@@ -1243,6 +1270,11 @@
           <div class="mode-name">Fall Protection History</div>
           <div class="mode-desc">Import past fall-protection inspections, so the phones know those items. Load spare numbers for untagged defective items.</div>
         </div>
+        <div class="mode-card" id="adv-training" style="display:none;">
+          <div class="mode-icon">🎓</div>
+          <div class="mode-name">Training Accounts</div>
+          <div class="mode-desc">Practice accounts for demos, training and troubleshooting. Never public, never billed, erased when done. Developer only.</div>
+        </div>
       </div>
       <!-- The certificate site is public and is a link, not an install, so it
            stays a QR: somebody points a phone at the screen. -->
@@ -1252,6 +1284,56 @@
         <div class="qr-label">Certificate Check</div>
         <div class="qr-sub">Look up any certificate by serial or code</div>
       </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SCREEN: TRAINING ACCOUNTS ═══════════════ -->
+<!-- Migration 41 and supabase/functions/training-accounts. Developer only: the
+     server refuses everybody else, and the card is hidden for them. -->
+<div id="screen-training" class="screen">
+  <div class="cat-wrap">
+    <div class="cat-head">
+      <button class="back-link" id="btn-training-back">← Advanced</button>
+      <div class="cat-title">Training Accounts</div>
+    </div>
+    <div class="cat-body">
+      <div class="cat-list" style="min-width:420px;flex:1.3;">
+        <div class="cat-list-hdr"><span>Open training accounts</span><span id="tr-count"></span></div>
+        <div id="tr-list"></div>
+        <div class="cat-msg" id="tr-list-msg"></div>
+      </div>
+      <div class="cat-detail">
+        <div class="cat-detail-title">New training account</div>
+        <div class="ob-hint">
+          Makes a training office (like Batavia) with a crew beneath it, a login for
+          the office, one for the crew lead, and one per trainee. It works exactly
+          like a real account, but nothing in it ever reaches the public certificate
+          site, nothing is billed, and Lia Office will only import it into the BSI
+          work orders listed here.
+        </div>
+        <label class="ob-label" for="tr-name">Name</label>
+        <input class="ob-input" id="tr-name" type="text" maxlength="60" placeholder="Batavia demo">
+        <label class="ob-label" for="tr-techs">Trainee logins</label>
+        <input class="ob-input" id="tr-techs" type="number" min="1" max="30" value="4">
+        <label class="ob-label" for="tr-days">Keep for (days)</label>
+        <input class="ob-input" id="tr-days" type="number" min="1" max="90" value="14">
+        <label class="ob-label" for="tr-wos">BSI training work order(s)</label>
+        <input class="ob-input" id="tr-wos" type="text" placeholder="e.g. 99999 — comma-separated">
+        <div class="ob-hint" style="margin-top:6px;">
+          Ask Batavia for a training or test work order in BSI. Imports into any
+          other work order are refused. Trainees sign in to BSI themselves, and
+          parts added in training must never be submitted for payment.
+        </div>
+        <div class="ob-actions"><button class="btn-ok" id="btn-tr-create">Create training account</button></div>
+        <div id="tr-msg" class="ob-msg"></div>
+        <div id="tr-creds" style="display:none;margin-top:14px;">
+          <div class="cat-detail-title">Logins — shown once</div>
+          <div class="ob-hint">Copy or write these down now. Passwords are not stored anywhere and cannot be shown again.</div>
+          <div id="tr-creds-table"></div>
+          <div class="ob-actions"><button class="btn-ok" id="btn-tr-copy">Copy all</button></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2277,6 +2359,7 @@ function goToDestination(dest) {
   else if (dest === 'team')    { showScreen('team');    loadTeam(); }
   else if (dest === 'subs')    { showScreen('subs');    loadSubs(); }
   else if (dest === 'help')    { showScreen('help'); }
+  else if (dest === 'training') { showScreen('training'); loadTraining(); }
 }
 
 $('btn-login').addEventListener('click', doLogin);
@@ -5071,6 +5154,8 @@ async function refreshSupportBadge() {
   }
 
   const who = await window.api.supportAmIDeveloper().catch(() => null);
+  const trCard = $('adv-training');
+  if (trCard) trCard.style.display = (who && who.ok && who.developer && typeof window.api.trainingList === 'function') ? '' : 'none';
   if (!who || !who.ok || !who.developer) { card.style.display = 'none'; return; }
   card.style.display = '';
 
@@ -5084,6 +5169,126 @@ async function refreshSupportBadge() {
   el.textContent = c.blocking
     ? `${c.blocking} blocking · ${c.open} open`
     : `${c.open} open${c.unread ? ` · ${c.unread} unread` : ''}`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// Training accounts (developer only) — migration 41
+// ════════════════════════════════════════════════════════════════
+// The server decides who may do any of this (training_require_developer, and
+// the Edge Function's own check); this screen is presentation. Passwords come
+// back once, from create, and live only in _trCreds until the screen is left.
+let _trCreds = [];
+const CERT_SITE = 'https://lia.mobileappdevelopmentgroup.com/';
+
+function trWoList(text) {
+  return String(text || '').split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+}
+
+function trPreviewUrl(f) {
+  const wo = (f.bsi_work_orders || [])[0];
+  return CERT_SITE + '?preview=' + encodeURIComponent(f.preview_token) + (wo ? '&wo=' + encodeURIComponent(wo) : '');
+}
+
+async function loadTraining() {
+  const list = $('tr-list'), msg = $('tr-list-msg');
+  if (!_trCreds.length) $('tr-creds').style.display = 'none';
+  list.innerHTML = '<div class="cat-msg">Loading…</div>';
+  msg.textContent = ''; msg.className = 'cat-msg';
+  const res = await window.api.trainingList().catch(e => ({ ok: false, error: String(e) }));
+  if (!res || !res.ok) { list.innerHTML = ''; msg.className = 'cat-msg err'; msg.textContent = (res && res.error) || 'Could not load training accounts.'; return; }
+  const fams = res.accounts || [];
+  $('tr-count').textContent = fams.length ? String(fams.length) : '';
+  if (!fams.length) { list.innerHTML = '<div class="cat-msg">No training accounts. Make one on the right.</div>'; return; }
+  list.innerHTML = fams.map(f => {
+    const exp = f.expires_at ? new Date(f.expires_at) : null;
+    const expTxt = exp ? (f.expired ? `expired ${exp.toLocaleDateString()}` : `until ${exp.toLocaleDateString()}`) : '';
+    const members = (f.members || []).map(m =>
+      `${esc(m.email)} · ${esc(m.name || '')} · ${m.role === 'lead' ? 'lead' : 'tech'} · ${esc(m.account_name || '')}`).join('<br>');
+    return `<div class="tr-family${f.expired ? ' expired' : ''}" data-id="${escA(f.account_id)}">
+      <h4>${esc(f.name)}</h4>
+      <div class="tr-meta">${esc(expTxt)} · ${f.ladders} ladder${f.ladders == 1 ? '' : 's'} · ${f.fp} FP ·
+        BSI training WO: ${esc((f.bsi_work_orders || []).join(', ') || 'none — imports refused')}</div>
+      <div class="tr-members">${members || 'No logins'}</div>
+      <div class="tr-actions">
+        <button data-tr="copy-preview">Copy certificate preview link</button>
+        <button data-tr="extend">Keep 14 more days</button>
+        <input data-tr-wos placeholder="BSI WO(s)" value="${escA((f.bsi_work_orders || []).join(', '))}">
+        <button data-tr="save-wos">Save WO</button>
+        <button data-tr="erase" class="danger">Erase…</button>
+        <span data-tr-confirm style="display:none;">
+          <input data-tr-confirm-input placeholder="type ERASE">
+          <button data-tr="erase-confirm" class="danger">Erase everything</button>
+        </span>
+      </div>
+      <div class="cat-msg" data-tr-msg></div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.tr-family').forEach(el => {
+    const f = fams.find(x => x.account_id === el.dataset.id);
+    const say = (t, err) => { const m = el.querySelector('[data-tr-msg]'); m.textContent = t; m.className = 'cat-msg' + (err ? ' err' : ''); };
+    el.querySelectorAll('[data-tr]').forEach(btn => btn.addEventListener('click', async () => {
+      const act = btn.dataset.tr;
+      if (act === 'copy-preview') {
+        try { await navigator.clipboard.writeText(trPreviewUrl(f)); say('Preview link copied. It shows this account\'s certificates, marked TEST, until it is erased.'); }
+        catch (_) { say(trPreviewUrl(f)); }
+      } else if (act === 'extend') {
+        const r = await window.api.trainingUpdate({ accountId: f.account_id, expiresDays: 14 });
+        if (r && r.ok) loadTraining(); else say((r && r.error) || 'Could not extend it.', true);
+      } else if (act === 'save-wos') {
+        const wos = trWoList(el.querySelector('[data-tr-wos]').value);
+        const r = await window.api.trainingUpdate({ accountId: f.account_id, bsiWorkOrders: wos });
+        if (r && r.ok) loadTraining(); else say((r && r.error) || 'Could not save.', true);
+      } else if (act === 'erase') {
+        el.querySelector('[data-tr-confirm]').style.display = '';
+        el.querySelector('[data-tr-confirm-input]').focus();
+        say(`Erasing deletes every record, photo and login in ${f.name}. It cannot be undone.`, true);
+      } else if (act === 'erase-confirm') {
+        if (el.querySelector('[data-tr-confirm-input]').value.trim().toUpperCase() !== 'ERASE') { say('Type ERASE to confirm.', true); return; }
+        btn.disabled = true; say('Erasing…');
+        const r = await window.api.trainingErase(f.account_id);
+        if (r && r.ok) { loadTraining(); return; }
+        btn.disabled = false;
+        say((r && r.error) || 'Could not erase it.', true);
+        if (r && r.result && r.result.partial) {
+          const fin = document.createElement('button'); fin.textContent = 'Finish erasing'; fin.className = 'danger';
+          fin.addEventListener('click', async () => {
+            const f2 = await window.api.trainingFinish();
+            if (f2 && f2.ok) loadTraining(); else say((f2 && f2.error) || 'Still could not finish.', true);
+          });
+          el.querySelector('.tr-actions').appendChild(fin);
+        }
+      }
+    }));
+  });
+}
+
+async function trainingCreate() {
+  const msg = $('tr-msg'), btn = $('btn-tr-create');
+  const name = $('tr-name').value.trim();
+  const wos = trWoList($('tr-wos').value);
+  msg.className = 'ob-msg';
+  if (!name) { msg.className = 'ob-msg err'; msg.textContent = 'Give it a name, e.g. "Batavia demo".'; return; }
+  if (!wos.length) { msg.className = 'ob-msg err'; msg.textContent = 'Add the BSI training work order. Without one, BSI imports are refused.'; }
+  btn.disabled = true; msg.textContent = 'Creating logins…';
+  const res = await window.api.trainingCreate({
+    name, techs: Number($('tr-techs').value) || 4, expiresDays: Number($('tr-days').value) || 14, bsiWorkOrders: wos,
+  }).catch(e => ({ ok: false, error: String(e) }));
+  btn.disabled = false;
+  if (!res || !res.ok) { msg.className = 'ob-msg err'; msg.textContent = (res && res.error) || 'Could not create it.'; return; }
+  const r = res.result || {};
+  _trCreds = (r.logins || []).map(l => ({ ...l, account: r.name }));
+  msg.className = 'ob-msg'; msg.textContent = `${r.name} is ready.`;
+  $('tr-creds-table').innerHTML = `<table class="tr-creds"><tr><th>Who</th><th>Sign in as</th><th>Password</th></tr>` +
+    _trCreds.map(l => `<tr><td>${esc(l.name)}<br><span class="cat-msg" style="margin:0">${esc(l.where)}${l.role === 'lead' ? ' · Lia Office + phone' : ' · phone'}</span></td>` +
+      `<td class="mono">${esc(l.email)}</td><td class="mono">${esc(l.password)}</td></tr>`).join('') + '</table>';
+  $('tr-creds').style.display = '';
+  loadTraining();
+}
+
+async function trainingCopyCreds() {
+  const text = _trCreds.map(l => `${l.name} (${l.where}, ${l.role})\t${l.email}\t${l.password}`).join('\n');
+  try { await navigator.clipboard.writeText(`${_trCreds[0] ? _trCreds[0].account : ''}\n${text}\n`); $('tr-msg').textContent = 'Copied.'; }
+  catch (_) { $('tr-msg').textContent = 'Could not copy — select the table and copy it.'; }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5350,7 +5555,21 @@ async function autoRecoverKick() {
   }
 }
 
+function renderTrainingBanner() {
+  const tb = $('training-banner');
+  if (!tb) return;
+  const on = !!(_ctx && _ctx.is_training);
+  tb.classList.toggle('on', on);
+  if (!on) return;
+  const wos = (_ctx.training_bsi_work_orders || []).filter(Boolean);
+  $('training-banner-text').textContent =
+    'Nothing here reaches a public certificate or a bill. ' +
+    (wos.length ? `BSI imports only into training work order ${wos.join(', ')} — never submit it for payment.`
+                : 'No BSI training work order is set, so BSI imports are refused.');
+}
+
 function renderContext() {
+  renderTrainingBanner();
   const bar = $('ctx-banner');
   // While acting as somebody, the home screen shows what THEY would see.
   // Anything the office has and they do not is greyed rather than hidden, so
@@ -5500,6 +5719,14 @@ $('btn-fppool-pick').addEventListener('click', fpPoolPick);
 $('btn-fppool-check').addEventListener('click', fpPoolCheckPaste);
 $('btn-fppool-cancel').addEventListener('click', fpPoolReset);
 $('adv-views').addEventListener('click',   () => requireAuth('views'));
+$('adv-training').addEventListener('click', () => requireAuth('training'));
+// Leaving the screen forgets the passwords: they were shown once.
+$('btn-training-back').addEventListener('click', () => {
+  _trCreds = []; $('tr-creds-table').innerHTML = ''; $('tr-creds').style.display = 'none'; $('tr-msg').textContent = '';
+  showScreen('advanced');
+});
+$('btn-tr-create').addEventListener('click', trainingCreate);
+$('btn-tr-copy').addEventListener('click', trainingCopyCreds);
 $('home-team').addEventListener('click', () => requireAuth('team'));
 // No sign-in needed to read how the thing works.
 $('home-help').addEventListener('click', () => showScreen('help'));
@@ -6057,11 +6284,20 @@ function renderSummary(result) {
     section('⚠  MISSING PARTS — some parts were not found or failed', 'var(--warn)', partialRows) +
     section('✗  NOT ADDED — box could not be created', 'var(--err)', errorRows);
   if (s.extraOnWorkOrder && s.extraOnWorkOrder.length > 0) {
-    const bySerial = {};
-    for (const e of s.extraOnWorkOrder) (bySerial[e.boxSerial] = bySerial[e.boxSerial]||[]).push(e.partNum);
-    const rows = Object.entries(bySerial).map(([sn, parts]) =>
-      `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--warn);">SN ${esc(sn)}</td>`+
-      `<td style="padding:4px 8px;">${parts.map(p=>`<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ')}</td></tr>`
+    // Grouped per BSI box, and the box's own "Box #" shown first: it is what
+    // the office looks for on the BSI page to take the extra parts off.
+    const byBox = new Map();
+    for (const e of s.extraOnWorkOrder) {
+      const k = (e.boxNumber || '') + '\u0000' + e.boxSerial;
+      if (!byBox.has(k)) byBox.set(k, { box: e.boxNumber || '', sn: e.boxSerial, parts: [] });
+      byBox.get(k).parts.push(e.partNum);
+    }
+    const sorted = [...byBox.values()].sort((a, b) =>
+      (Number(a.box) || Infinity) - (Number(b.box) || Infinity) || String(a.sn).localeCompare(String(b.sn)));
+    const rows = sorted.map(g =>
+      `<tr><td style="padding:4px 8px;white-space:nowrap;font-family:var(--mono);font-size:12px;color:var(--warn);">`+
+      (g.box ? `<strong>Box ${esc(g.box)}</strong> · ` : '') + `SN ${esc(g.sn)}</td>`+
+      `<td style="padding:4px 8px;">${g.parts.map(p=>`<span class="part-tag tag-not_found">${esc(p)}</span>`).join(' ')}</td></tr>`
     );
     $('sum-extra').innerHTML = section('⚠  EXTRA ON WORK ORDER — parts in BSI not in your CSV', 'var(--warn)', rows);
   } else { $('sum-extra').innerHTML = ''; }

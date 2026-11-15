@@ -70,6 +70,15 @@ const CHECKS = [
   { public_ref: 'XX42QZCN0L', inspection_date: day(-20), ord: 2, prompt: 'Has the impact indicator been activated?', result: true, answer_label: 'No' },
 ];
 
+// A training account's rows (migration 41): never in the public views, served
+// only by the preview RPCs, and only for the right token.
+const TOKEN = 'ab'.repeat(32);
+const TRAIN_LADDERS = [
+  L('BDEMO-01', { work_order_id: '99999', tech_name: 'Training lead', rep_number: 'TRAIN', verified_by: 'Training: Batavia demo', public_ref: 'TRN0000001' }),
+  L('1000115', { work_order_id: '99999', destroyed: true, destroy_reason: 'Cut and destroyed: repair cost prohibitive',
+                 rep_number: 'TRAIN', public_ref: 'TRN0000002' }),
+];
+
 // ── A stand-in for PostgREST: just the filters the page uses ──────────────────
 const state = { pre40: false, down: false, views: [], requests: [] };
 function filter(rows, params) {
@@ -107,6 +116,13 @@ async function api(route) {
     rows = state.pre40 ? LADDERS.map(({ destroyed, destroy_reason, tag_label, tag_label_key, ...r }) => r) : LADDERS;
   } else if (view === 'fall_protection_public') rows = FPS;
   else if (view === 'fall_protection_checks_public') rows = CHECKS;
+  else if (view.startsWith('rpc/training_')) {
+    const token = u.searchParams.get('p_token');
+    const ps = params.filter(([k]) => k !== 'p_token');
+    const mine = token === TOKEN;
+    rows = view === 'rpc/training_ladder_inspections' && mine ? TRAIN_LADDERS : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(filter(rows, ps)) });
+  }
   else return route.fulfill({ status: 404, body: '{}' });
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(filter(rows, params)) });
 }
@@ -293,6 +309,33 @@ ok('an outage is an outage — never "not found"',
 state.down = false;
 await p.click('#btn-retry'); await settle(p);
 ok('Try again recovers once it is back', await text(p, '#cert .serial'), '1000115');
+await p.close();
+
+// ── Training preview (migration 41) ──────────────────────────────────────────
+state.views.length = 0; state.requests.length = 0;
+p = await open('/?preview=' + TOKEN + '&wo=99999'); await settle(p);
+ok('preview: the TEST bar is up', await p.$eval('#preview-bar', e => !e.hidden && /TEST CERTIFICATES/.test(e.textContent)), true);
+ok('preview: the training job is listed', /BDEMO-01/.test(await text(p, '#result') || ''), true);
+ok('preview: and the certificates are watermarked TEST',
+   await p.$eval('#result', e => getComputedStyle(e, '::after').content.includes('NOT A REAL CERTIFICATE')), true);
+ok('preview: nothing was asked of the public views',
+   state.requests.filter(r => /^(ladder_inspections|fall_protection)/.test(r)).length, 0);
+await find(p, '1000115');
+ok('preview: a real serial shows the TRAINING copy, destroyed — never the real record',
+   await text(p, '#cert .serial') === '1000115' && /Destroyed/.test(await text(p, '#result') || ''), true);
+ok('preview: the address keeps the token as you search',
+   await p.evaluate(() => new URL(location.href).searchParams.get('preview')), TOKEN);
+ok('preview: no visit is recorded', state.views.length, 0);
+ok('preview: no page errors', p.errors, []);
+await p.close();
+
+p = await open('/?preview=' + 'cd'.repeat(32) + '&wo=99999'); await settle(p);
+ok('preview: a wrong token finds nothing', /BDEMO-01/.test(await text(p, '#result') || ''), false);
+await p.close();
+
+p = await open('/?preview=nope&s=BDEMO-01'); await settle(p);
+ok('a malformed token is ignored: no TEST bar', await p.$eval('#preview-bar', e => e.hidden), true);
+ok('… and the public site never shows a training item', /No record|not found/i.test(await text(p, '#result') || ''), true);
 await p.close();
 
 // ── A phone ──────────────────────────────────────────────────────────────────

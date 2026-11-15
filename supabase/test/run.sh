@@ -198,6 +198,11 @@ echo "Running placeholder-serial / destroyed-ladder assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/33_serial_and_destroy_test.sql"
 
+echo
+echo "Running training account assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/34_training_accounts_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

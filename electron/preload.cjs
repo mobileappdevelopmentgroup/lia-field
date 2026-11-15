@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('api', {
   removeCrewMember:(opts)   => ipcRenderer.invoke('team:remove', opts),
   restoreCrewMember:(opts)  => ipcRenderer.invoke('team:restore', opts),
   sendInvite:     (invite)  => ipcRenderer.invoke('invite:send', invite),
+  // Training and test accounts (developer only; migration 41)
+  trainingList:   ()        => ipcRenderer.invoke('training:list'),
+  trainingCreate: (opts)    => ipcRenderer.invoke('training:create', opts),
+  trainingUpdate: (opts)    => ipcRenderer.invoke('training:update', opts),
+  trainingErase:  (id)      => ipcRenderer.invoke('training:erase', id),
+  trainingFinish: ()        => ipcRenderer.invoke('training:finish'),
   listSubs:       ()       => ipcRenderer.invoke('subs:list'),
   addSubcontractor:(sub)   => ipcRenderer.invoke('subs:add', sub),
 

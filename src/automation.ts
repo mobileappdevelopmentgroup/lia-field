@@ -468,11 +468,11 @@ async function ensureProdModalClosed(page: Page, delay: number): Promise<void> {
 
 // ── Best-match selection from #ResPno options ────────────────────────────────
 
-interface PartOption { value: string; text: string }
+export interface PartOption { value: string; text: string }
 
 // BSI option text looks like "B63 – RUNGS-A R-BASE 23.4" CBO" — the part
 // code is always the first whitespace-delimited token.
-function extractPartCode(text: string): string {
+export function extractPartCode(text: string): string {
   const m = text.trim().match(/^(\S+)/);
   return (m ? m[1] : text).toUpperCase();
 }
@@ -480,21 +480,35 @@ function extractPartCode(text: string): string {
 // excludeCodes = part codes already present in the target box. Options whose
 // part code is already in the box are skipped so we never re-pick a part
 // that BSI will reject as a duplicate.
-function bestMatch(options: PartOption[], searchTerm: string, excludeCodes: Set<string> = new Set()): PartOption | undefined {
+//
+// Returns undefined when BSI offered nothing that matches the search term.
+// It used to fall back to the FIRST option BSI listed, which added an
+// unrelated part and reported it as a success — and because the part already
+// in the box is excluded, a re-run ("Run this again", or the verification
+// retries) of a box that already had the part reliably added a wrong one.
+// Field report 2026-11-14: "extra parts" (LG4, E7, L6) on boxes whose CSV
+// part (LGH36F, CB1) was then reported missing. A part we cannot find must be
+// reported missing for a person to add, never guessed: it ends up on an
+// invoice.
+export function bestMatch(options: PartOption[], searchTerm: string, excludeCodes: Set<string> = new Set()): PartOption | undefined {
   const norm = searchTerm.trim().toLowerCase();
+  const key = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const termKey = key(searchTerm);
+  if (!norm) return undefined;
+  const find = (pool: PartOption[]) =>
+    // 1. Exact match (whole text equals search term)
+    pool.find((o) => o.text.trim().toLowerCase() === norm)
+    // 2. The option's part code is the search term, ignoring punctuation
+    //    ("G-13" for "G13")
+    ?? (termKey ? pool.find((o) => key(extractPartCode(o.text)) === termKey) : undefined)
+    // 3. Text starts with the search term
+    ?? pool.find((o) => o.text.trim().toLowerCase().startsWith(norm))
+    // 4. Text contains the search term
+    ?? pool.find((o) => o.text.trim().toLowerCase().includes(norm));
+  // Prefer a part not yet in the box; failing that, the matching part that IS
+  // in the box, so the caller reports "already in this box" and adds nothing.
   const candidates = options.filter((o) => !excludeCodes.has(extractPartCode(o.text)));
-  const pool = candidates.length > 0 ? candidates : options;
-  // 1. Exact match (whole text equals search term)
-  const exact = pool.find((o) => o.text.trim().toLowerCase() === norm);
-  if (exact) return exact;
-  // 2. Text starts with the search term
-  const starts = pool.find((o) => o.text.trim().toLowerCase().startsWith(norm));
-  if (starts) return starts;
-  // 3. Text contains the search term
-  const contains = pool.find((o) => o.text.trim().toLowerCase().includes(norm));
-  if (contains) return contains;
-  // 4. Fallback — first option in the candidate pool (or first overall if every option is a duplicate)
-  return pool[0];
+  return find(candidates) ?? find(options);
 }
 
 // ── Part entry ────────────────────────────────────────────────────────────────
@@ -552,7 +566,11 @@ async function addPart(
     // Find the best match and how far down the list it is
     const match = bestMatch(options, searchTerm, excludeCodes);
     if (!match) {
-      return { searchTerm, status: 'not_found', message: 'Could not match any option' };
+      // Nothing BSI offered matches. Close the picker untouched rather than
+      // add the nearest-looking part.
+      console.log(`  Part "${searchTerm}": no BSI option matches — options were [${options.slice(0, 8).map((o) => extractPartCode(o.text)).join(', ')}${options.length > 8 ? ', …' : ''}]`);
+      await ensureProdModalClosed(page, opts.actionDelay).catch(() => {});
+      return { searchTerm, status: 'not_found', message: 'No BSI part matches this code — add it by hand' };
     }
     if (excludeCodes.has(extractPartCode(match.text))) {
       // Every option BSI offered for this search term is already in the box —
@@ -578,6 +596,27 @@ async function addPart(
     for (let i = 0; i < arrowPresses; i++) {
       await page.locator('#ResPno').press('ArrowDown');
       await pause(300);
+    }
+    // Arrow keys count from wherever the list's highlight started, and that
+    // has not been the same everywhere. Read back what is actually selected
+    // before confirming, and correct it — or stop — rather than add whatever
+    // the highlight landed on.
+    const landed = await page.locator('#ResPno').inputValue().catch(() => '');
+    if (landed !== match.value) {
+      console.log(`  Part "${searchTerm}": the list landed on value ${landed || '(none)'} — selecting "${match.text}" directly`);
+      await page.locator('#ResPno').evaluate((el, value) => {
+        const sel = el as HTMLSelectElement;
+        sel.value = value as string;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        const jq = (window as unknown as { jQuery?: (e: Element) => { trigger: (ev: string) => void } }).jQuery;
+        if (jq) jq(sel).trigger('change');
+      }, match.value);
+      await pause(300);
+      const fixed = await page.locator('#ResPno').inputValue().catch(() => '');
+      if (fixed !== match.value) {
+        await ensureProdModalClosed(page, opts.actionDelay).catch(() => {});
+        return { searchTerm, status: 'error', message: `Could not select "${match.text}" in BSI's list — nothing was added` };
+      }
     }
     await page.locator('#ResPno').press('Enter');
     await pause(opts.actionDelay);
@@ -915,6 +954,31 @@ export async function scrapeWorkOrderBoxes(
       .catch(() => '');
     if (!serial) continue;
 
+    // The "Box #" BSI shows at the top left of the box — what a person looks
+    // for on the page. #box-N's N has gaps where boxes were deleted
+    // (docs/BSI-FORM.md), so it is only the fallback. The field is found by its
+    // label rather than an id nobody has confirmed; failing that, the box's
+    // first input, which is where BSI puts it.
+    // No named helpers inside: this runs in the page, and a bundler that
+    // keeps function names would wrap them in a helper the page does not have.
+    const boxNumber = await box.evaluate((el) => {
+      const re = /^box\s*#$/i;
+      const inputs = (Array.from(el.querySelectorAll('input')) as HTMLInputElement[])
+        .filter((i) => i.type !== 'hidden');
+      for (const input of inputs) {
+        const near = [
+          input.id ? el.querySelector(`label[for="${CSS.escape(input.id)}"]`) : null,
+          input.previousElementSibling,
+          input.parentElement ? input.parentElement.previousElementSibling : null,
+        ];
+        if (near.some((n) => !!n && re.test((n.textContent || '').trim()))) {
+          return (input.value || '').trim();
+        }
+      }
+      const v = (inputs[0] ? inputs[0].value : '').trim();
+      return /^\d+$/.test(v) ? v : '';
+    }).catch(() => '') || num;
+
     // Part numbers from table rows — each data row: "DBID PartNum Description..."
     const rows = await box.locator('tr').all();
     const partNums: string[] = [];
@@ -943,7 +1007,7 @@ export async function scrapeWorkOrderBoxes(
       }
     } catch { /* non-fatal */ }
 
-    result.push({ selector: `#${id}`, serialNum: serial, partNums, totalCost });
+    result.push({ selector: `#${id}`, serialNum: serial, boxNumber, partNums, totalCost });
   }
 
   return result;

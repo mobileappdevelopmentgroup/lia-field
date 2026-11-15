@@ -32,6 +32,17 @@ restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
 
+**41 was applied 2026-11-15** — training and test accounts; see *Training
+and test accounts* below and `docs/TRAINING-ACCOUNTS.md`. It also adds
+`tag_url_key` to `fall_protection_public`: the phone's online lookup of a
+third-party tag link (`fpLookupOnline` in `field-app/js/fp.js`) had always
+filtered on it and silently found nothing. Verified from outside with the
+publishable key: `tag_url_key` answers 200, the `*_all` views and
+`training_create/erase/accounts/pending_erasures` answer 401 `42501`,
+`training_ladder_inspections` with a short token returns `[]`, `inspections`
+still refuses anon. The `training-accounts` Edge Function was deployed the
+same day; with the publishable key it answers 401 "Not authenticated".
+
 **39 and 40 were applied 2026-11-14.** 39 — placeholder serials (N/A, none,
 0000…) refused by a trigger on `assets`, so every write path is covered. 40 —
 "Do not fix / Destroy": `ladder_destroy_reason(parts)` reads BSI's destroy
@@ -586,6 +597,28 @@ no link). Load-bearing:
   was entirely his 2026-09-28 tag import. Loading takes a number out of blank
   tag stock (decided 2026-10-15), and a number that is any item's serial *or*
   tag label goes in used. Otherwise one number reaches two items.
+
+### Training and test accounts
+
+`supabase/migrations/41_training_accounts.sql`, Edge Function
+`supabase/functions/training-accounts`, Lia Office → Advanced → *Training
+Accounts* (developer only), `field-app/js/training.js`, the certificate site's
+`?preview=` mode. Guide: `docs/TRAINING-ACCOUNTS.md`. Load-bearing:
+
+- **The public views skip training accounts** — their bodies live in
+  `*_all` views that anon cannot read. A training inspection of a real serial
+  makes its own item and never touches the real certificate.
+- **`is_training` is set at creation only** (trigger), and training and real
+  accounts never sit under one another — so nothing real is ever erasable and
+  no umbrella's reports include training.
+- Training certificates open only with the family's preview token
+  (`training_*` RPCs, same row shape as the public views).
+- Unlimited credits; `preflight_work_order` refuses any BSI work order not on
+  the account's training list, and Lia Office refuses a training import with no
+  work order. Trainees sign in to BSI themselves.
+- Erase deletes rows (`training_erase`, refuses real accounts before touching
+  anything), then the function deletes photos and **only** generated logins
+  (`@training.mobileappdevelopmentgroup.com`).
 
 ### Consolidating accounts
 
