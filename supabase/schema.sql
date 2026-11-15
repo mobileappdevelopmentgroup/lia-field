@@ -9,7 +9,7 @@
 -- the Supabase SQL editor, because a dump cannot be applied to a database that
 -- already holds records.
 --
--- Migrations included: 38
+-- Migrations included: 40
 -- Grants and RLS policies are included deliberately: "anon cannot read
 -- inspections" is a property of this file, not a footnote.
 -- ═══════════════════════════════════════════════════════════════════
@@ -837,6 +837,42 @@ BEGIN
           auth.uid(), v_who);
 
   RETURN (SELECT row_to_json(i) FROM public.inspections i WHERE i.id = v_new);
+END;
+$$;
+
+
+--
+-- Name: assets_refuse_placeholder_serial(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.assets_refuse_placeholder_serial() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE v_problem text;
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.serial_raw IS NOT DISTINCT FROM OLD.serial_raw
+     AND NEW.serial_key IS NOT DISTINCT FROM OLD.serial_key THEN
+    RETURN NEW;
+  END IF;
+
+  -- Both columns, because callers set serial_key themselves and a mismatched
+  -- pair must not slip a placeholder key in under a real-looking raw value.
+  v_problem := coalesce(public.serial_problem(NEW.serial_raw),
+                        CASE WHEN NEW.serial_key IS NULL OR NEW.serial_key = '' THEN 'blank'
+                             ELSE public.serial_problem(NEW.serial_key) END);
+  IF v_problem IS NULL THEN RETURN NEW; END IF;
+
+  IF v_problem = 'blank' THEN
+    RAISE EXCEPTION USING ERRCODE = 'check_violation',
+      MESSAGE = 'A serial number is required',
+      HINT    = 'Use the number on the item. An item with no number gets a spare number.';
+  END IF;
+  RAISE EXCEPTION USING ERRCODE = 'check_violation',
+    MESSAGE = format('"%s" is not a serial number — use the number on the item, or a spare number if it has none',
+                     btrim(NEW.serial_raw)),
+    HINT    = 'Placeholder serials would merge different items into one record.';
 END;
 $$;
 
@@ -3761,6 +3797,44 @@ $$;
 
 
 --
+-- Name: ladder_destroy_reason(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ladder_destroy_reason(p_parts jsonb) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $_$
+  SELECT d.reason
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_parts) = 'array' THEN p_parts ELSE '[]'::jsonb END)
+           WITH ORDINALITY AS e(part, n)
+    JOIN (VALUES
+      ('PMCD',  'Cut and destroyed'),
+      ('PMCD1', 'Cut and destroyed: UV-damaged rails'),
+      ('PMCD2', 'Cut and destroyed: ladder-rack damage'),
+      ('PMCD3', 'Cut and destroyed: boom-truck damage'),
+      ('PMCD4', 'Cut and destroyed: repair cost prohibitive'),
+      ('PMCD5', 'Cut and destroyed: misuse or abuse'),
+      ('PMCD6', 'Cut and destroyed: no regular maintenance'),
+      ('TRL3',  'Destroyed and removed')
+    ) AS d(code, reason)
+      ON d.code = public.serial_key(CASE jsonb_typeof(e.part)
+                                      WHEN 'object' THEN coalesce(e.part->>'name', e.part->>'searchTerm', e.part->>'part')
+                                      WHEN 'string' THEN e.part #>> '{}'
+                                    END)
+   WHERE NOT (jsonb_typeof(e.part) = 'object' AND coalesce(e.part->>'qty', '') ~ '^\s*0+\s*$')
+   ORDER BY (d.code = 'PMCD'), e.n
+   LIMIT 1;
+$_$;
+
+
+--
+-- Name: FUNCTION ladder_destroy_reason(p_parts jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.ladder_destroy_reason(p_parts jsonb) IS 'Why a ladder record is a destruction (BSI part PMCD, PMCD1–6 or TRL-3 booked), or NULL. Mirrors the DESTROY entries in field-app/js/parts-catalog.js.';
+
+
+--
 -- Name: mark_bsi_pushed(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5833,6 +5907,36 @@ $$;
 
 
 --
+-- Name: serial_problem(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.serial_problem(p_serial text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $_$
+  SELECT CASE
+    WHEN btrim(coalesce(p_serial, '')) = '' THEN 'blank'
+    WHEN public.serial_key(p_serial) = '' THEN 'needs letters or numbers'
+    WHEN public.serial_key(p_serial) = ANY (ARRAY[
+      'NA', 'NONE', 'NIL', 'NULL', 'UNKNOWN', 'UNK', 'TBD', 'TBA',
+      'NOSERIAL', 'NOSERIALNUMBER', 'NOSN', 'NOSERIALNO', 'NONUMBER', 'NONUM',
+      'NOTAG', 'NOLABEL', 'MISSING', 'ILLEGIBLE', 'NOTLEGIBLE', 'UNREADABLE',
+      'BLANK', 'EMPTY', 'NOTAPPLICABLE'
+    ]) THEN 'placeholder'
+    WHEN public.serial_key(p_serial) ~ '^(0+|X+)$' THEN 'placeholder'
+    ELSE NULL
+  END;
+$_$;
+
+
+--
+-- Name: FUNCTION serial_problem(p_serial text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.serial_problem(p_serial text) IS 'Why a serial cannot identify an item (blank, punctuation only, or a placeholder word such as N/A), or NULL. Mirrors field-app/js/serial-check.js.';
+
+
+--
 -- Name: set_my_truck(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7437,7 +7541,11 @@ CREATE VIEW public.ladder_inspections_public AS
     i.has_leveler,
     i.has_claw,
     i.has_vrung,
-    public.certificate_url(a.public_ref, a.kind) AS certificate_url
+    public.certificate_url(a.public_ref, a.kind) AS certificate_url,
+    (public.ladder_destroy_reason(i.parts) IS NOT NULL) AS destroyed,
+    public.ladder_destroy_reason(i.parts) AS destroy_reason,
+    a.tag_label,
+    a.tag_label_key
    FROM (public.inspections i
      LEFT JOIN public.assets a ON ((a.id = i.asset_id)))
   WHERE (i.is_current AND (NOT i.is_deleted))
@@ -8597,6 +8705,13 @@ CREATE INDEX work_orders_charged_idx ON public.work_orders USING btree (charged_
 --
 
 CREATE TRIGGER accounts_no_cycle_trg BEFORE INSERT OR UPDATE OF parent_account_id ON public.accounts FOR EACH ROW WHEN ((new.parent_account_id IS NOT NULL)) EXECUTE FUNCTION public.accounts_no_cycle();
+
+
+--
+-- Name: assets assets_serial_check_t; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assets_serial_check_t BEFORE INSERT OR UPDATE OF serial_raw, serial_key ON public.assets FOR EACH ROW EXECUTE FUNCTION public.assets_refuse_placeholder_serial();
 
 
 --
@@ -10010,6 +10125,13 @@ GRANT ALL ON FUNCTION public.amend_inspection(p jsonb) TO authenticated;
 
 
 --
+-- Name: FUNCTION assets_refuse_placeholder_serial(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.assets_refuse_placeholder_serial() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION can_see(p_account uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10313,6 +10435,14 @@ REVOKE ALL ON FUNCTION public.job_progress(p_account uuid, p_wo_key text, p_scop
 
 
 --
+-- Name: FUNCTION ladder_destroy_reason(p_parts jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.ladder_destroy_reason(p_parts jsonb) TO anon;
+GRANT ALL ON FUNCTION public.ladder_destroy_reason(p_parts jsonb) TO authenticated;
+
+
+--
 -- Name: FUNCTION mark_bsi_pushed(p jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -10599,6 +10729,14 @@ GRANT ALL ON FUNCTION public.save_stock_location(p jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.save_stock_settings(p jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.save_stock_settings(p jsonb) TO authenticated;
+
+
+--
+-- Name: FUNCTION serial_problem(p_serial text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.serial_problem(p_serial text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.serial_problem(p_serial text) TO authenticated;
 
 
 --

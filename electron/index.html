@@ -5859,12 +5859,19 @@ window.api.onRecords(res => {
   } else if (!res.failed) {
     appendLog(`[RECORDS] Saved ${res.written} ladder record${res.written === 1 ? '' : 's'} — they now show on the certificate site.`);
   } else {
-    appendLog(`[RECORDS] ⚠ Saved ${res.written} of ${res.expected} ladder records. ${res.failed} could not be saved: ` +
-              `${(res.errors || []).join('; ')}. They are kept on this computer and retried after each import.`);
+    const refused = res.refused || [];
+    const queued = typeof res.queued === 'number' ? res.queued : res.failed;
+    appendLog(`[RECORDS] ⚠ Saved ${res.written} of ${res.expected} ladder records.`);
+    // A placeholder serial (N/A, none, 0000…) is never accepted, so it is not
+    // queued: say which ladders, and that the fix is in the CSV.
+    refused.forEach(r => appendLog(`[RECORDS] ⚠ Not saved: ${r.error}. Fix the serial in the CSV, or add the ladder in Field Work.`));
+    if (queued) appendLog(`[RECORDS] ⚠ ${queued} could not be saved: ${(res.errors || []).filter(m => !refused.some(r => r.error === m)).join('; ')}. ` +
+                          `They are kept on this computer and retried after each import.`);
   }
   const e = res.earlier;
   if (e && e.written) appendLog(`[RECORDS] Also saved ${e.written} ladder record${e.written === 1 ? '' : 's'} left over from an earlier import.`);
   if (e && e.stillFailing) appendLog(`[RECORDS] ⚠ ${e.stillFailing} record${e.stillFailing === 1 ? '' : 's'} from earlier imports still will not save: ${(e.errors || []).join('; ')}.`);
+  if (e && e.refused && e.refused.length) e.refused.forEach(r => appendLog(`[RECORDS] ⚠ Dropped from the retry list — it can never be saved: ${r.error}.`));
   if (e && e.otherAccounts) appendLog(`[RECORDS] ${e.otherAccounts} record${e.otherAccounts === 1 ? '' : 's'} from earlier imports belong to another account and will save when you work in that account again.`);
 });
 

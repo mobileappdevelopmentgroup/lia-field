@@ -193,6 +193,11 @@ echo "Running office add / FP-correction-while-acting assertions…"
 echo
 psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/32_field_edits_test.sql"
 
+echo
+echo "Running placeholder-serial / destroyed-ladder assertions…"
+echo
+psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/33_serial_and_destroy_test.sql"
+
 # Last, because it deliberately reshapes everything above.
 echo
 echo "Running consolidation assertions…"

@@ -100,6 +100,39 @@ sb = server();
 fl = await R.flushOutbox(sb, box, 'acct-michael');
 ok('saved once it is accepted, and the file is gone', [fl.written, fs.existsSync(box)], [1, false]);
 
+// ── Parts go with the record (1.15.12) ───────────────────────────────────────
+// A destroyed ladder is one billed with a destroy part (PMCD4…); the database
+// can only show it if the office sends the parts it billed.
+const withParts = R.toRecords([{ serial: '1135318', parts: [
+  { searchTerm: 'PMCD4', quantity: 1 }, { searchTerm: 'G13', quantity: 2 },
+  { searchTerm: '  ', quantity: 1 }, { searchTerm: 'X', quantity: 0 }] }], '98378', 'Nate', 'office', '2026-11-14');
+ok('the CSV parser\'s parts become { name, qty }, blanks and zero quantities dropped',
+   withParts[0].parts, [{ name: 'PMCD4', qty: 1 }, { name: 'G13', qty: 2 }]);
+ok('a row with no parts sends none (the server keeps whatever it had)',
+   'parts' in R.toRecords([{ serial: '1' }], 'W', 'x', 'office', '2026-11-14')[0], false);
+ok('[{ name, qty }] passes through, a missing quantity is 1',
+   R.toParts([{ name: 'PM36' }, { name: 'TRL-3', qty: '2' }]), [{ name: 'PM36', qty: 1 }, { name: 'TRL-3', qty: 2 }]);
+ok('nonsense is no parts, not a throw', [R.toParts(null), R.toParts('PMCD4'), R.toParts([null, 5])], [[], [], []]);
+
+// ── A placeholder serial is reported, never queued (39) ──────────────────────
+fs.rmSync(box, { force: true });
+const NA = '"N/A" is not a serial number — use the number on the item, or a spare number if it has none';
+sb = server({ refuse: s => s === 'N/A' ? NA : null });
+res = await R.recordImport(sb, box, R.toRecords([{ serial: '7001' }, { serial: 'N/A' }, { serial: '7002' }],
+                                                 'W', 'x', 'office', '2026-11-14'), 'acct-nate');
+ok('the good ladders save', res.written, 2);
+ok('the N/A one is reported by serial, with the server\'s words', res.refused, [{ serial: 'N/A', error: NA }]);
+ok('and is not queued — it could never succeed', [res.queued, fs.existsSync(box)], [0, false]);
+
+// One queued before 1.15.12 is dropped on the next retry, and reported.
+fs.writeFileSync(box, JSON.stringify([
+  { account_id: 'acct-nate', record: { serial_num: 'N/A' }, error: 'old', tries: 3 },
+  { account_id: 'acct-nate', record: { serial_num: '7003' }, error: 'old', tries: 1 }]));
+fl = await R.flushOutbox(sb, box, 'acct-nate');
+ok('an old queued N/A is dropped and reported; the rest saves',
+   [fl.written, fl.stillFailing, fl.refused.map(r => r.serial), fs.existsSync(box)], [1, 0, ['N/A'], false]);
+ok('a network error is still kept, not mistaken for a refusal', R.isPermanent('fetch failed'), false);
+
 // ── A damaged outbox is not an empty one that overwrites it ──────────────────
 fs.writeFileSync(box, '[{"account_id":"a","record":{"serial_num":"1"}}');   // cut short
 ok('a damaged file reads as nothing waiting', R.readOutbox(box), []);

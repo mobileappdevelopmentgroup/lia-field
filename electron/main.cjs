@@ -1566,6 +1566,7 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
         const Papa = require('papaparse');
         const _content = fs.readFileSync(csvPath, 'utf-8');
         const _parsed = Papa.parse(_content, { header: true, skipEmptyLines: true });
+        const _partCols = partColumns(_parsed.meta.fields ?? []);
         // Records from a work-order-less import still upload — they simply
         // cannot be matched to a work order later, which is the tradeoff the
         // screen states before the run starts.
@@ -1575,6 +1576,9 @@ ipcMain.on('automation:start', async (_event, csvPath, workOrderId) => {
             brand:  (r['Brand']    ?? '').trim() || null,
             type:   (r['Type']     ?? '').trim() || null,
             length: (r['Length']   ?? '').trim() || null,
+            // Same part columns, same parser, as the BSI import itself
+            // (csv:parse) — so what is recorded is what was billed.
+            parts:  _partCols.map(col => parsePartValue(r[col])).filter(Boolean),
           }))
           .filter(r => r.serial);
       } catch {}

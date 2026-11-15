@@ -24,8 +24,10 @@ const ok = (l, g, w) => { const good = JSON.stringify(g) === JSON.stringify(w); 
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lia-complete-'));
 const csv = path.join(tmp, 'wo.csv');
-fs.writeFileSync(csv, 'Row#,Serial #,Location ID,Brand,Type,Length,Description\n' +
-                      '1,1509436,1,LG,Ext,28,\n2,1669421,1,LG,Ext,28,\n');
+// Two part columns: the second ladder is "Do not fix / Destroy" — billed with
+// PMCD4 instead of repairs — and that has to reach the database (1.15.12).
+fs.writeFileSync(csv, 'Row#,Serial #,Location ID,Brand,Type,Length,Description,A,B\n' +
+                      '1,1509436,1,LG,Ext,28,,(2) G13,\n2,1669421,1,LG,Ext,28,,PMCD4,\n');
 
 // ── The fake server ──────────────────────────────────────────────────────────
 const calls = [];
@@ -140,6 +142,8 @@ ok('and its ladders are recorded', names().includes('record_inspections'), true)
 const recs = (calls.find(c => c[0] === 'record_inspections') || [, { p: [] }])[1].p;
 ok('both ladders, on that work order', recs.map(r => [r.serial_num, r.work_order_id]),
    [['1509436', '98378'], ['1669421', '98378']]);
+ok('each ladder carries the parts it was billed with — the destroy part too',
+   recs.map(r => r.parts), [[{ name: 'G13', qty: 2 }], [{ name: 'PMCD4', qty: 1 }]]);
 ok('the runner is told the work order and account, to save in its log',
    JSON.parse(forkEnv.LIA_RUN_META), { workOrderId: '98378', accountId: 'acct-nate', accountName: 'Nate Dobbs', techName: 'Nate Dobbs' });
 const rec = sent.find(s => s[0] === 'automation:records');

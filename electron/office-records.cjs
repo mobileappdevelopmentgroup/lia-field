@@ -40,7 +40,28 @@ function localDate(d) {
   return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
 }
 
-// CSV rows ({ serial, brand, type, length }) → record_inspection payloads.
+// [{ searchTerm, quantity }] (the CSV parser's shape) or [{ name, qty }] →
+// the [{ name, qty }] the database stores. Blank names and non-positive
+// quantities are dropped; a missing quantity is 1.
+function toParts(parts) {
+  if (!Array.isArray(parts)) return [];
+  return parts.map(p => {
+    const name = String((p && (p.name ?? p.searchTerm)) ?? '').trim();
+    const raw = p && (p.qty ?? p.quantity);
+    const qty = raw === undefined || raw === null || raw === '' ? 1 : Number(raw);
+    return { name, qty };
+  }).filter(p => p.name && Number.isFinite(p.qty) && p.qty > 0);
+}
+
+// The database refuses a placeholder serial (N/A, none, 0000 … — migration
+// 39) and always will: retrying it from the outbox can never succeed, so it is
+// reported and not queued. Everything else — network, permissions, a server
+// that is down — is kept and retried.
+function isPermanent(error) {
+  return /is not a serial number|A serial number is required/i.test(String(error || ''));
+}
+
+// CSV rows ({ serial, brand, type, length, parts }) → record_inspection payloads.
 function toRecords(rows, workOrderId, techName, source, today) {
   const date = today || localDate();
   return (rows || []).filter(r => r && String(r.serial || '').trim()).map(row => {
@@ -56,6 +77,11 @@ function toRecords(rows, workOrderId, techName, source, today) {
     if (row.length)        rec.length = row.length;
     if (row.next_due_date) rec.next_due_date = row.next_due_date;
     if (row.notes)         rec.notes = row.notes;
+    // The parts the box was billed with — what makes a ladder "Do not fix /
+    // Destroy" (PMCD, PMCD1–6, TRL-3) on the certificate, and what the office
+    // reads back later. Before 1.15.12 an office import recorded none.
+    const parts = toParts(row.parts);
+    if (parts.length)      rec.parts = parts;
     return rec;
   });
 }
@@ -119,14 +145,17 @@ function writeOutbox(file, entries) {
 // distinct messages, for the run log.
 async function recordImport(sb, file, records, accountId, now) {
   const res = await saveRecords(sb, records);
-  if (res.failed.length) {
+  const retry = res.failed.filter(f => !isPermanent(f.error));
+  const refused = res.failed.filter(f => isPermanent(f.error));
+  if (retry.length) {
     const at = (now || new Date()).toISOString();
     const box = readOutbox(file);
-    res.failed.forEach(f => box.push({ account_id: accountId || null, record: f.record,
-                                       error: f.error, first_failed: at, tries: 1 }));
+    retry.forEach(f => box.push({ account_id: accountId || null, record: f.record,
+                                  error: f.error, first_failed: at, tries: 1 }));
     writeOutbox(file, box);
   }
-  return { written: res.written, failed: res.failed.length, queued: res.failed.length,
+  return { written: res.written, failed: res.failed.length, queued: retry.length,
+           refused: refused.map(f => ({ serial: f.record.serial_num, error: f.error })),
            errors: [...new Set(res.failed.map(f => f.error))] };
 }
 
@@ -142,11 +171,16 @@ async function flushOutbox(sb, file, accountId) {
 
   const res = await saveRecords(sb, mine.map(e => e.record));
   const failedSet = new Map(res.failed.map(f => [f.record, f.error]));
-  const kept = mine.filter(e => failedSet.has(e.record))
-                   .map(e => ({ ...e, error: failedSet.get(e.record), tries: (e.tries || 1) + 1 }));
+  // A serial queued before 1.15.12 that the server now refuses outright is
+  // dropped from the outbox and reported — it can never be written.
+  const failedNow = mine.filter(e => failedSet.has(e.record))
+                        .map(e => ({ ...e, error: failedSet.get(e.record), tries: (e.tries || 1) + 1 }));
+  const kept = failedNow.filter(e => !isPermanent(e.error));
+  const refused = failedNow.filter(e => isPermanent(e.error));
   writeOutbox(file, others.concat(kept));
   return { written: res.written, stillFailing: kept.length, otherAccounts: others.length,
+           refused: refused.map(e => ({ serial: e.record.serial_num, error: e.error })),
            errors: [...new Set(res.failed.map(f => f.error))] };
 }
 
-module.exports = { toRecords, saveRecords, recordImport, flushOutbox, readOutbox, localDate };
+module.exports = { toRecords, toParts, isPermanent, saveRecords, recordImport, flushOutbox, readOutbox, localDate };
