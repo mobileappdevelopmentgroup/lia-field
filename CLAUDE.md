@@ -27,10 +27,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The migrations live in `supabase/migrations/`; `supabase/schema.sql` is a
 generated snapshot of what they add up to (`npm run schema` regenerates it,
 `npm run schema:check` fails if it is stale) and `supabase/MIGRATIONS.md` is the
-index. The live database carries **01–38** as of 2026-10-31 (01–22 as of 2026-09-20), and the accounts were
+index. The live database carries **01–40** as of 2026-11-14 (01–22 as of 2026-09-20), and the accounts were
 restructured into the umbrella shape the same day
 (`supabase/ops/2026-09-19-restructure-umbrella.sql`: Batavia over Nate and
 Michael, with the 1,724 records moved into Nate's own account).
+
+**39 and 40 were applied 2026-11-14.** 39 — placeholder serials (N/A, none,
+0000…) refused by a trigger on `assets`, so every write path is covered. 40 —
+"Do not fix / Destroy": `ladder_destroy_reason(parts)` reads BSI's destroy
+parts (PMCD, PMCD1–6, TRL-3), and `ladder_inspections_public` gains
+`destroyed`, `destroy_reason`, `tag_label`, `tag_label_key`. Verified from
+outside with the publishable key: the new columns answer 200, `serial_problem`
+answers 401 `42501`, `inspections` still refuses anon, and 96 ladders read as
+destroyed at once (phone records already carried their parts). Office imports
+only record parts from Lia Office 1.15.12.
 
 **37 and 38 were applied 2026-10-31.** 37 — spare numbers that are also tags
 (see *Numbers for defective items with no tag*); Lia Office's file picker for
