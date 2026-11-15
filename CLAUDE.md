@@ -18,8 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 🔵 LOW
 - [ ] Add Content Security Policy to the Electron renderer window (`session.defaultSession.webRequest` or `<meta>` tag in `electron/index.html`)
-- [ ] Add SRI hashes to CDN scripts in `field-app/index.html` and `inspection-site/index.html` (`integrity="sha384-..."`)
-- [ ] `inspection-site/index.html:536` writes `${r.notes}` into `innerHTML` unescaped. The data comes from authenticated techs so it is not public-facing injection, but a note containing markup would still render as markup on the public certificate. `fp-site/index.html` escapes everything through `esc()`; the ladder site should do the same. **Requires an S3 redeploy to take effect.**
+- [ ] Add SRI hashes to CDN scripts in `field-app/index.html` (`integrity="sha384-..."`). The certificate site's one CDN script is pinned with SRI since 2026-11-14.
+- [x] ~~`inspection-site/index.html` wrote `${r.notes}` into `innerHTML` unescaped~~ — the site was rebuilt 2026-11-14 (one page for ladders and FP, served at `/` and `/fp/`); everything from the database goes through `esc()`, and `npm run test:site` asserts a note carrying markup renders as text.
 - [ ] Consider storing JWT session (`~/Library/Application Support/Lia/lia-auth.json`) in macOS Keychain via `keytar` instead of plaintext JSON
 
 ## Migration state

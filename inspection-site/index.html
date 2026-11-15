@@ -1,661 +1,838 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Ladder Inspection</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:      #f4f5f8;
-      --surf:    #ffffff;
-      --border:  #e2e6ef;
-      --text:    #1a1d2e;
-      --muted:   #6b7080;
-      --accent:  #2563eb;
-      --ok:      #16a34a;
-      --ok-bg:   #dcfce7;
-      --warn:    #d97706;
-      --warn-bg: #fef9c3;
-      --err:     #dc2626;
-      --err-bg:  #fee2e2;
-      --r:       10px;
-      --font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      --mono:    'SF Mono', 'Fira Code', monospace;
-      --safe-t:  env(safe-area-inset-top,  0px);
-      --safe-b:  env(safe-area-inset-bottom, 0px);
-    }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100dvh;
-      -webkit-text-size-adjust: 100%;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Equipment Inspection Records</title>
+<meta name="description" content="Check the inspection status of a ladder or fall-protection item by serial number, tag number, certificate code or work order.">
+<meta name="theme-color" content="#0f1b2d">
+<!-- The camera scanner. Pinned and integrity-checked: this page is what a
+     customer trusts with a safety decision, so it never runs a script the CDN
+     could swap underneath it. -->
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Equipment Inspection Records — the one public page for ladders and fall
+   protection. Served at / and (via fp-site/index.html) at /fp/, so every tag
+   ever written — /?t=, /fp/?t=…&s=…, ?serial=, ?wo= — lands here.
 
-    /* ── Header ───────────────────────────────────────────────────────────── */
-    header {
-      background: var(--text);
-      color: #fff;
-      padding: calc(14px + var(--safe-t)) 20px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .logo { font-size: 18px; font-weight: 700; letter-spacing: -.02em; flex: 1; }
-    .logo-badge { font-size: 10px; font-weight: 600; opacity: .45; letter-spacing: .08em;
-                  text-transform: uppercase; }
+   Light only, on purpose: it is read outdoors on a phone and printed for
+   safety files, and a certificate's colours carry meaning.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --ink: #0f172a; --ink-2: #334155; --muted: #64748b; --faint: #94a3b8;
+  --line: #e2e8f0; --bg: #f1f5f9; --card: #ffffff; --brand: #0f1b2d; --accent: #1d4ed8;
+  --ok: #15803d;      --ok-bg: #f0fdf4;   --ok-line: #bbf7d0;
+  --warn: #b45309;    --warn-bg: #fffbeb; --warn-line: #fde68a;
+  --bad: #b91c1c;     --bad-bg: #fef2f2;  --bad-line: #fecaca;
+  --dead: #3f0d12;    --dead-bg: #fdf2f3; --dead-line: #f3c4ca;
+  --none: #475569;    --none-bg: #f8fafc; --none-line: #e2e8f0;
+  --radius: 14px; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.06);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+button, input { font: inherit; }
+a { color: var(--accent); }
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-    /* ── Search bar ───────────────────────────────────────────────────────── */
-    .search-wrap { background: var(--surf); border-bottom: 1px solid var(--border);
-                   padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
-    .mode-tabs   { display: flex; gap: 6px; }
-    .stab {
-      flex: 1; padding: 8px 0; border: 1px solid var(--border); border-radius: 8px;
-      font-size: 13px; font-weight: 600; cursor: pointer; background: var(--bg);
-      color: var(--muted); font-family: var(--font); transition: all .15s;
-    }
-    .stab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .input-row { display: flex; gap: 8px; }
-    #search-input {
-      flex: 1; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: 16px; font-family: var(--font); color: var(--text); background: var(--bg);
-      outline: none; transition: border-color .15s; min-width: 0;
-    }
-    #search-input:focus { border-color: var(--accent); background: #fff; }
-    .btn-scan {
-      width: 48px; height: 48px; border-radius: 8px; border: 1.5px solid var(--border);
-      background: var(--bg); font-size: 20px; cursor: pointer; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center; transition: background .15s;
-    }
-    .btn-scan:active { background: #dde2f0; }
-    .btn-scan.hidden { display: none; }
-    .btn-go {
-      width: 48px; height: 48px; border-radius: 8px; border: none;
-      background: var(--accent); color: #fff; font-size: 20px; cursor: pointer;
-      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-      transition: background .15s;
-    }
-    .btn-go:active { background: #1d4ed8; }
-    .btn-go:disabled { opacity: .5; cursor: not-allowed; }
+/* Header */
+.top { background: var(--brand); color: #fff; padding: 18px 0 64px; }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+.brand-mark { width: 38px; height: 38px; border-radius: 10px; background: #fff; color: var(--brand);
+  display: grid; place-items: center; flex: none; }
+.brand-name { font-weight: 750; font-size: 18px; letter-spacing: -.2px; line-height: 1.15; }
+.brand-sub { font-size: 12.5px; color: #cbd5e1; letter-spacing: .3px; }
+.top-link { color: #e2e8f0; font-size: 14px; text-decoration: none; border: 1px solid rgba(255,255,255,.25);
+  padding: 7px 12px; border-radius: 999px; white-space: nowrap; }
+.top-link:hover { background: rgba(255,255,255,.08); }
 
-    /* ── Feedback messages ────────────────────────────────────────────────── */
-    #msg { padding: 16px; font-size: 14px; color: var(--muted); text-align: center; display: none; }
-    #msg.vis { display: block; }
-    #no-results {
-      margin: 16px; padding: 14px 16px; background: var(--warn-bg);
-      border: 1px solid #fde68a; border-radius: var(--r);
-      font-size: 14px; color: var(--warn); display: none;
-    }
-    #no-results.vis { display: block; }
-    #err-msg {
-      margin: 16px; padding: 14px 16px; background: var(--err-bg);
-      border: 1px solid #fca5a5; border-radius: var(--r);
-      font-size: 14px; color: var(--err); display: none;
-    }
-    #err-msg.vis { display: block; }
+/* Search */
+.search { margin-top: -44px; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+.search h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.2px; }
+.search p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; min-width: 0; height: 52px; border: 1.5px solid var(--line); border-radius: 12px;
+  padding: 0 14px; font-size: 18px; color: var(--ink); background: #fff; outline: none; }
+.search-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(29,78,216,.12); }
+.btn { height: 52px; border-radius: 12px; border: 0; padding: 0 18px; font-weight: 650; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-go { background: var(--accent); color: #fff; }
+.btn-go:disabled { opacity: .6; cursor: default; }
+.btn-scan { background: #eef2ff; color: var(--accent); padding: 0 14px; }
+.btn-plain { height: 44px; background: #fff; border: 1.5px solid var(--line); color: var(--ink-2); }
+.btn-plain:hover { border-color: var(--faint); }
+.search-hint { font-size: 13px; color: var(--muted); margin-top: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { font-size: 12.5px; color: var(--ink-2); background: var(--bg); border-radius: 999px; padding: 3px 10px; }
 
-    /* ── Results area ─────────────────────────────────────────────────────── */
-    #results { display: none; padding: 16px; }
-    #results.vis { display: block; }
+/* Messages */
+.msg { margin: 16px 0 0; padding: 14px 16px; border-radius: 12px; font-size: 15px; display: none; }
+.msg.vis { display: flex; align-items: center; gap: 10px; }
+.msg.info { background: #eff6ff; color: #1e3a8a; }
+.msg.err { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-line); }
+.spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent;
+  animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Certificate card ─────────────────────────────────────────────────── */
-    .cert-card {
-      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
-      overflow: hidden; margin-bottom: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.08);
-    }
-    .cert-header {
-      display: flex; align-items: center; gap: 16px;
-      padding: 18px 18px 14px; border-bottom: 1px solid var(--border);
-    }
-    .cert-seal { flex-shrink: 0; width: 90px; height: 90px; }
-    .cert-seal svg { width: 90px; height: 90px; }
-    .cert-info { flex: 1; min-width: 0; }
-    .cert-serial {
-      font-size: 26px; font-weight: 800; font-family: var(--mono);
-      letter-spacing: .02em; line-height: 1.1; word-break: break-all;
-    }
-    .cert-serial-lbl {
-      font-size: 10px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .1em; color: var(--muted); margin-bottom: 4px;
-    }
-    .cert-status-text {
-      font-size: 13px; font-weight: 700; margin-top: 5px;
-    }
-    .cert-status-text.ok   { color: var(--ok); }
-    .cert-status-text.warn { color: var(--warn); }
-    .cert-status-text.err  { color: var(--err); }
-    .cert-status-text.none { color: var(--muted); }
-    .cert-count { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .cert-fields { padding: 4px 0; }
-    .cert-row {
-      display: flex; align-items: baseline; justify-content: space-between;
-      padding: 11px 16px; border-bottom: 1px solid var(--border); gap: 12px;
-    }
-    .cert-row:last-child { border-bottom: none; }
-    .cert-lbl { font-size: 12px; font-weight: 600; color: var(--muted);
-                text-transform: uppercase; letter-spacing: .07em; flex-shrink: 0; }
-    .cert-val { font-size: 15px; font-weight: 600; text-align: right; }
-    .cert-val.ok   { color: var(--ok); }
-    .cert-val.warn { color: var(--warn); }
-    .cert-val.err  { color: var(--err); }
-    /* Not-registered card */
-    .cert-card.unregistered { border-color: #e5e7eb; }
-    .cert-card.unregistered .cert-serial { color: var(--muted); }
+/* Result cards */
+#result { margin-top: 16px; }
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 14px; }
+.card-pad { padding: 16px 18px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0; padding: 14px 18px;
+  border-bottom: 1px solid var(--line); font-weight: 700; }
 
-    /* ── History (collapsible) ─────────────────────────────────────────────── */
-    .hist-card {
-      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
-      overflow: hidden; margin-bottom: 12px;
-    }
-    .hist-toggle {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 16px; font-size: 13px; font-weight: 600; color: var(--muted);
-      cursor: pointer; border: none; background: none; width: 100%; text-align: left;
-      font-family: var(--font);
-    }
-    .hist-toggle:active { background: var(--bg); }
-    .hist-chevron { font-size: 11px; transition: transform .2s; }
-    .hist-chevron.open { transform: rotate(180deg); }
-    .hist-body { display: none; }
-    .hist-body.open { display: block; }
-    .hist-row {
-      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-      border-top: 1px solid var(--border); font-size: 13px;
-    }
-    .hist-date { font-weight: 600; flex: 1; }
-    .hist-wo   { color: var(--muted); font-family: var(--mono); font-size: 12px; }
-    .hist-tech { color: var(--muted); font-size: 12px; }
+.hero { display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center; padding: 18px; border-bottom: 1px solid var(--line); }
+.hero.t-ok { background: var(--ok-bg); } .hero.t-warn { background: var(--warn-bg); }
+.hero.t-bad { background: var(--bad-bg); } .hero.t-dead { background: var(--dead-bg); } .hero.t-none { background: var(--none-bg); }
+.seal { width: 92px; height: 92px; }
+.kind { font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+.serial { font-size: 26px; font-weight: 800; letter-spacing: .5px; line-height: 1.15; word-break: break-all; }
+.state { font-size: 17px; font-weight: 750; margin-top: 2px; }
+.t-ok .state { color: var(--ok); } .t-warn .state { color: var(--warn); } .t-bad .state { color: var(--bad); }
+.t-dead .state { color: var(--dead); } .t-none .state { color: var(--none); }
+.what { font-size: 14px; color: var(--ink-2); margin-top: 2px; }
 
-    /* ── Work-order table ─────────────────────────────────────────────────── */
-    .wo-card {
-      background: var(--surf); border: 1px solid var(--border); border-radius: var(--r);
-      overflow: hidden; margin-bottom: 12px;
-    }
-    .wo-hdr { padding: 14px 16px 10px; font-size: 13px; font-weight: 700; color: var(--muted);
-              text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
-    .wo-row {
-      display: flex; align-items: center; gap: 12px; padding: 13px 16px;
-      border-top: 1px solid var(--border); text-decoration: none; color: inherit;
-      transition: background .1s;
-    }
-    .wo-row:first-of-type { border-top: none; }
-    .wo-row:active { background: var(--bg); }
-    .wo-serial { font-family: var(--mono); font-size: 14px; font-weight: 700; flex: 1; color: var(--accent); }
-    .wo-date   { font-size: 12px; color: var(--muted); }
-    .badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .badge-dot.ok   { background: var(--ok); }
-    .badge-dot.warn { background: var(--warn); }
-    .badge-dot.err  { background: var(--err); }
+.banner { padding: 12px 18px; font-weight: 750; text-align: center; letter-spacing: .3px; }
+.banner.bad { background: #fee2e2; color: var(--bad); }
+.banner.dead { background: var(--dead); color: #fff; }
+.banner small { display: block; font-weight: 500; letter-spacing: 0; opacity: .9; margin-top: 2px; }
 
-    /* ── Print button ─────────────────────────────────────────────────────── */
-    .btn-print {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      width: 100%; padding: 14px; border: 1.5px solid var(--border); border-radius: var(--r);
-      background: var(--surf); font-size: 14px; font-weight: 600; cursor: pointer;
-      font-family: var(--font); color: var(--text); margin-bottom: 12px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    }
-    .btn-print:active { background: var(--bg); }
+.todo { margin: 16px 18px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; }
+.todo b { display: block; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 2px; }
+.todo.t-ok { border-color: var(--ok-line); } .todo.t-warn { border-color: var(--warn-line); }
+.todo.t-bad { border-color: var(--bad-line); } .todo.t-dead { border-color: var(--dead-line); }
 
-    /* ── Scan overlay ─────────────────────────────────────────────────────── */
-    .scan-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.95); z-index: 100;
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 20px; padding: 24px;
-    }
-    .scan-overlay.hidden { display: none; }
-    #scan-video {
-      width: 100%; max-width: 400px; border-radius: 12px; background: #000;
-      min-height: 250px; overflow: hidden;
-    }
-    .scan-hint { color: rgba(255,255,255,.6); font-size: 14px; text-align: center; }
-    .btn-scan-cancel {
-      background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2);
-      border-radius: 10px; padding: 14px 48px; font-size: 16px; cursor: pointer;
-      font-family: var(--font);
-    }
+.facts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; }
+.fact { padding: 11px 18px; border-top: 1px solid var(--line); }
+.fact:nth-child(odd) { border-right: 1px solid var(--line); }
+.fact.wide { grid-column: 1 / -1; border-right: 0; }
+.fact dt { font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); }
+.fact dd { margin: 1px 0 0; font-size: 16px; font-weight: 550; word-break: break-word; }
 
-    /* ── Print styles ─────────────────────────────────────────────────────── */
-    @media print {
-      header, .search-wrap, .btn-print, .scan-overlay { display: none !important; }
-      body { background: #fff; }
-      #results { display: block !important; padding: 0; }
-      .cert-card, .hist-card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
-      .hist-body { display: block !important; }
-      #results.vis { display: block; }
-    }
+.checks .chk { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: start; padding: 10px 18px; border-top: 1px solid var(--line); }
+.checks .chk:first-child { border-top: 0; }
+.mk { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 800; color: #fff; margin-top: 1px; }
+.mk.pass { background: var(--ok); } .mk.fail { background: var(--bad); } .mk.na { background: var(--faint); }
+.chk-ans { font-size: 13px; font-weight: 800; letter-spacing: .4px; }
+.chk-ans.pass { color: var(--ok); } .chk-ans.fail { color: var(--bad); } .chk-ans.na { color: var(--muted); }
+.chk-note { font-size: 13px; color: var(--muted); }
 
-    /* ── Desktop: constrain width ─────────────────────────────────────────── */
-    @media (min-width: 600px) {
-      .search-wrap, #results, #no-results, #err-msg, #msg { max-width: 560px; margin-left: auto; margin-right: auto; }
-      #no-results, #err-msg { margin-left: auto; margin-right: auto; }
-    }
-  </style>
+.hist .row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--line); font-size: 15px; }
+.hist .row:first-child { border-top: 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--line); }
+
+/* Status pill */
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 750; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.pill.t-ok { background: var(--ok-bg); color: var(--ok); } .pill.t-warn { background: var(--warn-bg); color: var(--warn); }
+.pill.t-bad { background: var(--bad-bg); color: var(--bad); } .pill.t-dead { background: var(--dead); color: #fff; }
+.pill.t-none { background: var(--none-bg); color: var(--none); }
+
+/* Work order report */
+.wo-head { padding: 18px; border-bottom: 1px solid var(--line); }
+.wo-head .serial { font-size: 24px; }
+.tally { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; padding: 14px 18px; }
+.tile { border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; background: #fff; cursor: pointer; text-align: left; }
+.tile b { display: block; font-size: 22px; line-height: 1.1; }
+.tile span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.tile.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,78,216,.12); }
+.tile.t-ok b { color: var(--ok); } .tile.t-warn b { color: var(--warn); } .tile.t-bad b { color: var(--bad); } .tile.t-dead b { color: var(--dead); }
+.removed { margin: 0 18px 14px; border: 1px solid var(--bad-line); border-radius: 12px; overflow: hidden; }
+.removed h3 { margin: 0; padding: 10px 14px; font-size: 14px; background: var(--bad-bg); color: var(--bad); }
+.removed .r { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; padding: 9px 14px; border-top: 1px solid var(--bad-line); font-size: 14.5px; }
+.removed .r .mono { font-weight: 700; }
+.removed .r .why { grid-column: 2; color: var(--ink-2); }
+.items { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.items th { text-align: left; font-size: 11.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); padding: 8px 18px; border-bottom: 1px solid var(--line); background: #f8fafc; }
+.items td { padding: 10px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.items tr.go { cursor: pointer; } .items tr.go:hover td { background: #f8fafc; }
+.items .sub { color: var(--muted); font-size: 13px; }
+.only-sm { display: none; }
+
+/* Choices, not found */
+.choice { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 14px 18px; border: 0; border-top: 1px solid var(--line); background: #fff; cursor: pointer; }
+.choice:first-of-type { border-top: 0; }
+.choice:hover { background: #f8fafc; }
+.choice .sub { color: var(--muted); font-size: 13.5px; }
+.tips { margin: 0; padding: 0 18px 16px 36px; color: var(--ink-2); }
+.tips li { margin: 4px 0; }
+
+/* Help */
+.help { margin: 28px 0 8px; }
+.help > h2 { font-size: 21px; margin: 0 0 4px; letter-spacing: -.2px; }
+.help > p.lead { color: var(--muted); margin: 0 0 14px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.step { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
+.step .n { width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 14px; margin-bottom: 8px; }
+.step h3 { margin: 0 0 4px; font-size: 16px; }
+.step p { margin: 0; font-size: 14px; color: var(--ink-2); }
+.legend .lg { display: grid; grid-template-columns: 116px 1fr; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); align-items: start; }
+.legend .lg:first-of-type { border-top: 0; }
+.legend .lg p { margin: 0; font-size: 14.5px; color: var(--ink-2); }
+.legend .lg p b { color: var(--ink); }
+details { border-top: 1px solid var(--line); }
+details:first-of-type { border-top: 0; }
+summary { cursor: pointer; padding: 13px 18px; font-weight: 650; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: '+'; color: var(--muted); font-weight: 700; }
+details[open] summary::after { content: '–'; }
+details .ans { padding: 0 18px 14px; color: var(--ink-2); font-size: 15px; }
+details .ans p { margin: 0 0 8px; }
+.foot { text-align: center; color: var(--muted); font-size: 13px; padding: 22px 0 36px; }
+.foot a { color: var(--muted); }
+
+/* Scanner */
+#scan { position: fixed; inset: 0; background: rgba(2,6,23,.92); z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 16px; }
+#scan.vis { display: flex; }
+#scan-video { width: min(92vw, 420px); border-radius: 14px; overflow: hidden; background: #000; }
+#scan p { color: #e2e8f0; text-align: center; max-width: 420px; }
+
+@media (max-width: 560px) {
+  .steps { grid-template-columns: 1fr; }
+  .facts { grid-template-columns: 1fr; }
+  .fact:nth-child(odd) { border-right: 0; }
+  .hero { grid-template-columns: 72px 1fr; gap: 12px; }
+  .seal { width: 72px; height: 72px; }
+  .serial { font-size: 22px; }
+  .hide-sm { display: none; }
+  .only-sm { display: block; }
+  .legend .lg { grid-template-columns: 1fr; gap: 4px; }
+  .btn-scan .lbl { display: none; }
+  .top-link { padding: 6px 10px; }
+}
+
+@media print {
+  body { background: #fff; }
+  .top, .search, .help, .foot, .actions, .msg, .tally, #scan { display: none !important; }
+  .card { box-shadow: none; border: 1px solid #cbd5e1; break-inside: avoid; }
+  .items tr { break-inside: avoid; }
+  .wrap { max-width: none; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; font-size: 12px; color: var(--muted); padding: 0 0 8px; }
+</style>
 </head>
 <body>
 
-<header>
-  <div>
-    <div class="logo">Ladder Inspection</div>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Equipment Inspection Records — home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+      </span>
+      <span>
+        <span class="brand-name">Equipment Inspection Records</span><br>
+        <span class="brand-sub">Ladders · Fall protection</span>
+      </span>
+    </a>
+    <a class="top-link" href="#help">How to use</a>
   </div>
 </header>
 
-<div class="search-wrap">
-  <div class="mode-tabs">
-    <button class="stab active" data-mode="serial">By Serial #</button>
-    <button class="stab" data-mode="wo">By Work Order</button>
-  </div>
-  <div class="input-row">
-    <input type="text" id="search-input" placeholder="Enter serial number…"
-           maxlength="40" autocomplete="off" autocorrect="off"
-           autocapitalize="off" spellcheck="false" inputmode="numeric">
-    <button class="btn-scan" id="btn-scan" title="Scan barcode">📷</button>
-    <button class="btn-go" id="btn-search" title="Search">→</button>
-  </div>
-</div>
-
-<div id="msg"></div>
-<div id="no-results"></div>
-<div id="err-msg"></div>
-
-<div id="results">
-
-  <!-- Work order results -->
-  <div id="wo-card" class="wo-card" style="display:none;">
-    <div class="wo-hdr" id="wo-hdr"></div>
-    <div id="wo-list"></div>
-  </div>
-
-  <!-- Certificate -->
-  <div id="cert-card" class="cert-card">
-    <div class="cert-header" id="cert-header" style="display:none;">
-      <div class="cert-seal" id="cert-seal"></div>
-      <div class="cert-info">
-        <div class="cert-serial-lbl">Serial #</div>
-        <div class="cert-serial" id="cert-serial-num"></div>
-        <div class="cert-status-text" id="cert-status-text"></div>
-        <div class="cert-count" id="cert-count"></div>
-      </div>
+<main class="wrap">
+  <section class="search" aria-labelledby="search-title">
+    <h1 id="search-title">Check a piece of equipment</h1>
+    <p>Scan the tag, or type any number printed on the item or its tag.</p>
+    <form class="search-row" id="search-form" role="search" autocomplete="off">
+      <label for="q" class="sr">Serial, tag number, certificate code or work order</label>
+      <input id="q" name="q" inputmode="text" autocapitalize="characters" spellcheck="false"
+             placeholder="Serial, tag or job no.">
+      <button type="button" class="btn btn-scan" id="btn-scan" aria-label="Scan a code with the camera">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
+        <span class="lbl">Scan</span>
+      </button>
+      <button type="submit" class="btn btn-go" id="btn-go">Search</button>
+    </form>
+    <div class="chips" aria-label="Things you can search">
+      <span class="chip">Serial number</span><span class="chip">Tag number (e.g. FP161340)</span>
+      <span class="chip">Certificate code</span><span class="chip">Work order</span>
     </div>
-    <div class="cert-fields" id="cert-fields"></div>
-  </div>
+    <div class="search-hint">Spaces, dashes and capitals don't matter — <span class="mono">13-45802</span> finds <span class="mono">1345802</span>.</div>
+  </section>
 
-  <!-- History (collapsible) -->
-  <div id="hist-card" class="hist-card" style="display:none;">
-    <button class="hist-toggle" id="hist-toggle">
-      <span id="hist-label">Inspection History</span>
-      <span class="hist-chevron" id="hist-chevron">▼</span>
-    </button>
-    <div class="hist-body" id="hist-body"></div>
-  </div>
+  <div id="msg" class="msg" role="status" aria-live="polite"></div>
+  <div class="print-only" id="print-stamp"></div>
+  <div id="result" aria-live="polite"></div>
 
-  <button class="btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>
+  <section class="help" id="help" aria-labelledby="help-title">
+    <h2 id="help-title">How to use this page</h2>
+    <p class="lead">For site and field managers checking ladders and fall-protection equipment before use.</p>
 
-</div>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Find the number</h3>
+        <p>Every inspected item carries a tag. Scan its QR code, tap it with your phone, or read the number printed on it.</p></div>
+      <div class="step"><div class="n">2</div><h3>Search it</h3>
+        <p>Type the serial, the tag number or the work order into the box above. No account or app needed.</p></div>
+      <div class="step"><div class="n">3</div><h3>Act on the result</h3>
+        <p>The page tells you whether the item can be used and exactly what to do next.</p></div>
+    </div>
 
-<!-- Scan overlay -->
-<div class="scan-overlay hidden" id="scan-overlay">
+    <div class="card legend">
+      <h2>What each result means</h2>
+      <div class="lg"><span class="pill t-ok">✓ Valid</span>
+        <p><b>OK to use.</b> Inspected and passed; the date shows when the next inspection is due. Still check it over before each use.</p></div>
+      <div class="lg"><span class="pill t-warn">! Due soon</span>
+        <p><b>OK to use for now.</b> Its inspection falls due within 30 days — book it before the date shown.</p></div>
+      <div class="lg"><span class="pill t-bad">! Overdue</span>
+        <p><b>Take it out of use until it is re-inspected.</b> It may be fine, but nobody has checked it inside the required period.</p></div>
+      <div class="lg"><span class="pill t-bad">✕ Failed</span>
+        <p><b>Do not use.</b> It failed inspection and was removed from service. The failed checks are listed on its record.</p></div>
+      <div class="lg"><span class="pill t-dead">✕ Destroyed</span>
+        <p><b>Do not use.</b> The ladder was not worth repairing and was cut and destroyed at inspection. If you find it in use, remove it and report the serial.</p></div>
+      <div class="lg"><span class="pill t-none">? No record</span>
+        <p><b>We have no inspection for that number.</b> Check it was typed exactly as printed, or try the tag number. If it still isn't found, treat the item as not inspected.</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Common questions</h2>
+      <details><summary>How do I get the records for a whole job?</summary>
+        <div class="ans"><p>Search the <b>work order number</b> from your invoice or service paperwork. You'll get every item on that job with its result, anything removed from service listed first, and buttons to print it, save it as a PDF or download a spreadsheet.</p></div></details>
+      <details><summary>Where is the serial number?</summary>
+        <div class="ans"><p><b>Ladders:</b> on the manufacturer's label on a side rail, usually near the bottom.</p>
+          <p><b>Harnesses, lanyards and lifelines:</b> on the sewn-in label or the housing. If the item has an inspection tag, the tag number (like <span class="mono">FP161340</span>) works too.</p></div></details>
+      <details><summary>What is the certificate code?</summary>
+        <div class="ans"><p>A 10-character code (like <span class="mono">SHJM3W0P8C</span>) that identifies one item's certificate. It's what a tag's QR code or chip carries, so scanning a tag takes you straight to the right record.</p></div></details>
+      <details><summary>Scanning doesn't work</summary>
+        <div class="ans"><p>Allow camera access when your phone asks, and hold the code steady about a hand's width away. On iPhone, the normal Camera app can also scan the tag's QR code. If all else fails, type the number printed on the tag.</p></div></details>
+      <details><summary>The record looks wrong, or an item is missing</summary>
+        <div class="ans"><p>Contact the company that inspected your equipment and give them the <b>serial number</b> and the <b>work order</b> shown on the record. Corrections are made by them and appear here as soon as they are saved — the original is kept on file.</p></div></details>
+      <details><summary>Can I print or save a certificate?</summary>
+        <div class="ans"><p>Yes. Every record and work order has a <b>Print / Save PDF</b> button. On a phone, choose "Save as PDF" in the print screen. You can also copy a link to send to someone.</p></div></details>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  Records update as soon as an inspection is uploaded. · <a href="/privacy.html">Privacy</a>
+</footer>
+
+<div id="scan" role="dialog" aria-modal="true" aria-label="Scan a code">
   <div id="scan-video"></div>
-  <div class="scan-hint">Hold barcode in view — detection is automatic</div>
-  <button class="btn-scan-cancel" id="btn-scan-cancel">Cancel</button>
+  <p>Point the camera at the QR code or barcode on the tag.</p>
+  <button type="button" class="btn btn-plain" id="btn-scan-cancel">Cancel</button>
 </div>
 
 <script>
-const SUPABASE_URL      = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
+'use strict';
+// ── Connection ────────────────────────────────────────────────────────────────
+// The publishable key is meant to be public: anon can read only the two
+// certificate views and call record_certificate_view (see CLAUDE.md, "Rotate
+// Supabase anon key"). Plain fetch rather than supabase-js — the page needs
+// four GETs and one POST, and every script it does not load is one less a CDN
+// could tamper with.
+const SUPABASE_URL = 'https://bqoxpbjtqwicurmuxueq.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_WgGGcm9a-sJFt-9kpaWwAg_Rm-ft5Nj';
+const REST = SUPABASE_URL + '/rest/v1/';
 
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-let searchMode = 'serial';
-let _html5Qr   = null;
-
-// ── DOM helpers ───────────────────────────────────────────────────────────────
-const el   = id => document.getElementById(id);
-const show = id => el(id).classList.add('vis');
-const hide = id => el(id).classList.remove('vis');
-
-// ── Tab switching ─────────────────────────────────────────────────────────────
-document.querySelectorAll('.stab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    searchMode = btn.dataset.mode;
-    const isSn = searchMode === 'serial';
-    el('search-input').placeholder = isSn ? 'Enter serial number…' : 'Enter work order…';
-    el('search-input').inputMode   = isSn ? 'numeric' : 'text';
-    el('btn-scan').classList.toggle('hidden', !isSn);
-    el('search-input').value = '';
-    hide('results'); hide('no-results'); hide('err-msg'); hide('msg');
-  });
-});
-
-// ── Barcode scanner ───────────────────────────────────────────────────────────
-el('btn-scan').addEventListener('click', startScan);
-el('btn-scan-cancel').addEventListener('click', stopScan);
-
-async function startScan() {
-  try {
-    el('scan-overlay').classList.remove('hidden');
-    _html5Qr = new Html5Qrcode('scan-video');
-    await _html5Qr.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 280, height: 100 } },
-      (decoded) => {
-        el('search-input').value = decoded.trim();
-        stopScan();
-        doSearch();
-      },
-      () => {}
-    );
-  } catch {
-    el('scan-overlay').classList.add('hidden');
-    alert('Camera access denied or unavailable.\nType the serial number manually.');
-  }
+async function get(view, params) {
+  const res = await fetch(REST + view + '?' + params, { headers: { apikey: SUPABASE_KEY, Accept: 'application/json' } });
+  if (!res.ok) { const e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+  return res.json();
 }
 
-async function stopScan() {
-  el('scan-overlay').classList.add('hidden');
-  if (_html5Qr) {
-    try { await _html5Qr.stop(); }   catch(_) {}
-    try { _html5Qr.clear(); }        catch(_) {}
-    _html5Qr = null;
-  }
-}
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+// Everything from the database is escaped before it touches innerHTML.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+// The database's serial_key(): upper case, letters and digits only.
+const keyOf = s => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-// ── Search dispatcher ─────────────────────────────────────────────────────────
-el('btn-search').addEventListener('click', doSearch);
-el('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
-
-async function doSearch() {
-  const val = el('search-input').value.trim();
-  if (!val) return;
-  el('btn-search').disabled = true;
-  el('msg').textContent = 'Searching…';
-  show('msg');
-  hide('no-results'); hide('err-msg'); hide('results');
-  if (searchMode === 'serial') await searchBySerial(val);
-  else                         await searchByWorkOrder(val);
-  el('btn-search').disabled = false;
-  hide('msg');
-}
-
-// ── Telling the office a certificate was looked at ────────────────────────────
-// Fire-and-forget, and never allowed to affect the page: a certificate has to
-// render whether or not this succeeds. Nothing is sent about the visitor — the
-// server derives a coarse office/field label from the network and keeps only a
-// /24 prefix. See supabase/14_certificate_views.sql.
-//
-// `?src=app` suppresses it. A tech opening a certificate from inside one of the
-// Lia apps is not a visit, and counting one would drown the only signal this
-// exists to capture: whether anybody outside is actually using the tags.
-function reportView(info) {
-  try {
-    // Read from location rather than the _p below: this function is defined
-    // above that declaration, and depending on it would be a temporal-dead-zone
-    // error waiting for the first caller that runs early.
-    if (new URLSearchParams(location.search).get('src') === 'app') return;
-    db.rpc('record_certificate_view', { p: Object.assign({
-      kind: 'ladder',
-      source: 'web',
-      user_agent: navigator.userAgent,
-      referrer: document.referrer || null,
-      tz: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || null,
-    }, info) }).then(() => {}, () => {});
-  } catch (_) { /* never block the certificate */ }
-}
-
-// ── Serial search ─────────────────────────────────────────────────────────────
-async function searchBySerial(serial) {
-  const { data, error } = await db
-    .from('ladder_inspections_public')
-    .select('*')
-    .eq('serial_num', serial)
-    .order('inspection_date', { ascending: false });
-
-  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
-  if (!data?.length) {
-    reportView({ found: false, lookup_by: 'serial', serial_key: serial });
-    renderNotRegistered(serial);
-    return;
-  }
-  reportView({ found: true, lookup_by: 'serial',
-               serial_key: serial, public_ref: data[0].public_ref });
-  renderCertificate(serial, data);
-}
-
-// ── Certificate code search ───────────────────────────────────────────────────
-// What an NFC tag actually carries. certificate_url() writes `/?t=<public_ref>`
-// for ladders, and until now this page ignored that parameter entirely — a
-// tapped ladder tag opened the site and sat there on an empty search box.
-async function searchByRef(ref) {
-  const key = String(ref || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const { data, error } = await db
-    .from('ladder_inspections_public')
-    .select('*')
-    .eq('public_ref', key)
-    .order('inspection_date', { ascending: false });
-
-  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
-  if (!data?.length) {
-    reportView({ found: false, lookup_by: 'ref', public_ref: key });
-    renderNotRegistered(key);
-    return;
-  }
-  reportView({ found: true, lookup_by: 'ref',
-               public_ref: key, serial_key: data[0].serial_key });
-  el('search-input').value = data[0].serial_num;
-  renderCertificate(data[0].serial_num, data);
-}
-
-// ── Work order search ─────────────────────────────────────────────────────────
-async function searchByWorkOrder(wo) {
-  const { data, error } = await db
-    .from('ladder_inspections_public')
-    .select('*')
-    .eq('work_order_id', wo)
-    .order('serial_num', { ascending: true });
-
-  if (error) { el('err-msg').textContent = error.message; show('err-msg'); return; }
-  if (!data?.length) {
-    el('no-results').textContent = `No inspection records found for work order "${wo}".`;
-    show('no-results'); return;
-  }
-  renderWorkOrder(wo, data);
-}
-
-// ── Date & status helpers ─────────────────────────────────────────────────────
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
 function daysUntil(d) {
   if (!d) return null;
-  const now = new Date(); now.setHours(0,0,0,0);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
   return Math.round((new Date(d + 'T00:00:00') - now) / 86400000);
 }
-function statusInfo(days) {
-  if (days === null) return { cls: 'ok',   text: 'No Expiry Set' };
-  if (days < 0)      return { cls: 'err',  text: `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}` };
-  if (days <= 30)    return { cls: 'warn', text: `Due in ${days} day${days !== 1 ? 's' : ''}` };
-  return               { cls: 'ok',   text: `Valid — ${days} days remaining` };
+const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+const fmtMfg = (m, y) => { if (!y) return null; const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return m ? `${M[m - 1] || m} ${y}` : String(y); };
+
+// ── Status ───────────────────────────────────────────────────────────────────
+// One vocabulary for both kinds of equipment. Order of precedence: destroyed
+// and failed outrank the calendar — a cut-up ladder is never "valid", however
+// far off its due date. Overdue is NOT failed: it may be perfectly sound, it
+// just has not been checked in time.
+const STATUS = {
+  valid:     { tone: 'ok',   label: 'Valid',     icon: '✓', seal: 'VALID' },
+  due:       { tone: 'warn', label: 'Due soon',  icon: '!', seal: 'DUE SOON' },
+  overdue:   { tone: 'bad',  label: 'Overdue',   icon: '!', seal: 'OVERDUE' },
+  failed:    { tone: 'bad',  label: 'Failed',    icon: '✕', seal: 'FAILED' },
+  destroyed: { tone: 'dead', label: 'Destroyed', icon: '✕', seal: 'DESTROYED' },
+  none:      { tone: 'none', label: 'No record', icon: '?', seal: 'NO RECORD' },
+};
+
+function statusOf(item) {
+  const r = item.latest;
+  if (item.kind === 'ladder' && r.destroyed === true) return 'destroyed';
+  if (item.kind === 'fp') {
+    const eff = r.effective_status;
+    if (eff === 'fail' || r.overall_pass === false || r.status === 'fail') return 'failed';
+    if (eff === 'inspection overdue') return 'overdue';
+  }
+  const d = daysUntil(r.next_due_date);
+  if (d === null) return 'valid';
+  if (d < 0) return 'overdue';
+  if (d <= 30) return 'due';
+  return 'valid';
 }
 
-// ── SVG seal ──────────────────────────────────────────────────────────────────
-function sealSVG(cls) {
-  const C = {
-    ok:   { stroke:'#16a34a', fill:'#f0fdf4', text:'#15803d', label:'VALID',    icon:'✓' },
-    warn: { stroke:'#d97706', fill:'#fffbeb', text:'#b45309', label:'DUE SOON', icon:'!' },
-    err:  { stroke:'#dc2626', fill:'#fef2f2', text:'#b91c1c', label:'OVERDUE',  icon:'✕' },
-    none: { stroke:'#9ca3af', fill:'#f9fafb', text:'#6b7280', label:'NO RECORD',icon:'?' },
-  };
-  const c = C[cls] || C.none;
-  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="47" fill="${c.fill}" stroke="${c.stroke}" stroke-width="4.5"/>
-    <circle cx="50" cy="50" r="39" fill="none" stroke="${c.stroke}" stroke-width="1" stroke-dasharray="3 2.5" opacity="0.35"/>
-    <text x="50" y="28" text-anchor="middle" font-size="7" font-weight="700"
-      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="2.5" opacity="0.65">LADDER</text>
-    <text x="50" y="37" text-anchor="middle" font-size="6.5" font-weight="700"
-      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="1.8" opacity="0.65">INSPECTION</text>
-    <text x="50" y="65" text-anchor="middle" dominant-baseline="middle"
-      font-size="26" font-weight="900" fill="${c.stroke}" font-family="system-ui,sans-serif">${c.icon}</text>
-    <text x="50" y="82" text-anchor="middle" font-size="7.5" font-weight="800"
-      fill="${c.text}" font-family="system-ui,sans-serif" letter-spacing="2">${c.label}</text>
+function stateLine(item, st) {
+  const r = item.latest, d = daysUntil(r.next_due_date);
+  switch (st) {
+    case 'destroyed': return 'Destroyed — not in service';
+    case 'failed':    return 'Failed — removed from service';
+    case 'overdue':   return d === null ? 'Inspection overdue' : `Inspection overdue by ${plural(Math.abs(d), 'day')}`;
+    case 'due':       return d === 0 ? 'Inspection due today' : `Inspection due in ${plural(d, 'day')}`;
+    default:          return d === null ? 'Passed inspection' : `Valid — next inspection ${fmtDate(r.next_due_date)}`;
+  }
+}
+
+function todoFor(item, st) {
+  const r = item.latest;
+  const what = item.kind === 'fp' ? 'this item' : 'this ladder';
+  switch (st) {
+    case 'destroyed': return `<b>Do not use</b>This ladder was cut and destroyed at inspection${r.destroy_reason ? ' (' + esc(r.destroy_reason.replace(/^Cut and destroyed:?\s*/i, '').toLowerCase() || 'destroyed') + ')' : ''}. If it is still on site, take it out of use and report serial <span class="mono">${esc(item.serial)}</span>.`;
+    case 'failed':    return `<b>Do not use</b>${what[0].toUpperCase() + what.slice(1)} failed inspection and must stay out of service. Fall-protection equipment that has failed is destroyed or returned to the manufacturer — never put back into use.`;
+    case 'overdue':   return `<b>Take it out of use</b>Its inspection is overdue. Keep ${what} out of use until it has been re-inspected — contact your inspection provider with the serial number${r.work_order_id ? ' and work order ' + esc(r.work_order_id) : ''}.`;
+    case 'due':       return `<b>OK to use — book its inspection</b>Still in service, but due for inspection by <b>${esc(fmtDate(r.next_due_date))}</b>. Book it now so it does not lapse.`;
+    default:          return `<b>OK to use</b>${what[0].toUpperCase() + what.slice(1)} passed inspection${r.next_due_date ? ' and is good until <b>' + esc(fmtDate(r.next_due_date)) + '</b>' : ''}. Give it the usual check before each use.`;
+  }
+}
+
+function sealSVG(st, kind) {
+  const C = { ok: ['#15803d','#f0fdf4'], warn: ['#b45309','#fffbeb'], bad: ['#b91c1c','#fef2f2'], dead: ['#3f0d12','#fdf2f3'], none: ['#64748b','#f8fafc'] };
+  const s = STATUS[st] || STATUS.none, [stroke, fill] = C[s.tone];
+  const top = kind === 'fp' ? 'FALL PROTECTION' : kind === 'ladder' ? 'LADDER' : 'EQUIPMENT';
+  return `<svg class="seal" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="46" fill="${fill}" stroke="${stroke}" stroke-width="4.5"/>
+    <circle cx="50" cy="50" r="38.5" fill="none" stroke="${stroke}" stroke-width="1" stroke-dasharray="3 2.5" opacity=".35"/>
+    <text x="50" y="27" text-anchor="middle" font-size="${top.length > 10 ? 5.4 : 6.6}" font-weight="700" fill="${stroke}" opacity=".7" letter-spacing="1.2" font-family="system-ui,sans-serif">${top}</text>
+    <text x="50" y="35.5" text-anchor="middle" font-size="5.6" font-weight="700" fill="${stroke}" opacity=".7" letter-spacing="1.6" font-family="system-ui,sans-serif">INSPECTION</text>
+    <text x="50" y="62" text-anchor="middle" dominant-baseline="middle" font-size="25" font-weight="900" fill="${stroke}" font-family="system-ui,sans-serif">${s.icon}</text>
+    <text x="50" y="82" text-anchor="middle" font-size="${s.seal.length > 8 ? 6 : 7.4}" font-weight="800" fill="${stroke}" letter-spacing="1.6" font-family="system-ui,sans-serif">${s.seal}</text>
   </svg>`;
 }
 
-// ── Render: NOT REGISTERED ────────────────────────────────────────────────────
-function renderNotRegistered(serial) {
-  el('wo-card').style.display   = 'none';
-  el('hist-card').style.display = 'none';
-  el('cert-card').className     = 'cert-card unregistered';
-  el('cert-card').style.display = '';
-  el('cert-header').style.display = '';
-  el('cert-seal').innerHTML        = sealSVG('none');
-  el('cert-serial-num').textContent = serial;
-  el('cert-status-text').className  = 'cert-status-text none';
-  el('cert-status-text').textContent = 'No inspection on record';
-  el('cert-count').textContent = '';
-  el('cert-fields').innerHTML = `
-    <div class="cert-row">
-      <span class="cert-lbl">Status</span>
-      <span class="cert-val" style="color:var(--muted);">Not Registered</span>
-    </div>
-    <div class="cert-row">
-      <span class="cert-lbl">Next Due</span>
-      <span class="cert-val" style="color:var(--muted);">—</span>
-    </div>
-    <div class="cert-row" style="border-bottom:none;">
-      <span style="font-size:12px;color:var(--muted);line-height:1.5;">
-        This serial number has no inspection records in the system.
-      </span>
-    </div>`;
-  show('results');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+const pill = st => `<span class="pill t-${STATUS[st].tone}">${STATUS[st].icon} ${STATUS[st].label}</span>`;
 
-// ── Render: certificate ───────────────────────────────────────────────────────
-function renderCertificate(serial, records) {
-  const r    = records[0];
-  const days = daysUntil(r.next_due_date);
-  const { cls, text } = statusInfo(days);
-
-  el('wo-card').style.display   = 'none';
-  el('cert-card').className     = 'cert-card';
-  el('cert-card').style.display = '';
-  el('cert-header').style.display = '';
-
-  // Seal
-  el('cert-seal').innerHTML = sealSVG(cls);
-
-  // Header info
-  el('cert-serial-num').textContent  = serial;
-  el('cert-status-text').className   = `cert-status-text ${cls}`;
-  el('cert-status-text').textContent = text;
-  el('cert-count').textContent =
-    records.length === 1 ? '1 inspection on record'
-                         : `${records.length} inspections on record`;
-
-  // Fields
-  const ladderSpec = [r.brand, r.type, r.length ? r.length + "'" : null].filter(Boolean).join(' · ');
-  el('cert-fields').innerHTML = `
-    <div class="cert-row">
-      <span class="cert-lbl">Last Inspected</span>
-      <span class="cert-val">${fmtDate(r.inspection_date)}</span>
-    </div>
-    <div class="cert-row">
-      <span class="cert-lbl">Next Due</span>
-      <span class="cert-val ${cls}">${fmtDate(r.next_due_date)}</span>
-    </div>
-    <div class="cert-row">
-      <span class="cert-lbl">Inspector</span>
-      <span class="cert-val">${r.tech_name || '—'}</span>
-    </div>
-    <div class="cert-row">
-      <span class="cert-lbl">Work Order</span>
-      <span class="cert-val">${r.work_order_id || '—'}</span>
-    </div>
-    ${ladderSpec ? `<div class="cert-row">
-      <span class="cert-lbl">Ladder</span>
-      <span class="cert-val" style="font-weight:500;">${ladderSpec}</span>
-    </div>` : ''}
-    ${r.notes ? `<div class="cert-row">
-      <span class="cert-lbl">Notes</span>
-      <span class="cert-val" style="font-weight:400;font-size:13px;color:var(--muted);">${r.notes}</span>
-    </div>` : ''}
-  `;
-
-  // History
-  if (records.length > 1) {
-    el('hist-body').innerHTML = records.slice(1).map(h => {
-      const hSpec = [h.brand, h.type, h.length ? h.length + "'" : null].filter(Boolean).join(' · ');
-      return `<div class="hist-row">
-        <span class="hist-date">${fmtDate(h.inspection_date)}</span>
-        <span class="hist-wo">${h.work_order_id || '—'}</span>
-        <span class="hist-tech">${h.tech_name || ''}${hSpec ? ' · ' + hSpec : ''}</span>
-      </div>`;
-    }).join('');
-    el('hist-label').textContent =
-      `${records.length - 1} prior inspection${records.length - 1 !== 1 ? 's' : ''}`;
-    el('hist-card').style.display = '';
-    el('hist-body').classList.remove('open');
-    el('hist-chevron').classList.remove('open');
-  } else {
-    el('hist-card').style.display = 'none';
+// ── Items ────────────────────────────────────────────────────────────────────
+// Rows → items: one per piece of equipment, newest inspection first.
+function toItems(rows, kind) {
+  const by = new Map();
+  for (const r of rows || []) {
+    const k = kind + ':' + (r.serial_key || r.public_ref || keyOf(r.serial_num));
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(r);
   }
-
-  show('results');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  return [...by.values()].map(list => {
+    list.sort((a, b) => String(b.inspection_date).localeCompare(String(a.inspection_date)));
+    const latest = list[0];
+    const item = { kind, latest, history: list, serial: latest.serial_num || latest.serial_key, ref: latest.public_ref };
+    item.status = statusOf(item);
+    return item;
+  });
 }
 
-// ── Render: work order ────────────────────────────────────────────────────────
-function renderWorkOrder(wo, records) {
-  el('cert-card').style.display = 'none';
-  el('hist-card').style.display = 'none';
-  el('wo-card').style.display   = '';
-
-  el('wo-hdr').textContent = `${wo} — ${records.length} ladder${records.length !== 1 ? 's' : ''} inspected`;
-
-  el('wo-list').innerHTML = records.map(r => {
-    const { cls } = statusInfo(daysUntil(r.next_due_date));
-    return `<a class="wo-row" href="?serial=${encodeURIComponent(r.serial_num)}">
-      <span class="badge-dot ${cls}"></span>
-      <span class="wo-serial">${r.serial_num}</span>
-      <span class="wo-date">${fmtDate(r.inspection_date)}</span>
-    </a>`;
-  }).join('');
-
-  show('results');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+function describe(item) {
+  const r = item.latest;
+  if (item.kind === 'ladder') {
+    const spec = [r.brand, r.type, r.length ? r.length + '′' : null].filter(Boolean).join(' · ');
+    return spec ? 'Ladder · ' + spec : 'Ladder';
+  }
+  return [r.item_type || 'Fall protection', [r.manufacturer, r.model].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
 }
 
-// ── History toggle ────────────────────────────────────────────────────────────
-el('hist-toggle').addEventListener('click', () => {
-  el('hist-body').classList.toggle('open');
-  el('hist-chevron').classList.toggle('open');
-});
+// ── Lookups ──────────────────────────────────────────────────────────────────
+// Every way in at once, both kinds of equipment: the certificate code (what a
+// tag carries), the serial, and the number printed on the tag. A person in a
+// plant room has one of them and should not need to know which.
+let _ladderHasTags = true;   // false until migration 40 is live — see below
 
-// ── URL params: ?t=  ?serial=  or  ?wo= ──────────────────────────────────────
-// ?t= is the certificate code an NFC tag carries and is checked first, because
-// a tag that has both should resolve by the more specific identifier.
-const _p = new URLSearchParams(location.search);
-if (_p.get('t')) {
-  searchByRef(_p.get('t'));
-} else if (_p.get('serial')) {
-  el('search-input').value = _p.get('serial');
-  doSearch();
-} else if (_p.get('wo')) {
-  document.querySelector('[data-mode="wo"]').click();
-  el('search-input').value = _p.get('wo');
-  doSearch();
+async function findItems(q) {
+  const k = keyOf(q);
+  if (!k) return { ladders: [], fps: [] };
+  const fpQ = get('fall_protection_public', `select=*&or=(serial_key.eq.${k},public_ref.eq.${k},tag_label_key.eq.${k})&order=inspection_date.desc&limit=200`);
+  let ladderRows;
+  try {
+    ladderRows = await get('ladder_inspections_public', `select=*&or=(serial_key.eq.${k},public_ref.eq.${k}${_ladderHasTags ? `,tag_label_key.eq.${k}` : ''})&order=inspection_date.desc&limit=200`);
+  } catch (e) {
+    // Before migration 40 the ladder view has no tag_label_key, and naming a
+    // missing column is a 400. Search without it rather than failing.
+    if (e.status !== 400 || !_ladderHasTags) throw e;
+    _ladderHasTags = false;
+    ladderRows = await get('ladder_inspections_public', `select=*&or=(serial_key.eq.${k},public_ref.eq.${k})&order=inspection_date.desc&limit=200`);
+  }
+  return { ladders: toItems(ladderRows, 'ladder'), fps: toItems(await fpQ, 'fp'), key: k };
 }
+
+// Work orders are matched as written, and also with a typed "WO" prefix taken
+// off ("WO-98956" → "98956"). "unknown" is a placeholder, not a job.
+function woCandidates(q) {
+  const raw = String(q || '').trim();
+  const out = new Set();
+  if (raw && !/^unknown$/i.test(raw)) out.add(raw);
+  const stripped = raw.replace(/^w\.?\s*o\.?\s*[#:\-\s]*/i, '').trim();
+  if (stripped && stripped !== raw && !/^unknown$/i.test(stripped)) out.add(stripped);
+  return [...out].filter(v => v.length <= 64).map(v => v.replace(/["\\]/g, ''));
+}
+
+async function findWorkOrder(q) {
+  const c = woCandidates(q);
+  if (!c.length) return null;
+  const inList = 'in.(' + c.map(v => '"' + v + '"').join(',') + ')';
+  const p = `select=*&work_order_id=${encodeURIComponent(inList)}&order=inspection_date.desc&limit=2000`;
+  const [l, f] = await Promise.all([get('ladder_inspections_public', p), get('fall_protection_public', p)]);
+  const items = [...toItems(l, 'ladder'), ...toItems(f, 'fp')];
+  if (!items.length) return null;
+  const wo = (l[0] || f[0]).work_order_id;
+  return { wo, items };
+}
+
+async function fpChecks(item) {
+  try {
+    return await get('fall_protection_checks_public',
+      `select=*&public_ref=eq.${encodeURIComponent(item.ref)}&inspection_date=eq.${encodeURIComponent(item.latest.inspection_date)}&order=ord.asc`);
+  } catch (_) { return []; }   // a certificate without its checks beats no certificate
+}
+
+// ── Telling the office a certificate was looked at ───────────────────────────
+// Fire-and-forget; never allowed to affect the page. No visitor data is sent —
+// the server keeps a coarse network label and a /24 prefix (migration 14).
+// `?src=app` suppresses it: Lia's own apps opening a certificate are not
+// outside visits, and counting them would drown the signal.
+const SRC_APP = new URLSearchParams(location.search).get('src') === 'app';
+function reportView(info) {
+  if (SRC_APP) return;
+  try {
+    fetch(REST + 'rpc/record_certificate_view', {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p: Object.assign({ source: 'web', user_agent: navigator.userAgent,
+        referrer: document.referrer || null, tz: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || null }, info) }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
+const viewKind = item => item.kind === 'fp' ? 'fall_protection' : 'ladder';
+const pageKind = () => location.pathname.startsWith('/fp') ? 'fall_protection' : 'ladder';
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+function busy(text) { const m = $('msg'); m.className = 'msg info vis'; m.innerHTML = `<span class="spin"></span><span>${esc(text)}</span>`; }
+function clearMsg() { $('msg').className = 'msg'; $('msg').textContent = ''; }
+function fail(text, retry) {
+  const m = $('msg'); m.className = 'msg err vis';
+  m.innerHTML = `<span>${esc(text)}</span>` + (retry ? ' <button type="button" class="btn btn-plain" id="btn-retry" style="margin-left:auto;height:36px">Try again</button>' : '');
+  if (retry) $('btn-retry').onclick = retry;
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+let _seq = 0;
+async function search(q, opts = {}) {
+  q = String(q || '').trim();
+  if (!q) { $('q').focus(); return 'empty'; }
+  const seq = ++_seq;
+  $('q').value = q;
+  $('result').innerHTML = '';
+  $('btn-go').disabled = true;
+  busy('Searching inspection records…');
+  try {
+    const [found, wo] = await Promise.all([findItems(q), findWorkOrder(q)]);
+    if (seq !== _seq) return 'stale';
+    clearMsg();
+    const items = [...found.ladders, ...found.fps];
+    const by = it => it.ref && it.ref === found.key ? 'ref' : (keyOf(it.latest.tag_label) === found.key && keyOf(it.serial) !== found.key ? 'tag_label' : 'serial');
+
+    if (items.length === 1 && !wo) {
+      showItem(items[0], { by: by(items[0]), push: opts.push });
+      return 'item';
+    }
+    if (!items.length && wo) { showWorkOrder(wo, { push: opts.push }); return 'wo'; }
+    if (!items.length && !wo) {
+      if (!opts.quietMiss) reportView({ kind: opts.kind || pageKind(), found: false, lookup_by: opts.by || 'serial',
+        public_ref: opts.by === 'ref' ? keyOf(q) : null, serial_key: opts.by === 'ref' ? null : keyOf(q) });
+      showNotFound(q, { push: opts.push });
+      return 'none';
+    }
+    showChoices(q, items, wo, by);
+    return 'choice';
+  } catch (err) {
+    if (seq !== _seq) return 'stale';
+    console.error(err);
+    fail("Couldn't reach the inspection records. Check your signal and try again.", () => search(q, opts));
+    return 'error';
+  } finally {
+    if (seq === _seq) $('btn-go').disabled = false;
+  }
+}
+
+function setUrl(params, push) {
+  if (push === false) return;
+  const u = new URL(location.href);
+  u.search = '';
+  for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
+  if (SRC_APP) u.searchParams.set('src', 'app');
+  history.pushState(null, '', u.pathname + u.search);
+}
+
+// ── Rendering: one item's certificate ────────────────────────────────────────
+function fact(label, value, opts = {}) {
+  if (value === null || value === undefined || value === '') { if (!opts.always) return ''; value = '—'; }
+  return `<div class="fact${opts.wide ? ' wide' : ''}"><dt>${esc(label)}</dt><dd${opts.mono ? ' class="mono"' : ''}>${esc(value)}</dd></div>`;
+}
+
+async function showItem(item, opts = {}) {
+  const st = item.status, s = STATUS[st], r = item.latest;
+  reportView({ kind: viewKind(item), found: true, lookup_by: opts.by || 'serial', public_ref: item.ref || null, serial_key: r.serial_key || null });
+  setUrl(item.ref ? { t: item.ref } : { q: item.serial }, opts.push);
+  document.title = `${item.serial} — ${s.label} · Equipment Inspection Records`;
+  stamp();
+
+  const facts = item.kind === 'ladder' ? [
+    fact('Last inspected', fmtDate(r.inspection_date), { always: true }),
+    fact('Next due', st === 'destroyed' ? 'Not applicable' : fmtDate(r.next_due_date), { always: true }),
+    fact('Brand', r.brand), fact('Type', r.type),
+    fact('Length', r.length ? r.length + ' ft' : null), fact('Tag number', r.tag_label, { mono: true }),
+    fact('Work order', r.work_order_id, { mono: true }), fact('Certificate code', r.public_ref, { mono: true }),
+    fact('Inspected for', [r.tech_name, r.rep_number ? '#' + r.rep_number : null].filter(Boolean).join(' · ')),
+    fact('Verified by', r.verified_by),
+    fact('Notes', r.notes, { wide: true }),
+  ] : [
+    fact('Last inspected', fmtDate(r.inspection_date), { always: true }),
+    fact('Next due', st === 'failed' ? 'Not applicable' : fmtDate(r.next_due_date), { always: true }),
+    fact('Item type', r.item_type), fact('Manufacturer', r.manufacturer),
+    fact('Model', r.model), fact('Manufactured', fmtMfg(r.mfg_month, r.mfg_year)),
+    fact('Lot number', r.lot_number, { mono: true }), fact('Tag number', r.tag_label, { mono: true }),
+    fact('Work order', r.work_order_id, { mono: true }), fact('Certificate code', r.public_ref, { mono: true }),
+    fact('Inspected for', [r.tech_name, r.rep_number ? '#' + r.rep_number : null].filter(Boolean).join(' · ')),
+    fact('Verified by', r.verified_by),
+    fact('Description', r.description, { wide: true }),
+  ];
+
+  const banner = st === 'destroyed'
+    ? `<div class="banner dead">DESTROYED — DO NOT USE<small>${esc(r.destroy_reason || 'Cut and destroyed at inspection')}</small></div>`
+    : st === 'failed'
+    ? `<div class="banner bad">REMOVED FROM SERVICE — DO NOT USE${r.discard_reason ? `<small>${esc(r.discard_reason)}</small>` : ''}</div>` : '';
+
+  const earlier = item.history.slice(1);
+  $('result').innerHTML = `
+    <article class="card" id="cert" aria-label="Inspection record for ${esc(item.serial)}">
+      <div class="hero t-${s.tone}">
+        ${sealSVG(st, item.kind)}
+        <div>
+          <div class="kind">${esc(describe(item))}</div>
+          <div class="serial mono">${esc(item.serial)}</div>
+          <div class="state">${esc(stateLine(item, st))}</div>
+          <div class="what">${plural(item.history.length, 'inspection')} on record</div>
+        </div>
+      </div>
+      ${banner}
+      <div class="todo t-${s.tone}" id="todo">${todoFor(item, st)}</div>
+      <dl class="facts">${facts.join('')}</dl>
+      <div class="actions">
+        <button type="button" class="btn btn-plain" onclick="window.print()">Print / Save PDF</button>
+        <button type="button" class="btn btn-plain" id="btn-copy">Copy link</button>
+        ${r.work_order_id && !/^unknown$/i.test(r.work_order_id) ? `<button type="button" class="btn btn-plain" id="btn-wo">Whole work order ${esc(r.work_order_id)}</button>` : ''}
+      </div>
+    </article>
+    <section class="card checks" id="checks" hidden><h2>Inspection checks</h2><div id="checks-list"></div></section>
+    ${earlier.length ? `<section class="card hist"><h2>Earlier inspections</h2>${earlier.map(h =>
+      `<div class="row"><span>${esc(fmtDate(h.inspection_date))}</span><span class="mono" style="color:var(--muted)">${esc(h.work_order_id && !/^unknown$/i.test(h.work_order_id) ? 'WO ' + h.work_order_id : '')}</span></div>`).join('')}</section>` : ''}`;
+
+  $('btn-copy').onclick = () => copyLink();
+  if ($('btn-wo')) $('btn-wo').onclick = () => search(r.work_order_id, { push: true });
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  if (item.kind === 'fp' && item.ref) {
+    const checks = await fpChecks(item);
+    if (!checks.length || !$('checks')) return;
+    $('checks-list').innerHTML = checks.map(c => {
+      const m = c.result === true ? ['pass', '✓'] : c.result === false ? ['fail', '✕'] : ['na', '—'];
+      // The mark is the verdict; the word is what was answered. "Has the impact
+      // indicator been activated? — No" is a pass, so printing "Pass" beside it
+      // would read as though it had been. The view words the answer for us.
+      const ans = c.answer_label || (c.result === true ? 'Pass' : c.result === false ? 'Fail' : '');
+      return `<div class="chk"><span class="mk ${m[0]}" aria-label="${m[0]}">${m[1]}</span>
+        <div>${esc(c.prompt)}${c.note ? `<div class="chk-note">${esc(c.note)}</div>` : ''}</div>
+        <span class="chk-ans ${m[0]}">${esc(String(ans).toUpperCase())}</span></div>`;
+    }).join('');
+    $('checks').hidden = false;
+  }
+}
+
+// ── Rendering: a work order ──────────────────────────────────────────────────
+const ORDER = ['destroyed', 'failed', 'overdue', 'due', 'valid'];
+let _woFilter = null;
+
+function showWorkOrder(wo, opts = {}) {
+  setUrl({ wo: wo.wo }, opts.push);
+  document.title = `Work order ${wo.wo} · Equipment Inspection Records`;
+  stamp();
+  _woFilter = null;
+  const items = wo.items.slice().sort((a, b) =>
+    ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || String(a.serial).localeCompare(String(b.serial), undefined, { numeric: true }));
+  const count = st => items.filter(i => i.status === st).length;
+  const ladders = items.filter(i => i.kind === 'ladder').length, fps = items.length - ladders;
+  const dates = items.map(i => i.latest.inspection_date).filter(Boolean).sort();
+  const span = dates.length ? (dates[0] === dates.at(-1) ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates.at(-1))}`) : '';
+  const removed = items.filter(i => i.status === 'destroyed' || i.status === 'failed');
+
+  const tiles = [['all', 'All items', items.length, '']].concat(
+    ORDER.filter(st => count(st)).map(st => [st, STATUS[st].label, count(st), 't-' + STATUS[st].tone]));
+
+  $('result').innerHTML = `
+    <article class="card" id="wo-report">
+      <div class="wo-head">
+        <div class="kind">Work order</div>
+        <div class="serial mono">${esc(wo.wo)}</div>
+        <div class="what">${[ladders ? plural(ladders, 'ladder') : '', fps ? plural(fps, 'fall-protection item') : ''].filter(Boolean).join(' and ')} inspected${span ? ' · ' + esc(span) : ''}</div>
+      </div>
+      <div class="tally" role="group" aria-label="Filter by result">${tiles.map(([k, l, n, c]) =>
+        `<button type="button" class="tile ${c}${k === 'all' ? ' on' : ''}" data-f="${k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
+      ${removed.length ? `<div class="removed" id="removed"><h3>Removed from service — do not use (${removed.length})</h3>${removed.map(i =>
+        `<div class="r"><span class="mono">${esc(i.serial)}</span><span>${pill(i.status)} ${esc(describe(i))}</span>
+          <span class="why">${esc(i.status === 'destroyed' ? (i.latest.destroy_reason || 'Cut and destroyed') : (i.latest.discard_reason || 'Failed inspection'))}</span></div>`).join('')}</div>` : ''}
+      <table class="items" aria-label="Items on work order ${esc(wo.wo)}">
+        <thead><tr><th>Serial</th><th class="hide-sm">Item</th><th>Next due</th><th>Result</th></tr></thead>
+        <tbody>${items.map((i, n) => `<tr class="go" data-i="${n}" data-st="${i.status}" tabindex="0">
+          <td><span class="mono">${esc(i.serial)}</span>${i.latest.tag_label ? `<div class="sub mono">${esc(i.latest.tag_label)}</div>` : ''}<div class="sub only-sm">${esc(describe(i))}</div></td>
+          <td class="hide-sm">${esc(describe(i))}</td>
+          <td>${i.status === 'destroyed' || i.status === 'failed' ? '—' : esc(fmtDate(i.latest.next_due_date))}</td>
+          <td>${pill(i.status)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div class="actions">
+        <button type="button" class="btn btn-plain" onclick="window.print()">Print / Save PDF</button>
+        <button type="button" class="btn btn-plain" id="btn-csv">Download spreadsheet</button>
+        <button type="button" class="btn btn-plain" id="btn-copy">Copy link</button>
+      </div>
+    </article>`;
+
+  const rows = [...document.querySelectorAll('#wo-report tbody tr')];
+  rows.forEach(tr => {
+    const open = () => { const it = items[+tr.dataset.i]; showItem(it, { by: 'serial', push: true }); };
+    tr.onclick = open; tr.onkeydown = e => { if (e.key === 'Enter') open(); };
+  });
+  document.querySelectorAll('#wo-report .tile').forEach(b => b.onclick = () => {
+    _woFilter = b.dataset.f === 'all' ? null : b.dataset.f;
+    document.querySelectorAll('#wo-report .tile').forEach(x => x.classList.toggle('on', x === b));
+    rows.forEach(tr => { tr.hidden = !!_woFilter && tr.dataset.st !== _woFilter; });
+  });
+  $('btn-csv').onclick = () => downloadCsv(wo.wo, items);
+  $('btn-copy').onclick = () => copyLink();
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function downloadCsv(woId, items) {
+  const cell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const head = ['Work order', 'Kind', 'Serial', 'Tag number', 'Item', 'Last inspected', 'Next due', 'Result', 'Reason', 'Certificate code', 'Certificate link'];
+  const lines = [head].concat(items.map(i => [woId, i.kind === 'fp' ? 'Fall protection' : 'Ladder', i.serial, i.latest.tag_label || '',
+    describe(i), i.latest.inspection_date || '', i.status === 'destroyed' || i.status === 'failed' ? '' : (i.latest.next_due_date || ''),
+    STATUS[i.status].label, i.status === 'destroyed' ? (i.latest.destroy_reason || '') : i.status === 'failed' ? (i.latest.discard_reason || '') : '',
+    i.ref || '', i.ref ? location.origin + '/?t=' + i.ref : '']));
+  const blob = new Blob(['\ufeff' + lines.map(l => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `work-order-${String(woId).replace(/[^A-Za-z0-9_-]/g, '_')}-inspections.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ── Rendering: several matches, or none ──────────────────────────────────────
+function showChoices(q, items, wo, by) {
+  stamp();
+  $('result').innerHTML = `<section class="card"><h2>More than one match for “${esc(q)}”</h2>
+    ${items.map((i, n) => `<button type="button" class="choice" data-i="${n}"><span><span class="mono" style="font-weight:700">${esc(i.serial)}</span><br><span class="sub">${esc(describe(i))}</span></span>${pill(i.status)}</button>`).join('')}
+    ${wo ? `<button type="button" class="choice" data-wo="1"><span><span style="font-weight:700">Work order ${esc(wo.wo)}</span><br><span class="sub">${plural(wo.items.length, 'item')} inspected on this job</span></span><span class="pill t-none">Job</span></button>` : ''}
+  </section>`;
+  document.querySelectorAll('#result .choice').forEach(b => b.onclick = () =>
+    b.dataset.wo ? showWorkOrder(wo, { push: true }) : showItem(items[+b.dataset.i], { by: by(items[+b.dataset.i]), push: true }));
+}
+
+function showNotFound(q, opts = {}) {
+  setUrl({ q }, opts.push);
+  stamp();
+  $('result').innerHTML = `<article class="card">
+    <div class="hero t-none">${sealSVG('none')}
+      <div><div class="kind">Search</div><div class="serial mono">${esc(q)}</div>
+        <div class="state">No inspection on record</div>
+        <div class="what">Nothing on file matches this number.</div></div></div>
+    <div class="card-pad" style="padding-bottom:4px"><b>Before you decide, check:</b></div>
+    <ul class="tips">
+      <li>It's typed exactly as printed — <b>0</b> (zero) and <b>O</b>, <b>1</b> and <b>I</b> are easy to mix up.</li>
+      <li>Try the other number: the <b>tag number</b> (like FP161340) instead of the serial, or the reverse.</li>
+      <li>Scan the tag's QR code instead of typing.</li>
+      <li>For a whole job, search the <b>work order</b> number from your paperwork.</li>
+    </ul>
+    <div class="todo t-none" style="margin-top:0"><b>If it still isn't found</b>Treat the item as <b>not inspected</b> and arrange an inspection before relying on it.</div>
+  </article>`;
+}
+
+// ── Little things ────────────────────────────────────────────────────────────
+function stamp() { $('print-stamp').textContent = 'Printed ' + new Date().toLocaleString('en-US') + ' from ' + location.host; }
+async function copyLink() {
+  const u = new URL(location.href); u.searchParams.delete('src');
+  try { await navigator.clipboard.writeText(u.href); busy('Link copied.'); setTimeout(clearMsg, 1400); }
+  catch (_) { prompt('Copy this link:', u.href); }
+}
+
+// What a scanned code means. Our tags carry a URL (?t=<code>&s=<serial>);
+// anything else is taken as the number itself.
+function fromScan(text) {
+  const t = String(text || '').trim();
+  try {
+    const u = new URL(t);
+    const p = u.searchParams;
+    const v = p.get('t') || p.get('q') || p.get('serial') || p.get('s') || p.get('wo');
+    if (v) return { q: v, s: p.get('s'), by: p.get('t') ? 'ref' : 'serial' };
+  } catch (_) {}
+  return { q: t, by: 'serial' };
+}
+
+// ── Scanner ──────────────────────────────────────────────────────────────────
+let _qr = null;
+$('btn-scan').onclick = async () => {
+  if (typeof Html5Qrcode === 'undefined') { fail('The scanner could not load. Type the number instead.'); return; }
+  $('scan').classList.add('vis');
+  try {
+    _qr = new Html5Qrcode('scan-video');
+    await _qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 180 } }, text => {
+      stopScan();
+      const s = fromScan(text);
+      search(s.q, { push: true, by: s.by }).then(r => { if (r === 'none' && s.s && s.s !== s.q) search(s.s, { push: true }); });
+    }, () => {});
+  } catch (_) {
+    stopScan();
+    fail('Could not open the camera. Allow camera access, or type the number instead.');
+  }
+};
+function stopScan() { $('scan').classList.remove('vis'); if (_qr) { _qr.stop().catch(() => {}); _qr = null; } }
+$('btn-scan-cancel').onclick = stopScan;
+
+$('search-form').addEventListener('submit', e => { e.preventDefault(); search($('q').value, { push: true }); });
+
+// ── Deep links ───────────────────────────────────────────────────────────────
+// Every link ever printed or written to a tag:
+//   /?t=<code>             ladder tags          /fp/?t=<code>&s=<serial>  FP tags
+//   ?serial= ?s= ?q=       typed or older links  ?wo=                      a job
+// A tag's certificate code is tried first — it survives a corrected serial,
+// and a tag riveted to a harness cannot be rewritten. If it no longer resolves,
+// the serial in the same link still finds the item.
+async function fromUrl(push) {
+  const p = new URLSearchParams(location.search);
+  const t = p.get('t'), s = p.get('s') || p.get('serial'), q = p.get('q'), wo = p.get('wo');
+  if (t) {
+    const r = await search(t, { push, by: 'ref', quietMiss: !!(s && s !== t) });
+    if (r === 'none' && s && s !== t) await search(s, { push, by: 'serial' });
+  } else if (wo) await search(wo, { push });
+  else if (s || q) await search(s || q, { push });
+  else { $('result').innerHTML = ''; clearMsg(); }
+}
+window.addEventListener('popstate', () => fromUrl(false));
+fromUrl(false);
 </script>
 </body>
 </html>

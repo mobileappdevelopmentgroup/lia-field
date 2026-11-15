@@ -70,36 +70,24 @@ To deploy updates:
 
 Hosted on AWS: **https://lia.mobileappdevelopmentgroup.com** (HTTPS via CloudFront → S3)
 
-Lookup by serial number or work order. Shows a color-coded inspection certificate with SVG seal. Works on phone — includes barcode scanner.
+One page for ladders **and** fall protection: a single search box takes a
+serial, a tag number, a certificate code or a work order, and the answer says
+what to do (valid / due soon / overdue / failed / destroyed / no record). A work
+order opens a job report — removed-from-service first, filter by result, print,
+or download a spreadsheet. Plain `fetch` to the two public views; no supabase-js.
 
-Source: `inspection-site/index.html`
+Source: `inspection-site/index.html`. Tests: `npm run test:site` (a real
+browser against a stand-in database, at both `/` and `/fp/`).
 
-To deploy updates:
+The same file is served at **both** `/` and `/fp/`, because fall-protection tags
+carry `/fp/?t=<code>&s=<serial>` and ladder tags `/?t=<code>`. Deploy it to both:
 ```bash
-aws s3 cp inspection-site/index.html s3://batavia-ladder-inspections/index.html \
-  --content-type "text/html" --cache-control "no-cache"
+for k in index.html fp/index.html; do
+  aws s3 cp inspection-site/index.html s3://batavia-ladder-inspections/$k \
+    --content-type "text/html" --cache-control "no-cache"
+done
 ```
-
----
-
-## Fall Protection Certificate Site
-
-Same pattern as the ladder site — static HTML on the **existing** bucket and
-CloudFront distribution, under an `/fp/` prefix, so there is no new certificate,
-no new DNS, and the NFC tag URL stays same-origin with the ladder site.
-
-Source: `fp-site/index.html`. Reads the `fall_protection_public` and
-`fall_protection_checks_public` views as anon.
-
-Lookup accepts a certificate code (`?t=<public_ref>`, which is what the NFC tag
-carries) or a serial number. Serials are matched on their normalized form, so
-punctuation and case do not matter.
-
-To deploy:
-```bash
-aws s3 cp fp-site/index.html s3://batavia-ladder-inspections/fp/index.html \
-  --content-type "text/html" --cache-control "no-cache"
-```
+`fp-site/` was folded into it on 2026-11-14.
 
 ---
 
